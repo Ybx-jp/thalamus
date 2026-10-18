@@ -113,18 +113,26 @@ def test_the_model_is_anchored_to_the_repo_and_not_to_the_cwd(tmp_path, monkeypa
 
 def test_the_scan_key_still_matches_every_scan_already_taken():
     """`scan_id` hashes the policy block, so the exclude tuple is part of a scan's
-    identity. Both the committed file and the code's default have to keep producing
-    the digest the model records, or today's scan lands in a different lineage from
-    the ones already published against it — and the fork is silent."""
+    identity. The committed file has to keep producing the digest the model records,
+    or today's scan lands in a different lineage from the ones already published
+    against it — and the fork is silent.
+
+    This repository's `roots` differ from the code's default on purpose: they name each
+    plugin's source root, which is a change to what is measured and is meant to fork the
+    key. Every other field has to agree with the default, so a default that drifts —
+    the exclude tuple, the resolution rule — still fails here."""
+    import dataclasses
+
     import yaml
 
     document = yaml.safe_load(
         (arch_model.REPO_ROOT / arch_model.MODEL_PATH).read_text(encoding="utf-8")
     )
     recorded = document["extractor"]["digest"]
+    committed = ExtractorPolicy.from_block(document["extractor"])
 
-    assert ExtractorPolicy.from_block(document["extractor"]).digest() == recorded
-    assert ExtractorPolicy().digest() == recorded
+    assert committed.digest() == recorded
+    assert dataclasses.replace(ExtractorPolicy(), roots=committed.roots).digest() == recorded
 
 
 def test_scan_id_names_both_the_commit_and_the_policy():

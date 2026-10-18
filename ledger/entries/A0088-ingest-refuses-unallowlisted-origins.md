@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-10-18T13:51:40-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/ingest.py § "check_origin" =sha256:2ae48709312770f26b2e554db9cbb17191cc4577e7a282d5f4bef035f66f24ae
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T13:55:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-ingest/src/thalamus_ingest/ingest.py § "check_origin" =sha256:2ae48709312770f26b2e554db9cbb17191cc4577e7a282d5f4bef035f66f24ae
+  note: harness/ingest.py moved into the thalamus-ingest plugin package as thalamus_ingest/ingest.py with check_origin unchanged; `thalamus ingest` is now registered by that plugin and runs the same gate, so the assertion is unaffected
+
 ## References
 
 - README.md · standing · cites-as-live

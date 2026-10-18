@@ -68,8 +68,8 @@ and lands the source as tier-2 `LiteratureClaim`/`Entity` nodes with a citation 
 can then cite. Feeding a paper *is* the tier-2 curation decision. Local files bypass
 the allowlist — hand-feeding is itself the curation.
 
-**HTML, PDF and local text all work; PDF needs the `pdf` extra** (`uv sync --extra
-pdf`), and without it the refusal names the extra. Prefer a URL over a hand-fed
+`thalamus ingest` comes from the `thalamus-ingest` plugin; with only the core
+installed the command does not exist. **HTML, PDF and local text all work.** Prefer a URL over a hand-fed
 conversion in every case you can: hand-feeding archives *your conversion* rather than
 the paper, and records a local path where a citable origin belongs, so the Source can
 never be re-fetched, verified by anyone else, or deduped against a later ingest of the

@@ -10,6 +10,12 @@ resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'win32'",
 ]
 
+[manifest]
+members = [
+    "thalamus-ingest",
+    "thalamus-memory",
+]
+
 [[package]]
 name = "aenum"
 version = "3.1.17"
@@ -2941,12 +2947,27 @@ wheels = [
 ]
 
 [[package]]
+name = "thalamus-ingest"
+source = { editable = "packages/thalamus-ingest" }
+dependencies = [
+    { name = "pypdf" },
+    { name = "thalamus-memory" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pypdf", specifier = ">=5.0" },
+    { name = "thalamus-memory", editable = "." },
+]
+
+[[package]]
 name = "thalamus-memory"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "fastmcp" },
     { name = "gremlinpython" },
+    { name = "pluggy" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "uvicorn", extra = ["standard"] },
@@ -2974,8 +2995,10 @@ nli = [
     { name = "torch" },
     { name = "transformers" },
 ]
-pdf = [
-    { name = "pypdf" },
+
+[package.dev-dependencies]
+plugins = [
+    { name = "thalamus-ingest" },
 ]
 
 [package.metadata]
@@ -2987,8 +3010,8 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.1" },
     { name = "numpy", marker = "extra == 'frames'", specifier = ">=2.1" },
     { name = "pillow", marker = "extra == 'frames'", specifier = ">=10.0" },
+    { name = "pluggy", specifier = ">=1.5" },
     { name = "pydantic", specifier = ">=2.0" },
-    { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=5.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6" },
@@ -3001,7 +3024,10 @@ requires-dist = [
     { name = "ty", marker = "extra == 'dev'", specifier = "==0.0.74" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.51.0" },
 ]
-provides-extras = ["dev", "frames", "nli", "pdf"]
+provides-extras = ["dev", "frames", "nli"]
+
+[package.metadata.requires-dev]
+plugins = [{ name = "thalamus-ingest", editable = "packages/thalamus-ingest" }]
 
 [[package]]
 name = "threadpoolctl"

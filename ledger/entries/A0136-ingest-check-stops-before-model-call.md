@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-10-18T13:51:40-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/ingest.py § "preflight" =sha256:844f1bc61b4b2ba00cfe6b7f76f8babbc8e51a1b1514e1442a609b8e1872c1d1
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T13:55:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-ingest/src/thalamus_ingest/ingest.py § "preflight" =sha256:844f1bc61b4b2ba00cfe6b7f76f8babbc8e51a1b1514e1442a609b8e1872c1d1
+  note: harness/ingest.py moved into the thalamus-ingest plugin package as thalamus_ingest/ingest.py with preflight unchanged, so the assertion is unaffected
+
 ## References
 
 - CLAUDE.md · standing · cites-as-live

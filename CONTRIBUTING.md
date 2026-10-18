@@ -33,8 +33,8 @@ checkout's development interpreter, not the range Thalamus installs into.
 ```bash
 uv run pytest                      # the suite must stay green (16 workers, ~50s)
 uv run pytest -n 0 tests/test_x.py # one file: skip the ~3s worker boot
-uv run ruff check src tests
-uv run ty check src                # no diagnostics
+uv run ruff check src packages tests
+uv run ty check src packages       # no diagnostics
 uv run thalamus arch rules --gate  # dependencies against the declared layers
 uv run thalamus arch scan --check  # the committed structural model must be current
 uv run thalamus arch dead --gate   # definitions nothing outside tests/ refers to
@@ -244,22 +244,47 @@ src/thalamus/
   contract/    the federation boundary — ontology, expert manifests, conformance
   console/     the optional browser control plane: tmux windows, rooms, dispatch
   archive/     immutable content-addressed store for retained evidence
-  harness/     MCP server, hooks, skills, transcript bootstrap, ingest
+  harness/     MCP server, hooks, skills, transcript bootstrap
+  plugins.py   the extension points a plugin package registers through
   eval/        trace tap, attribution, cost — the live-serving half of the eval loop.
                The counterfactual harness (task battery, arms, oracle) is research
                instrumentation; it lives in the private thalamus-eval companion repo
   arch/        the `architect` scope's instrument — a declared-policy import extractor
                and the structural metrics computed over it, behind the three arch gates
   pulse/       live telemetry dashboard
+packages/      plugins — each its own distribution, depending on the core alone
+  thalamus-ingest/   curated ingestion: `thalamus ingest`, `thalamus backfill-chunks`
 arch/          model.yaml — the committed architecture model the gates check against
 config/        expert manifests
 ledger/        the claims ledger — one entry per documented commitment, pinned to the
                section of source that keeps it true
 docs/          user documentation
 docker/        the confinement image a counterfactual arm runs inside
-tools/         frame-theme authoring scripts (`--extra frames`)
+tools/         frame-theme authoring scripts (`--extra frames`), the install-alone check
 tests/         pytest suite, plus tests/js and tests/qe
 ```
+
+### Plugins
+
+The repository is a uv workspace. The root `pyproject.toml` is the core,
+`thalamus-memory`; each directory under `packages/` is a plugin with its own
+`pyproject.toml` and `src/`, published as its own distribution and imported under a
+top-level name (`thalamus_ingest`). `uv sync` installs them all into one environment, so
+the suite and the gates see every package together.
+
+A plugin depends on the core and on no other plugin, and nothing in the core imports a
+plugin. `arch/model.yaml` gives each plugin a layer whose rule names only core layers,
+so `thalamus arch rules --gate` fails on either direction. What that gate cannot see is
+an import the plugin's own `pyproject.toml` does not declare, because the shared
+environment satisfies it; `tools/check-packages-install-alone.sh`, run as CI's
+`installs-alone` job, installs the core alone and each plugin with only the core, and
+imports every module the plugin ships.
+
+A plugin adds commands through the `register_commands` hook in
+`src/thalamus/plugins.py`, declared under the `thalamus` entry-point group. Its tests
+live in `tests/` beside the core's, so they run under the same isolation fixtures. A
+new extension point (MCP tools, hooks, skills) is added with the first plugin that
+needs it.
 
 The layering rule that matters: **`substrate/` sits below the contract.** It knows
 nodes and edges. It does not know what an expert is, what a trust tier means, or which

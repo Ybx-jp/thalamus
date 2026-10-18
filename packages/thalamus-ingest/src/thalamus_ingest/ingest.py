@@ -6,12 +6,12 @@ the archive, extract a handful of typed claims and entities with a headless mode
 pass, and hand the result to the contract. No crawler, no embeddings — sophistication
 here is pulled by measurement, never pushed by enthusiasm.
 
-PDF text extraction is the one piece measurement did pull, and it rides the `pdf`
-extra. ICSE, CHI, FSE and TSE publish PDF only, including on hosts the literature
-allowlist already reaches, so refusing the format did not keep a literature out — it
-routed it through hand-conversion, which archives the conversion rather than the paper
-and records a local path where a citable origin belongs. Without the extra the refusal
-stands and names it, which is honest degradation rather than a silent empty read.
+PDF text extraction is the one piece measurement did pull, through pypdf (pure Python,
+no native build). ICSE, CHI, FSE and TSE publish PDF only, including on hosts the
+literature allowlist already reaches, so refusing the format would not keep a
+literature out — it would route it through hand-conversion, which archives the
+conversion rather than the paper and records a local path where a citable origin
+belongs.
 
 The order is load-bearing at three points. The address is judged first, because what
 an abstract page is can be read off the URL and refusing costs not even a request.
@@ -33,6 +33,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
+
+from pypdf import PdfReader
 
 from thalamus.archive import (
     ArchiveEntry,
@@ -212,7 +214,7 @@ def check_location(location: str) -> None:
         f"exactly like paper-level ones — the failure is silent, so it is refused "
         f"rather than warned about. Feed the full text instead:\n"
         f"  https://arxiv.org/html/{paper}   (rendering; not every paper has one)\n"
-        f"  https://arxiv.org/pdf/{paper}    (always exists; needs the `pdf` extra)"
+        f"  https://arxiv.org/pdf/{paper}    (always exists)"
     )
 
 
@@ -272,33 +274,16 @@ _PDF_LIGATURES = str.maketrans({
 
 
 def _pdf_to_text(payload: bytes) -> str:
-    """Extract a PDF's text, or say why it cannot be extracted here.
+    """Extract a PDF's text, or say why it cannot be extracted.
 
-    Needs the `pdf` extra (`uv sync --extra pdf`). Absent, this refuses and names the
-    extra — the same honest degradation the console's no-package tier takes, rather
-    than a silent empty extraction that would read downstream as a short document.
-
-    Extraction is crude on purpose and the crudeness is now affordable: the archive
-    holds the PDF itself, so a better extractor is genuinely a re-run away. That was
-    the property the old refusal claimed and could not deliver, because refusing meant
-    a hand-converted `.txt` was archived and the PDF never was.
+    Extraction is crude on purpose, and the crudeness is affordable: the archive holds
+    the PDF itself, so a better extractor is a re-run away.
 
     Known and accepted: pypdf walks text objects in content-stream order, so a
     two-column academic layout can interleave columns within a page. It costs term
     adjacency, not term presence, and the claims this feeds are extracted by a model
     reading prose rather than by positional parsing.
     """
-    try:
-        # `pdf` extra: declared in pyproject, absent from a default dev sync.
-        from pypdf import PdfReader  # noqa: PLC0415  # ty: ignore[unresolved-import]
-    except ImportError as exc:
-        raise IngestError(
-            "PDF text extraction needs the `pdf` extra — install it with "
-            "`uv sync --extra pdf`, or hand-feed the relevant sections as a local "
-            "text file. Hand-feeding archives your conversion rather than the paper "
-            "and records a local path as the origin, so prefer the extra"
-        ) from exc
-
     try:
         reader = PdfReader(io.BytesIO(payload))
         pages = [page.extract_text() or "" for page in reader.pages]
@@ -355,9 +340,6 @@ def document_title(payload: bytes) -> str:
     """
     if payload[:5] == b"%PDF-":
         try:
-            # `pdf` extra: declared in pyproject, absent from a default dev sync.
-            from pypdf import PdfReader  # noqa: PLC0415  # ty: ignore[unresolved-import]
-
             meta = PdfReader(io.BytesIO(payload)).metadata
             title = " ".join(str(meta.title or "").split()) if meta else ""
         except Exception:  # noqa: BLE001 — an unreadable title is not a failed check

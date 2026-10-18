@@ -249,20 +249,23 @@ src/thalamus/
   contract/    the federation boundary: ontology, expert manifests, conformance
   console/     the optional browser/PWA control plane: tmux windows, rooms, dispatch
   archive/     immutable content-addressed store for retained evidence
-  harness/     where it meets the agent: MCP server, hooks, skills, bootstrap, ingest
+  harness/     where it meets the agent: MCP server, hooks, skills, bootstrap
+  plugins.py   the extension points a plugin package registers through
   eval/        trace tap, attribution, cost: the live-serving half of the eval loop.
                The counterfactual harness (task battery, arms, oracle) is research
                instrumentation; it lives in the private thalamus-eval companion repo
   arch/        the `architect` scope's instrument: a declared-policy import extractor
                and the structural metrics computed over it, gated in CI
   pulse/       live telemetry dashboard over the eval loop
+packages/      plugins, each its own distribution depending on the core alone
+  thalamus-ingest/   curated ingestion: `thalamus ingest`, `thalamus backfill-chunks`
 arch/          model.yaml, the committed architecture model the gates check against
 config/        expert manifests
 ledger/        the claims ledger: one entry per documented commitment, pinned by
                digest to the section of source that keeps it true
 docs/          user documentation
 docker/        the confinement image a counterfactual arm runs inside
-tools/         frame-theme authoring scripts (`--extra frames`)
+tools/         frame-theme authoring scripts (`--extra frames`), the install-alone check
 tests/         the suite, including `tests/qe/`, the adversarial suite owned by `qe`
 ```
 

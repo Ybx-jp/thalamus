@@ -41,6 +41,13 @@ none
 - 2026-09-25T02:57:00-07:00 · corroborated · grade: measured · author: main
   evidence: yaml: .github/workflows/verify.yml § "jobs" =sha256:2c2faa0a3d532d784b77ee4f19e32a8d92605fda7a8e58f99b08c22a5235a189
   note: the yaml section pattern now opens and ends sections only at top-level keys (#300), so the ground spans the key's whole block where it spanned the key line; read against that block, the single verify job runs ruff, ty, pytest, the three arch gates, claims-ledger check and thalamus contract check as steps, so the assertion holds
+- 2026-10-18T13:57:03-07:00 · contested · grade: measured · author: propagation
+  evidence: yaml: .github/workflows/verify.yml § "jobs" =sha256:2c2faa0a3d532d784b77ee4f19e32a8d92605fda7a8e58f99b08c22a5235a189
+  artifact: sha256:646eac5213f25259290147b36e7f70c68d787a0e428ef515dcfa8630d814ce3f
+  note: propagated from a moved ground
+- 2026-10-18T13:58:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: yaml: .github/workflows/verify.yml § "jobs" =sha256:646eac5213f25259290147b36e7f70c68d787a0e428ef515dcfa8630d814ce3f
+  note: ruff and ty now also take `packages`, and a second job, installs-alone, builds every workspace package and installs each into a clean environment; the verify job still runs lint, types, tests, the three arch gates, claims-ledger check and contract check as its steps, so the assertion holds
 
 ## References
 

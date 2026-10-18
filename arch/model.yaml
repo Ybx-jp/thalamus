@@ -15,8 +15,11 @@ extractor:
   version: 1
   languages:
   - python
+  # The core's source root, then one per plugin under `packages/`. One import graph
+  # across all of them is what lets `arch rules` see a plugin -> plugin edge at all.
   roots:
   - src
+  - packages/thalamus-ingest/src
   import_depth: all
   resolve: deepest-matching-module
   exclude:
@@ -115,9 +118,21 @@ layers:
   - src/thalamus/console/**
   - src/thalamus/pulse/**
   - src/thalamus/arch/**
+# The extension points, and the one module of core a plugin is written against for its
+# own sake rather than for what it reuses. Stdlib and pluggy only.
+- name: extension
+  includes:
+  - src/thalamus/plugins.py
+# One layer per plugin. Each may depend on what its rule below names, from core only and
+# never another plugin, and nothing in core may depend on it: a core that imports a
+# plugin is a core that does not install alone.
+- name: plugin-ingest
+  includes:
+  - packages/thalamus-ingest/src/**
 
 # Height, low to high: vocabulary, archive < substrate < harness < conformance < eval
-# < surfaces < entry. Each allow-list is closed: a layer may depend on exactly what is
+# < surfaces < entry, with `extension` a second leaf beside vocabulary and each plugin a
+# layer above conformance that only entry-point loading reaches. Each allow-list is closed: a layer may depend on exactly what is
 # named and nothing else.
 rules:
 - layer: vocabulary          # the ontology is the shared word-list; it imports nothing
@@ -135,7 +150,12 @@ rules:
 - layer: surfaces
   may_depend_on: [vocabulary, archive, substrate, harness, conformance, eval]
 - layer: entry
-  may_depend_on: [vocabulary, archive, substrate, harness, conformance, eval, surfaces]
+  may_depend_on: [vocabulary, archive, substrate, harness, conformance, eval, surfaces,
+                  extension]
+- layer: extension           # what a plugin is written against; it knows no plugin
+  may_depend_on: []
+- layer: plugin-ingest
+  may_depend_on: [vocabulary, archive, substrate, harness, conformance, extension]
 
 seams:
 - name: ontology-is-the-vocabulary
@@ -197,7 +217,7 @@ accepted:
 deadends:
   version: 1
   enabled: true
-  source_roots: [src]
+  source_roots: [src, packages/thalamus-ingest/src]
   test_roots: [tests]
   reference_extensions: ['.sh']
   # Modules whose caller is outside the scanned import graph, so a fan-in of zero says
@@ -211,6 +231,9 @@ deadends:
   - '**/cli.py'
   - '**/conftest.py'
   - '**/static/*'
+  # A plugin's registration module, declared under the `thalamus` entry-point group in
+  # its package's pyproject.toml and imported by `thalamus.plugins.load`, by name.
+  - packages/*/src/*/plugin.py
   # Declared in [project.scripts]; the MCP client launches it as a process.
   - src/thalamus/harness/mcp_server.py
   # Imported by the companion repo thalamus-eval, not by anything here: the WCAG
@@ -240,7 +263,7 @@ deadends:
 references:
   version: 1
   enabled: true
-  roots: [src]
+  roots: [src, packages]
   # Vendored upstream documentation cites paths in the project it documents, which are
   # correctly not in this tree. Excluding it is not a tolerance for broken references —
   # those files are not ours to fix, and counting them would drown the ones that are.

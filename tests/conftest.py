@@ -52,7 +52,7 @@ def _isolate_extractor_policy(tmp_path_factory, monkeypatch):
     """Point the extractor store at a tmp path for every test.
 
     Same defect as the posture store above, one command along: `_cmd_extract` and
-    `_cmd_ingest` resolve which CLI runs the pass through the module-level `STORE`, so a
+    `thalamus_ingest.commands.ingest` resolve which CLI runs the pass through the module-level `STORE`, so a
     test that builds an args namespace and calls either reads whichever extractor the
     operator picked in the console. It decides the harness, the model and a printed
     line, and none of the tests that go through those paths passed a store or knew they
