@@ -55,6 +55,37 @@ none
 - 2026-10-08T00:20:00-07:00 · corroborated · grade: argued · author: main
   evidence: code: src/thalamus/harness/reflex_worker.py § "run_job" =sha256:1f096a228a3e13b5ae7611ef68f722bf9bb14401ae6a3b3c657b55a0dbf132a8
   note: Read at the current revision. run_job now records the channel and model on every outcome row, names the channel's model in the envelope, and passes the agent's cwd to the plan; a claude-channel run that cannot start or reports an error raises ExtractionError into the same error outcome, and the session_end, timeout, empty and error paths are otherwise as before — the assertion is unaffected.
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex_worker.py § "run_job" =sha256:1f096a228a3e13b5ae7611ef68f722bf9bb14401ae6a3b3c657b55a0dbf132a8
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex_worker.py § "sweep" =sha256:0b778e68928ce23452f656c6c44ab82f036da6bbe7fe44382dd9e58472acc093
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex_worker.py § "DEADLINE_SECONDS" =sha256:e649b0e23db7428d2495066ea3b5f315619c026c813915ab8f4dc450913f9997
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex_worker.py § "session_alive" =sha256:765e5adbfa8b1f835e6dfa6b3ed6dd745c9ac699de1b07dce5d8a0f9db2a5172
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py § "run_job" =sha256:1f096a228a3e13b5ae7611ef68f722bf9bb14401ae6a3b3c657b55a0dbf132a8
+  note: src/thalamus/harness/reflex_worker.py moved into the thalamus-reflex plugin package as reflex_worker.py with run_job unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py § "sweep" =sha256:0b778e68928ce23452f656c6c44ab82f036da6bbe7fe44382dd9e58472acc093
+  note: src/thalamus/harness/reflex_worker.py moved into the thalamus-reflex plugin package as reflex_worker.py with sweep unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py § "DEADLINE_SECONDS" =sha256:e649b0e23db7428d2495066ea3b5f315619c026c813915ab8f4dc450913f9997
+  note: src/thalamus/harness/reflex_worker.py moved into the thalamus-reflex plugin package as reflex_worker.py with DEADLINE_SECONDS unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py § "session_alive" =sha256:765e5adbfa8b1f835e6dfa6b3ed6dd745c9ac699de1b07dce5d8a0f9db2a5172
+  note: src/thalamus/harness/reflex_worker.py moved into the thalamus-reflex plugin package as reflex_worker.py with session_alive unchanged, so the assertion is unaffected
 
 ## References
 

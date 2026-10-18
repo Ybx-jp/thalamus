@@ -1611,7 +1611,7 @@ def apply_ingress_floor(
     - the extractor's `external: true` marks are honored (good recall, but a poisoned
       page can talk the model out of marking);
     - claims whose distinctive terms echo the external texts are forced external
-      **regardless of the mark** — no instruction reaches this layer, and `_tokens`
+      **regardless of the mark** — no instruction reaches this layer, and `word_forms`
       makes it read through a claim rewritten to spell the page's words differently.
       Same dials as used-vs-ignored attribution: crude, cheap, honest.
 
@@ -1638,7 +1638,7 @@ def apply_ingress_floor(
     elif not external_texts and not any(c.external for c in graph.claims()):
         return graph
 
-    corpus_tokens = _tokens(" ".join(external_texts))
+    corpus_tokens = word_forms(" ".join(external_texts))
 
     reason = "transcript-ingress" if ingress_verifiable else "transcript-ingress-unverifiable"
     floored = Provenance(
@@ -1666,7 +1666,7 @@ def apply_ingress_floor(
     )
 
 
-def _tokens(text: str) -> set[str]:
+def word_forms(text: str) -> set[str]:
     """Every form of every word in `text` that either side could spell it as.
 
     One tokenizer, run over the page and over the claim, emitting a compound token
@@ -1713,7 +1713,7 @@ def _echoes(item: Claim | Thread | Artifact, corpus_tokens: set[str]) -> bool:
         for field_name in _ECHO_FIELDS
         if (value := getattr(item, field_name, None))
     )
-    terms = sorted(t for t in _tokens(text) if len(t) > 2 and t not in STOPWORDS)
+    terms = sorted(t for t in word_forms(text) if len(t) > 2 and t not in STOPWORDS)
     if not terms:
         return False
     matched = [term for term in terms if term in corpus_tokens]

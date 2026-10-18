@@ -1,10 +1,13 @@
 """
-Plugin loading — the `thalamus` entry-point group and the `register_commands` hook.
+Plugin loading — the `thalamus` entry-point group, `register_commands` and
+`register_hooks`.
 
-Interfaces: thalamus.plugins.load/Plugins.register_commands, cli._main's dispatch on
-`plugin_run`, the thalamus-ingest plugin's registration
+Interfaces: thalamus.plugins.load/Plugins.register_commands/Plugins.hooks/Hook,
+cli._main's dispatch on `plugin_run`, the thalamus-ingest and thalamus-reflex plugins'
+registration
 Infrastructure: fake entry points patched into `thalamus.plugins.entry_points`; the
-real installed thalamus-ingest for the end-to-end case; no graph, no model
+real installed thalamus-ingest and thalamus-reflex for the end-to-end cases; no graph,
+no model
 Scope: that an installed plugin's commands reach the CLI, and that a broken plugin
 costs only its own commands. The second is the property every hook script relies on,
 because SessionEnd distillation runs through the same `thalamus` entry point.
@@ -138,4 +141,91 @@ def test_the_ingest_plugin_adds_its_commands_to_the_installed_cli(command):
 
     assert result.returncode == 0, result.stderr
     assert f"thalamus {command}" in result.stdout
+    assert "failed to" not in result.stderr
+
+
+def test_a_plugin_adds_a_subcommand_under_a_core_command_group(monkeypatch):
+    """`groups` is how `thalamus eval reflex` reaches core's `eval`; an implementation
+    may take that argument alone."""
+    def register(groups):
+        groups["eval"].add_parser("hello").set_defaults(plugin_run=lambda args: "ran")
+
+    _with_points(monkeypatch, _Point("hello", _plugin("hello", register)))
+    parser, subparsers = _parser()
+    eval_sub = subparsers.add_parser("eval").add_subparsers(dest="eval_command")
+
+    loaded = plugins.load()
+    loaded.register_commands(subparsers, groups={"eval": eval_sub})
+
+    args = parser.parse_args(["eval", "hello"])
+    assert args.plugin_run(args) == "ran"
+    assert loaded.failures == []
+
+
+def _hook_plugin(name, hooks):
+    module = types.ModuleType(f"fake_{name}")
+    module.register_hooks = plugins.hookimpl(lambda: hooks)
+    return module
+
+
+def _script(root, package="thalamus_fake", name="tap.sh"):
+    path = root / package / "hooks" / "claude-code" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/bash\n")
+    return path
+
+
+def test_a_plugin_hook_under_its_package_hooks_dir_is_accepted(monkeypatch, tmp_path):
+    hook = plugins.Hook("claude", "PostToolUse", "Bash", _script(tmp_path))
+    _with_points(monkeypatch, _Point("fake", _hook_plugin("fake", [hook])))
+
+    loaded = plugins.load()
+
+    assert loaded.hooks() == [hook]
+    assert loaded.failures == []
+
+
+@pytest.mark.parametrize("bad", ["elsewhere", "harness", "missing"])
+def test_one_refused_hook_drops_every_hook_that_plugin_declared(
+        monkeypatch, tmp_path, capsys, bad):
+    """
+    Scenario: a plugin declares two hooks and core refuses one — a script outside a
+    `thalamus_*` package's `hooks/<harness>/` (uninstall could not prove it ours), a
+    harness no plugin hook is wired on, or a script that is not there
+
+    Neither of that plugin's hooks is wired, and a second plugin's still is.
+    """
+    good = plugins.Hook("claude", "PostToolUse", "Bash", _script(tmp_path))
+    refused = {
+        "elsewhere": plugins.Hook("claude", "PostToolUse", None,
+                                  _script(tmp_path, package="vendor")),
+        "harness": plugins.Hook("cursor", "postToolUse", None, _script(tmp_path)),
+        "missing": plugins.Hook("claude", "PostToolUse", None,
+                                tmp_path / "thalamus_fake" / "hooks" / "claude-code" / "no.sh"),
+    }[bad]
+    other = plugins.Hook("claude", "SessionEnd", None,
+                         _script(tmp_path, package="thalamus_other"))
+    _with_points(monkeypatch,
+                 _Point("fake", _hook_plugin("fake", [good, refused])),
+                 _Point("other", _hook_plugin("other", [other])))
+
+    loaded = plugins.load()
+
+    assert loaded.hooks() == [other]
+    assert [(f.plugin, f.stage) for f in loaded.failures] == [
+        ("fake", "register its hooks")]
+    assert "plugin `fake` failed to register its hooks" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("argv", [["reflex"], ["eval", "reflex"], ["eval", "vocabulary"]])
+def test_the_reflex_plugin_adds_its_commands_to_the_installed_cli(argv):
+    """End to end through the real entry-point table, including the two that land
+    under core's `eval` group."""
+    result = subprocess.run(
+        [sys.executable, "-m", "thalamus", *argv, "--help"],
+        capture_output=True, text=True, timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"thalamus {' '.join(argv)}" in result.stdout
     assert "failed to" not in result.stderr

@@ -1,9 +1,9 @@
 """
 Memory reflex tests — the lexical rung, end to end minus the graph.
 
-Interfaces: thalamus.harness.reflex (extract_anchors, anchor_key, fire, render_envelope,
+Interfaces: thalamus_reflex.reflex (extract_anchors, anchor_key, fire, render_envelope,
             imperative_voice, ReflexBudget, FAILURE_PATTERN), the reflex.sh hook driven
-            live (bash) with a stubbed `uv`, thalamus.eval.reflex.reflex_report
+            live (bash) with a stubbed `uv`, thalamus_reflex.report.reflex_report
 Infrastructure: tmp_path as $HOME and as the ledger/tap bases; `recall` replaced by a
                 recording fake; no graph, no model
 Scope: what the hook fires on, what one firing writes where, and the three controls
@@ -28,9 +28,10 @@ import pytest
 
 from thalamus.eval import traces as trace_mod
 from thalamus.eval.attribution import attribute, cites_handle
-from thalamus.eval.reflex import reflex_report
-from thalamus.harness import reflex, retrieval
-from thalamus.harness.reflex import (
+from thalamus_reflex.report import reflex_report
+from thalamus.harness import install, retrieval
+from thalamus_reflex import reflex
+from thalamus_reflex.reflex import (
     ARM_LEXICAL,
     ARM_PROPAGATION,
     FAILURE_PATTERN,
@@ -54,7 +55,8 @@ from thalamus.substrate.vocabulary import Row
 
 HOOK = (
     Path(__file__).resolve().parents[1]
-    / "src" / "thalamus" / "harness" / "hooks" / "claude-code" / "reflex.sh"
+    / "packages" / "thalamus-reflex" / "src" / "thalamus_reflex" / "hooks" / "claude-code"
+    / "reflex.sh"
 )
 POINTER_TAP = HOOK.with_name("reflex-pointer-tap.sh")
 
@@ -767,7 +769,15 @@ def _stub_uv(tmp_path, prints="", copy_response=True):
     return bin_dir, argv_log, seen
 
 
+def _record_hook_library(home):
+    """What `thalamus init` leaves for a plugin hook: where core's shell library is."""
+    record = home / ".thalamus" / "hook-library"
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text(f"{install.HOOK_ROOT}\n")
+
+
 def _run_hook(payload, home, bin_dir, **env):
+    _record_hook_library(home)
     return subprocess.run(
         [str(HOOK)],
         input=json.dumps(payload),
@@ -834,7 +844,7 @@ class TestTheHook:
         assert out == {"hookEventName": "PostToolUse",
                        "additionalContext": "Thalamus memory reflex: hi"}
         argv = argv_log.read_text()
-        checkout = str(HOOK.parents[5])
+        checkout = str(Path(__file__).resolve().parents[1])
         assert f"run --project {checkout} thalamus reflex" in argv
         assert "--session-id cc-1" in argv and "--scope main" in argv
         assert "--cwd /w" in argv and "--tool-name Bash --event PostToolUse " in argv
@@ -1001,6 +1011,7 @@ def test_a_trace_prices_what_entered_context_and_falls_back_to_the_response():
 def _run_tap(payload, home, **env):
     """Run the tap on a socket stdin, as Claude Code runs it: a pipe would pass a hook
     that reopens `/dev/stdin`, which fails on every real call (A0203)."""
+    _record_hook_library(home)
     ours, theirs = socket.socketpair()
     with ours, theirs:
         ours.sendall(json.dumps(payload).encode())
@@ -1087,7 +1098,7 @@ class TestThePointerTap:
                            "tool_input": {"file_path": "/w/README.md"}}, tmp_path,
                           PATH=str(only_cat))
         assert result.returncode == 0 and result.stdout == ""
-        assert not (tmp_path / ".thalamus").exists()
+        assert [p.name for p in (tmp_path / ".thalamus").iterdir()] == ["hook-library"]
 
     def test_the_sandbox_never_records(self, tmp_path):
         pointer = self._pointer(tmp_path)

@@ -48,6 +48,13 @@ none
 - 2026-10-18T13:55:00-07:00 · corroborated · grade: measured · author: architect
   evidence: yaml: arch/model.yaml § "rules" =sha256:978235708cf5d50ac0d97d61c82c006dcfaeafa9106b0228dd7694ffcf298447
   note: the rules gained the extension and plugin-ingest layers and entry may now depend on extension; the substrate rule is unchanged at [vocabulary, archive], so the assertion is unaffected
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: yaml: arch/model.yaml § "rules" =sha256:978235708cf5d50ac0d97d61c82c006dcfaeafa9106b0228dd7694ffcf298447
+  artifact: sha256:784ea16599dba2146c1eba968a3d1d6b759b836d6052e63d91b8066c96bb4129
+  note: propagated from a moved ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: yaml: arch/model.yaml § "rules" =sha256:784ea16599dba2146c1eba968a3d1d6b759b836d6052e63d91b8066c96bb4129
+  note: the rules gained the plugin-reflex layer and harness may now depend on extension; the substrate rule is unchanged at [vocabulary, archive], so the assertion is unaffected
 
 ## References
 

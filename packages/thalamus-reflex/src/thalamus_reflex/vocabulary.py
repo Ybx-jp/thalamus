@@ -23,8 +23,8 @@ from statistics import median
 
 from gremlin_python.process.graph_traversal import GraphTraversalSource
 
-from thalamus.eval.reflex import load_all_firings
-from thalamus.harness.reflex import load_shadow
+from thalamus_reflex.report import load_all_firings
+from thalamus_reflex.reflex import load_shadow
 from thalamus.harness.retrieval import Caps, Job
 from thalamus.substrate import vocabulary
 

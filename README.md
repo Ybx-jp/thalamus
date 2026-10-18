@@ -259,6 +259,7 @@ src/thalamus/
   pulse/       live telemetry dashboard over the eval loop
 packages/      plugins, each its own distribution depending on the core alone
   thalamus-ingest/   curated ingestion: `thalamus ingest`, `thalamus backfill-chunks`
+  thalamus-reflex/   the memory reflex: its two hooks, `thalamus reflex`, `eval reflex|vocabulary`
 arch/          model.yaml, the committed architecture model the gates check against
 config/        expert manifests
 ledger/        the claims ledger: one entry per documented commitment, pinned by

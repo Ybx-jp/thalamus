@@ -1,6 +1,6 @@
 """The agentic plan's channel — which model serves a job, and the cloud channel's loop.
 
-The plan (`harness/agentic.py`) runs on one of two channels, named after the
+The plan (`agentic.py`) runs on one of two channels, named after the
 `agents.AGENT_CLIS` row that reaches the model. `claude`, the default, runs each job as
 one `claude -p` with Haiku; `local` drives `ghoul` through ollama's `/api/chat`
 (`extraction.run_tool_loop`). `THALAMUS_REFLEX_CHANNEL` picks one and

@@ -56,6 +56,13 @@ none
 - 2026-10-16T22:45:00-07:00 · corroborated · grade: argued · author: architect
   evidence: code: src/thalamus/harness/install.py § "_consent_lines" =sha256:2994f582f2226bcc229caef60e194098be799d0b12782ef278905c94edf5360f
   note: _consent_lines names the config root when init will seed it with the example experts, outside the harness gate like the other unconditional targets. The assertion is unaffected.
+- 2026-10-18T16:14:12-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "_consent_lines" =sha256:2994f582f2226bcc229caef60e194098be799d0b12782ef278905c94edf5360f
+  artifact: sha256:6002c161cd4f390e432d02385aa09da93bae00a4d11d8d0446383859eaec3545
+  note: propagated from a moved ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: src/thalamus/harness/install.py § "_consent_lines" =sha256:6002c161cd4f390e432d02385aa09da93bae00a4d11d8d0446383859eaec3545
+  note: the Claude Code line counts core's and every plugin's wirings, and the hook library record is named inside the Claude Code gate when a plugin wires a hook; every target is still gated on its harness as before, so the assertion is unaffected
 
 ## References
 

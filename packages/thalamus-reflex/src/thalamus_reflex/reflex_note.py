@@ -31,8 +31,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from thalamus.harness.reflex import imperative_voice
-from thalamus.harness.reflex_queue import _append_line
+from thalamus_reflex.reflex import imperative_voice
+from thalamus_reflex.reflex_queue import _append_line
 
 NOTE_CHAR_CAP = 500
 

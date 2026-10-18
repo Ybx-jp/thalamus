@@ -17,7 +17,7 @@ import time
 
 import pytest
 
-from thalamus.harness import agentic, reflex_channel
+from thalamus_reflex import agentic, reflex_channel
 from thalamus.harness.agents import LOCAL_DEFAULT_MODEL, cli_for
 from thalamus.harness.extraction import ExtractionError, StopLoop
 

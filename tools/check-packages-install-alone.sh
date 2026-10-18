@@ -30,6 +30,10 @@ if "$work/core/bin/thalamus" ingest --help >/dev/null 2>&1; then
   echo "core alone answers \`thalamus ingest\`, which belongs to thalamus-ingest" >&2
   exit 1
 fi
+if "$work/core/bin/thalamus" reflex --help >/dev/null 2>&1; then
+  echo "core alone answers \`thalamus reflex\`, which belongs to thalamus-reflex" >&2
+  exit 1
+fi
 echo "ok  thalamus-memory alone"
 
 # Each plugin with the core and its own declared dependencies, nothing more.
@@ -60,3 +64,19 @@ done
 "$work/thalamus_ingest/bin/thalamus" ingest --help >/dev/null
 "$work/thalamus_ingest/bin/thalamus" backfill-chunks --help >/dev/null
 echo "ok  thalamus ingest, thalamus backfill-chunks"
+
+# The reflex plugin's commands, including the two under core's `eval`, and its hook
+# scripts: shipped in the wheel, accepted by core, and executable once installed.
+"$work/thalamus_reflex/bin/thalamus" reflex --help >/dev/null
+"$work/thalamus_reflex/bin/thalamus" eval reflex --help >/dev/null
+"$work/thalamus_reflex/bin/thalamus" eval vocabulary --help >/dev/null
+"$work/thalamus_reflex/bin/python" -I - <<'EOF'
+import os
+from thalamus import plugins
+loaded = plugins.load()
+hooks = loaded.hooks()
+assert not loaded.failures, loaded.failures
+assert {h.script.name for h in hooks} == {"reflex.sh", "reflex-pointer-tap.sh"}, hooks
+assert all(os.access(h.script, os.X_OK) for h in hooks), hooks
+EOF
+echo "ok  thalamus reflex, thalamus eval reflex|vocabulary, and its two hook scripts"

@@ -23,6 +23,9 @@ thalamus reflex --deliver --session-id <id> [--agent-id <id>]   # the carrier: p
 thalamus reflex --sweep               # record and clear queue state nothing will reach
 ```
 
+`reflex` is added by the `thalamus-reflex` plugin ([Plugins](#plugins)), with the hooks
+that run it.
+
 `init --check` and `status` answer different questions and neither answers the
 other's. `--check` verifies the **wiring** — hooks armed, skills readable, an MCP
 entry that matches this checkout — all of which can be correct while nothing is being
@@ -49,6 +52,7 @@ installed on its own and depending on the core and nothing else:
 | Package | Adds |
 |---|---|
 | `thalamus-ingest` | `ingest`, `backfill-chunks` |
+| `thalamus-reflex` | the memory reflex: `reflex`, `eval reflex`, `eval vocabulary`, and the Claude Code hooks `reflex.sh` and `reflex-pointer-tap.sh` |
 
 A plugin declares a module under the `thalamus` entry-point group, and every `thalamus`
 invocation loads the ones installed. A plugin that fails to load, or whose commands cannot
@@ -58,10 +62,17 @@ work.<!-- (A0233, cites-as-live) -->
 That matters because the hooks and SessionEnd distillation run through the same
 `thalamus` command.
 
+A plugin's hook scripts are wired by `thalamus init` beside the core's, so run it again
+after installing or removing one. `init --check` verifies them with the rest, and
+`init --uninstall` recognises them by where they sit — under the plugin's own package —
+so it removes them even after the plugin itself is gone.<!-- (A0234, cites-as-live) -->
+The scripts reach the core's shell library through `~/.thalamus/hook-library`, which
+`init` writes when a plugin wires a hook.
+
 In a checkout, `uv sync` installs every package under `packages/` into the development
-environment. Elsewhere, `pip install . ./packages/thalamus-ingest` from the checkout
-installs the core and that plugin together; the plugin needs a core with the
-entry-point group, which no release on PyPI has yet.
+environment. Elsewhere, `pip install . ./packages/<plugin>` from the checkout installs
+the core and that plugin together; a plugin needs a core with the entry-point group,
+which no release on PyPI has yet.
 
 ## Building memory
 
@@ -307,7 +318,7 @@ thalamus eval uses                 # attribution subgraphs: coverage, depth, sta
 thalamus eval cost                 # session and operation token-cost buckets
 thalamus eval pins                 # per-expert routing signal: pinned vs consulted utility
 thalamus eval conditioning         # per-firing behavioural join on injected reminders
-thalamus eval reflex               # the memory reflex, read by arm: fired, served, used
+thalamus eval reflex               # the memory reflex, read by arm: fired, served, used (thalamus-reflex)
 thalamus eval withholding          # the randomized-withholding ledger, read as an outcome
 thalamus eval gremlin              # gremlin fluency: guard rescue rate, rejection classes
 thalamus eval recipes              # smoke-run every stored gremlin recipe, read-only

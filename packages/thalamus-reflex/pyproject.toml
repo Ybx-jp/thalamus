@@ -1,0 +1,50 @@
+[project]
+name = "thalamus-reflex"
+dynamic = ["version"]
+description = "The memory reflex for thalamus: retrieval a failed Bash result triggers, served into the session that ran it"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Jackson Porter" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    # The floor is the first core with the `register_hooks` extension point; an older
+    # core loads the commands and never wires the hook scripts.
+    "thalamus-memory>=0.1.1.dev1",
+    # Imported here directly, so declared here, at core's own floors.
+    "gremlinpython>=3.7,<3.8",
+    "fastmcp>=3.4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Ybx-jp/thalamus"
+Repository = "https://github.com/Ybx-jp/thalamus"
+Issues = "https://github.com/Ybx-jp/thalamus/issues"
+
+[project.entry-points.thalamus]
+reflex = "thalamus_reflex.plugin"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/thalamus_reflex/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/thalamus_reflex"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/README.md"]
+
+[tool.uv.sources]
+thalamus-memory = { workspace = true }

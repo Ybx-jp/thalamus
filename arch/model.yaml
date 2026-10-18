@@ -22,6 +22,7 @@ extractor:
   roots:
   - src
   - packages/thalamus-ingest/src
+  - packages/thalamus-reflex/src
   import_depth: all
   resolve: deepest-matching-module
   exclude:
@@ -131,6 +132,9 @@ layers:
 - name: plugin-ingest
   includes:
   - packages/thalamus-ingest/src/**
+- name: plugin-reflex
+  includes:
+  - packages/thalamus-reflex/src/**
 
 # Height, low to high: vocabulary, archive < substrate < harness < conformance < eval
 # < surfaces < entry, with `extension` a second leaf beside vocabulary and each plugin a
@@ -144,7 +148,7 @@ rules:
 - layer: substrate
   may_depend_on: [vocabulary, archive]
 - layer: harness
-  may_depend_on: [vocabulary, archive, substrate]
+  may_depend_on: [vocabulary, archive, substrate, extension]
 - layer: conformance         # checkers reach down into everything they check
   may_depend_on: [vocabulary, archive, substrate, harness]
 - layer: eval
@@ -158,6 +162,10 @@ rules:
   may_depend_on: []
 - layer: plugin-ingest
   may_depend_on: [vocabulary, archive, substrate, harness, conformance, extension]
+# `eval` for the trace tap (`eval/traces.py`, `eval/rates.py`), which stays in core when
+# the eval loop leaves it; this rule narrows to the tap's own layer when that split lands.
+- layer: plugin-reflex
+  may_depend_on: [vocabulary, archive, substrate, harness, eval, extension]
 
 seams:
 - name: ontology-is-the-vocabulary
@@ -219,7 +227,7 @@ accepted:
 deadends:
   version: 1
   enabled: true
-  source_roots: [src, packages/thalamus-ingest/src]
+  source_roots: [src, packages/thalamus-ingest/src, packages/thalamus-reflex/src]
   test_roots: [tests]
   reference_extensions: ['.sh']
   # Modules whose caller is outside the scanned import graph, so a fan-in of zero says

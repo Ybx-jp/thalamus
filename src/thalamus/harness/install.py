@@ -55,6 +55,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from thalamus import plugins
 from thalamus.harness import agents
 from thalamus.harness.agents import LAUNCHABLE as AGENT_LAUNCHABLE
 from thalamus.contract.manifest import config_root
@@ -72,7 +73,8 @@ USER_SETTINGS = Path.home() / ".claude" / "settings.json"
 PROJECT_SETTINGS = CHECKOUT / ".claude" / "settings.json" if CHECKOUT else None
 PROJECT_MCP = CHECKOUT / ".mcp.json" if CHECKOUT else None
 
-HOOK_DIR = PACKAGE_DIR / "harness" / "hooks" / "claude-code"
+HOOK_ROOT = PACKAGE_DIR / "harness" / "hooks"
+HOOK_DIR = HOOK_ROOT / "claude-code"
 SKILL_DIR = PACKAGE_DIR / "harness" / "skills"
 
 # Example experts and presets that ship in the package, laid out as a config root is:
@@ -101,6 +103,13 @@ HOOK_FAILURE_LOG = Path.home() / ".thalamus" / "logs" / "hook-failures.log"
 # `thalamus_cli` (hooks/claude-code/resolve-scope.sh). A checkout writes none: its
 # hooks run `uv run --project <checkout>`.
 INTERPRETER_RECORD = Path.home() / ".thalamus" / "python"
+
+# Where `init` records HOOK_ROOT, the directory holding each harness's `resolve-scope.sh`,
+# for the hook scripts a plugin contributes (`plugins.Hook`). Those sit in another
+# package's directory and cannot find core's library from their own location, as core's
+# hooks do. Written when a plugin wires a hook, by the same run that writes the hook
+# commands, so the two go stale together and `init` repairs both.
+HOOK_LIBRARY_RECORD = Path.home() / ".thalamus" / "hook-library"
 
 CURSOR_HOOK_DIR = PACKAGE_DIR / "harness" / "hooks" / "cursor"
 USER_CURSOR_HOOKS = Path.home() / ".cursor" / "hooks.json"
@@ -173,10 +182,6 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PreToolUse", "Edit|Write|NotebookEdit|Skill|Artifact|mcp__penpot__.*", "role-guard.sh"),
     ("PostToolUse", "mcp__thalamus__.*", "post-tool-use.sh"),
     ("PostToolUse", "Bash", "gremlin-tap.sh"),
-    ("PostToolUse", "Bash", "reflex.sh"),
-    ("PostToolUseFailure", "Bash", "reflex.sh"),
-    ("PostToolUse", None, "reflex-pointer-tap.sh"),
-    ("PostToolUseFailure", None, "reflex-pointer-tap.sh"),
     ("PostToolUse", "TaskCreate", "conditioning.sh"),
     ("PostToolUse", "Agent", "conditioning.sh"),
     ("PostToolUse", "mcp__thalamus__memory_query", "conditioning.sh"),
@@ -189,6 +194,18 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PreToolUse", None, "budget.sh"),
     ("PostToolBatch", None, "budget.sh"),
 ]
+
+
+def plugin_hooks(harness: str) -> list[plugins.Hook]:
+    """The hook scripts installed plugins wire on `harness` (`plugins.register_hooks`)."""
+    return [hook for hook in plugins.loaded().hooks() if hook.harness == harness]
+
+
+def claude_wiring() -> list[tuple[str, str | None, Path]]:
+    """Every Claude Code wiring `init` writes, as (event, matcher, script path): core's
+    table, then each installed plugin's."""
+    return ([(event, matcher, HOOK_DIR / script) for event, matcher, script in HOOK_WIRING]
+            + [(hook.event, hook.matcher, hook.script) for hook in plugin_hooks("claude")])
 
 # The Cursor wiring, as (event, script). Event names and their I/O shapes were
 # re-verified against cursor.com/docs/hooks.md on 2026-07-29.
@@ -244,15 +261,6 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
 # `tool_input.subagent_type` and `tool_input.description` — a Claude Code payload
 # shape. Wiring it before those fields are located in a live Cursor payload would
 # fire the branch on a `""` description, which the filter drops silently.
-#
-# No carrier: `reflex.sh`, the memory reflex. It injects from `PostToolUse` and
-# Cursor's `afterShellExecution` cannot inject — the same gap that makes
-# `conditioning.sh` deliver one tool call late through the spool. A reflex delivered
-# a call late is the deferred channel arm the design measures separately, not the
-# immediate one this script is, so it waits for that arm rather than shipping as it.
-#
-# No carrier: `reflex-pointer-tap.sh`, which records the agent opening a reflex
-# pointer file. With no reflex on this harness there is no pointer file to open.
 CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
     ("sessionStart", "session-start.sh"),
     ("sessionEnd", "session-end.sh"),
@@ -349,15 +357,6 @@ CURSOR_GUARDS: frozenset[str] = frozenset(
 #   surfaces have not been measured, and a matcher naming a tool nobody has observed
 #   is a guess that reads as enforcement. `apply_patch` is the measured editing tool,
 #   so the path half of the role boundary binds and the capability half does not.
-#
-#   `PostToolUse:Bash` for `reflex.sh`, the memory reflex. Its failure test reads
-#   Claude Code's `tool_response.stdout`/`.stderr`/`.interrupted`, or a failure's
-#   `error`/`is_interrupt`, and codex's shell result has
-#   been measured only on the input side — it arrives as one string, which the
-#   `gremlin-tap.sh` adapter reshapes onto the stdout leg — so a reflex here would
-#   build its trigger against a payload half nobody has read. Whether codex can carry
-#   one is open, not decided. `reflex-pointer-tap.sh` goes with it: it records the
-#   agent opening a reflex pointer file, and without the reflex there is none.
 CODEX_HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("SessionStart", None, "session-start.sh"),
     ("SessionEnd", None, "session-end.sh"),
@@ -457,12 +456,12 @@ class HookParity:
 
 
 DECLARED_HOOK_PARITY = HookParity(
-    scripts={"claude": 17, "codex": 14, "cursor": 15},
+    scripts={"claude": 15, "codex": 14, "cursor": 15},
     shared=10,
     missing={
-        "codex": ("reflex-pointer-tap.sh", "reflex.sh", "room-guard.sh"),
+        "codex": ("room-guard.sh",),
         "cursor": ("budget.sh", "post-tool-use.sh", "recipe-stage.sh",
-                   "reflex-pointer-tap.sh", "reflex.sh", "role-guard.sh", "room-guard.sh"),
+                   "role-guard.sh", "room-guard.sh"),
     },
     extra={
         # Codex needs no script Claude Code does not have: its payloads are Claude
@@ -720,9 +719,11 @@ def _write_json(path: Path, payload: dict) -> None:
 
 
 def _is_thalamus_hook(entry: dict) -> bool:
-    """Ours iff it points into the harness hook dir, by either wiring convention."""
+    """Ours iff it points into the harness hook dir, by either wiring convention, or at a
+    plugin's hook script — by its path, so it is recognised after the plugin is gone."""
     cmd = entry.get("command", "")
-    return "thalamus/harness/hooks" in cmd or "$CLAUDE_PROJECT_DIR/src/thalamus" in cmd
+    return ("thalamus/harness/hooks" in cmd or "$CLAUDE_PROJECT_DIR/src/thalamus" in cmd
+            or plugins.PLUGIN_HOOK_PATH.search(cmd) is not None)
 
 
 def _strip_thalamus_hooks(settings: dict) -> dict:
@@ -748,8 +749,7 @@ def _strip_thalamus_hooks(settings: dict) -> dict:
     return settings
 
 
-def _build_matcher_block(wiring: list[tuple[str, str | None, str]],
-                         hook_dir: Path) -> dict:
+def _build_matcher_block(wiring: list[tuple[str, str | None, Path]]) -> dict:
     """Claude Code's matcher-group schema, from a (event, matcher, script) table.
 
     Shared by the Claude Code and codex legs because codex's `hooks.json` is that
@@ -760,7 +760,7 @@ def _build_matcher_block(wiring: list[tuple[str, str | None, str]],
     """
     block: dict = {}
     for event, matcher, script in wiring:
-        entry = {"type": "command", "command": str(hook_dir / script)}
+        entry = {"type": "command", "command": str(script)}
         groups = block.setdefault(event, [])
         for group in groups:
             if group.get("matcher") == matcher:
@@ -776,7 +776,7 @@ def _build_matcher_block(wiring: list[tuple[str, str | None, str]],
 
 def build_hook_block() -> dict:
     """The hook block with absolute paths — no $CLAUDE_PROJECT_DIR anywhere."""
-    return _build_matcher_block(HOOK_WIRING, HOOK_DIR)
+    return _build_matcher_block(claude_wiring())
 
 
 def build_codex_hook_block() -> dict:
@@ -788,7 +788,8 @@ def build_codex_hook_block() -> dict:
     whenever a session is opened outside the checkout, the reach-past-the-checkout
     failure this module exists to fix.
     """
-    return _build_matcher_block(CODEX_HOOK_WIRING, CODEX_HOOK_DIR)
+    return _build_matcher_block([(event, matcher, CODEX_HOOK_DIR / script)
+                                 for event, matcher, script in CODEX_HOOK_WIRING])
 
 
 def build_mcp_entry() -> dict:
@@ -1734,18 +1735,28 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
     """
     checks: list[Check] = []
 
-    wired = sorted({s for _, _, s in HOOK_WIRING})
-    missing = [s for s in wired if not (HOOK_DIR / s).is_file()]
+    wired = sorted({path for _, _, path in claude_wiring()})
+    missing = [p.name for p in wired if not p.is_file()]
     checks.append(Check("hook scripts present", not missing,
                         f"all {len(wired)} wired scripts found" if not missing
                         else f"missing: {missing}",
                         surface="claude"))
 
-    unexec = sorted({s for _, _, s in HOOK_WIRING
-                     if (HOOK_DIR / s).is_file() and not os.access(HOOK_DIR / s, os.X_OK)})
+    unexec = sorted({p.name for p in wired if p.is_file() and not os.access(p, os.X_OK)})
     checks.append(Check("hook scripts executable", not unexec,
                         "all executable" if not unexec else f"not executable: {unexec}",
                         surface="claude"))
+
+    if plugin_hooks("claude"):
+        recorded = recorded_hook_library()
+        checks.append(Check(
+            "hook library recorded", recorded == str(HOOK_ROOT),
+            f"{recorded} ({HOOK_LIBRARY_RECORD})" if recorded == str(HOOK_ROOT)
+            else f"none yet ({HOOK_LIBRARY_RECORD}) — `thalamus init` records it, and "
+                 "until it does no plugin hook can run" if not recorded
+            else f"records {recorded}, not this install's {HOOK_ROOT} — re-run "
+                 "`thalamus init`",
+            pending=not recorded, surface="claude"))
 
     # jq and uv are prerequisites, and a prerequisite that is not on the box is an
     # advisory rather than a failure. Both are other vendors' binaries: install wires
@@ -1966,7 +1977,7 @@ def verify_armed() -> Check:
     yet. Listing every wiring at someone who has not installed is a wall of text
     about a machine that is fine.
     """
-    declared = {(event, matcher, script) for event, matcher, script in HOOK_WIRING}
+    declared = {(event, matcher, path.name) for event, matcher, path in claude_wiring()}
     missing = sorted(declared - armed_hooks(), key=lambda w: (w[0], w[1] or "", w[2]))
     if not missing:
         return Check("declared hooks armed",
@@ -2078,6 +2089,30 @@ def recorded_interpreter() -> str:
         return ""
 
 
+def record_hook_library(dry_run: bool = False) -> list[str]:
+    """Write HOOK_LIBRARY_RECORD when a plugin wires a Claude Code hook; nothing otherwise.
+
+    Rewritten only when it names something else, so a second `init` is a no-op.
+    """
+    if not plugin_hooks("claude"):
+        return []
+    if recorded_hook_library() == str(HOOK_ROOT):
+        return [f"hook library record already current ({HOOK_LIBRARY_RECORD})"]
+    if not dry_run:
+        HOOK_LIBRARY_RECORD.parent.mkdir(parents=True, exist_ok=True)
+        HOOK_LIBRARY_RECORD.write_text(f"{HOOK_ROOT}\n")
+    return [f"{'would record' if dry_run else 'recorded'} {HOOK_ROOT} as the hook library "
+            f"plugin hooks source ({HOOK_LIBRARY_RECORD})"]
+
+
+def recorded_hook_library() -> str:
+    """What HOOK_LIBRARY_RECORD names, or "" when there is no record."""
+    try:
+        return HOOK_LIBRARY_RECORD.read_text().strip()
+    except OSError:
+        return ""
+
+
 def install(dry_run: bool = False,
             harnesses: tuple[str, ...] = HARNESSES) -> tuple[list[str], list[Check]]:
     """Install at user scope; strip the project-scope duplicate. Idempotent.
@@ -2106,6 +2141,7 @@ def install(dry_run: bool = False,
         actions.extend(link_skills(dry_run=dry_run))
         return actions, verify(harnesses)
 
+    actions.extend(record_hook_library(dry_run=dry_run))
     user_settings = _load_json(USER_SETTINGS)
     desired_hooks = build_hook_block()
     current = _strip_thalamus_hooks(json.loads(json.dumps(user_settings)))
@@ -2195,9 +2231,12 @@ def _consent_lines(harnesses: tuple[str, ...]) -> list[str]:
     lines: list[str] = []
     if "claude" in harnesses:
         lines += [
-            f"{USER_SETTINGS} — registers {len(HOOK_WIRING)} hook entries for Claude Code",
+            f"{USER_SETTINGS} — registers {len(claude_wiring())} hook entries for Claude Code",
             "~/.claude.json — registers the `thalamus` MCP server (via `claude mcp add`)",
         ]
+        if plugin_hooks("claude"):
+            lines.append(f"{HOOK_LIBRARY_RECORD} — records the hook library plugin hooks "
+                         "source")
     if "cursor" in harnesses:
         lines += [
             f"{USER_CURSOR_HOOKS} — registers {len(CURSOR_HOOK_WIRING)} hook entries "
@@ -2301,6 +2340,11 @@ def uninstall(dry_run: bool = False) -> list[str]:
                        f"record ({INTERPRETER_RECORD})")
         if not dry_run:
             INTERPRETER_RECORD.unlink(missing_ok=True)
+    if recorded_hook_library() == str(HOOK_ROOT):
+        actions.append(f"{'would remove' if dry_run else 'removed'} the hook library "
+                       f"record ({HOOK_LIBRARY_RECORD})")
+        if not dry_run:
+            HOOK_LIBRARY_RECORD.unlink(missing_ok=True)
     # The derived profiles stay, but each is rewritten against the registration as it
     # now stands: one still carrying the `[mcp_servers.thalamus]` forwarding table
     # after the server is gone stops every `codex --profile` launch at startup

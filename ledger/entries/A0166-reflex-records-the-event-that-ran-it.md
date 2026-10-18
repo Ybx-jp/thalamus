@@ -131,9 +131,48 @@ none
 - 2026-10-16T22:10:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/harness/hooks/claude-code/reflex.sh § "context" =sha256:efabf5445f4a096d5888e6dfd7bc5215a4b7fd6034377c4ac3a0a77643b666ff
   note: reflex.sh runs the CLI through thalamus_cli_argv instead of `uv run --project`; what each firing records is unchanged. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/hooks/claude-code/reflex.sh § "context" =sha256:efabf5445f4a096d5888e6dfd7bc5215a4b7fd6034377c4ac3a0a77643b666ff
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "Firing" =sha256:ea85135f2a65940546d229696574dbc1ecf65eb52f3b763085a180e3b733e03c
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:861aa97e16791bb83e7d98d65334302056c2d753016b4dfeb7821cbc1ff99746
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:d5c259425c08068b69e01b4911356bdbacf6f728c2818b820676eb0fbd6a5f6a
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/eval/reflex.py § "EVENT_LABELS" =sha256:4c22c6cbb80a770a7b32b4a6399045d546b837795978224f3821ca66a8833b3e
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/hooks/claude-code/reflex.sh § "context" =sha256:efabf5445f4a096d5888e6dfd7bc5215a4b7fd6034377c4ac3a0a77643b666ff
+  note: src/thalamus/harness/hooks/claude-code/reflex.sh moved into the thalamus-reflex plugin package as hooks/claude-code/reflex.sh with context unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex.py § "Firing" =sha256:ea85135f2a65940546d229696574dbc1ecf65eb52f3b763085a180e3b733e03c
+  note: src/thalamus/harness/reflex.py moved into the thalamus-reflex plugin package as reflex.py with Firing unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex.py § "fire" =sha256:861aa97e16791bb83e7d98d65334302056c2d753016b4dfeb7821cbc1ff99746
+  note: src/thalamus/harness/reflex.py moved into the thalamus-reflex plugin package as reflex.py with fire unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/report.py § "reflex_report" =sha256:d5c259425c08068b69e01b4911356bdbacf6f728c2818b820676eb0fbd6a5f6a
+  note: src/thalamus/eval/reflex.py moved into the thalamus-reflex plugin package as report.py with reflex_report unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/report.py § "EVENT_LABELS" =sha256:4c22c6cbb80a770a7b32b4a6399045d546b837795978224f3821ca66a8833b3e
+  note: src/thalamus/eval/reflex.py moved into the thalamus-reflex plugin package as report.py with EVENT_LABELS unchanged, so the assertion is unaffected
 
 ## References
 
 - docs/cli.md · standing · cites-as-live
-- src/thalamus/eval/reflex.py · standing · cites-as-live
-- src/thalamus/harness/reflex.py · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/report.py · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/reflex.py · standing · cites-as-live

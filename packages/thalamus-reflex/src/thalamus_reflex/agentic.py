@@ -46,7 +46,7 @@ import re
 import time
 from dataclasses import dataclass, field
 
-from thalamus.harness import reflex_channel
+from thalamus_reflex import reflex_channel
 from thalamus.harness.extraction import (
     ExtractionError,
     LoopTurn,

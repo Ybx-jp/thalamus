@@ -35,6 +35,22 @@ none
 
 ## Verdicts
 
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "DIGEST_CHAR_CAP" =sha256:a246a5b49f584ed4029623079363f9dd50e3edd5428b6066fb9993325bde01b1
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "pack_digest" =sha256:72726eb9f21fe862e5f08e0568bb868a6b972b596c12d89b73e317b67b3b4c6a
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex.py § "DIGEST_CHAR_CAP" =sha256:a246a5b49f584ed4029623079363f9dd50e3edd5428b6066fb9993325bde01b1
+  note: src/thalamus/harness/reflex.py moved into the thalamus-reflex plugin package as reflex.py with DIGEST_CHAR_CAP unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex.py § "pack_digest" =sha256:72726eb9f21fe862e5f08e0568bb868a6b972b596c12d89b73e317b67b3b4c6a
+  note: src/thalamus/harness/reflex.py moved into the thalamus-reflex plugin package as reflex.py with pack_digest unchanged, so the assertion is unaffected
+
 ## References
 
 - docs/cli.md · standing · cites-as-live

@@ -298,83 +298,6 @@ def _main():
              "model call, no output file.",
     )
 
-    # Reflex command — the PostToolUse memory reflex's worker (harness/reflex.py)
-    reflex_parser = subparsers.add_parser(
-        "reflex",
-        help="Serve memory against a failed Bash result; the reflex.sh hook's worker. "
-        "Prints the digest to inject, or nothing.",
-    )
-    reflex_parser.add_argument(
-        "--session-id", default="",
-        help="The session that ran the command (required except with --work/--sweep)",
-    )
-    reflex_parser.add_argument(
-        "--response-file", type=Path, default=None,
-        help="File holding the command's stdout then stderr, as the model saw them "
-        "(required to fire or shadow)",
-    )
-    reflex_parser.add_argument(
-        "--transcript", default="",
-        help="The session's transcript path, from the hook payload; an agentic job "
-        "builds its excerpt from it",
-    )
-    reflex_parser.add_argument(
-        "--tool-use-id", default="",
-        help="The id of the call that fired, from the hook payload; an agentic job "
-        "keeps that call's result in its excerpt and measures delivery depth from it",
-    )
-    reflex_parser.add_argument(
-        "--work", action="store_true",
-        help="Run the agentic plan's queued jobs and exit when none remain — the "
-        "detached worker the trigger starts (harness/reflex_worker.py)",
-    )
-    reflex_parser.add_argument(
-        "--job-tools", type=Path, default=None, metavar="DIR",
-        help="Serve one claude-channel job's vocabulary over MCP stdio, relaying each "
-        "call to the worker through DIR's socket — what the job's `claude -p` starts "
-        "(harness/reflex_channel.py)",
-    )
-    reflex_parser.add_argument(
-        "--deliver", action="store_true",
-        help="Print the digests ready for this session and agent, oldest first, and "
-        "record their delivery — the carrier's delivery half",
-    )
-    reflex_parser.add_argument(
-        "--reflex-dir", type=Path, default=None,
-        help="Reflex ledger and queue dir for --work, --deliver and --sweep "
-        "(default: ~/.thalamus/reflex)",
-    )
-    reflex_parser.add_argument(
-        "--sweep", action="store_true",
-        help="Record and clear queue state no worker or carrier will reach: jobs of a "
-        "dead worker, results and jobs of ended sessions",
-    )
-    reflex_parser.add_argument(
-        "--scope", default=MAIN_SCOPE,
-        help="Scope to retrieve in — the pin, resolved by the hook (default: main)",
-    )
-    reflex_parser.add_argument(
-        "--agent-id", default="",
-        help="The subagent that ran the command, empty for the session itself; part "
-        "of the dedup key because subagents share their parent's session id",
-    )
-    reflex_parser.add_argument("--agent-type", default="", help="The subagent's type, recorded in the trace")
-    reflex_parser.add_argument("--cwd", default="", help="Working directory, recorded in the trace")
-    reflex_parser.add_argument(
-        "--tool-name", default="Bash", help="The tool whose result fired the reflex (default: Bash)"
-    )
-    reflex_parser.add_argument(
-        "--event", default="",
-        help="The hook event that ran the reflex — PostToolUse (exit 0) or "
-        "PostToolUseFailure (non-zero exit) — recorded in the ledger and the trace",
-    )
-    reflex_parser.add_argument(
-        "--shadow", action="store_true",
-        help="The output did not read as a failure: record what it would have anchored "
-        "on under ~/.thalamus/reflex/shadow/, with no graph read and no output",
-    )
-    reflex_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-
     # Contract command — the federation boundary, audited
     contract_parser = subparsers.add_parser(
         "contract", help="Federation-contract operations against the live graph"
@@ -802,41 +725,6 @@ def _main():
     eval_conditioning_parser.add_argument(
         "--traces", type=Path, default=None, help="Trace tap dir (default: ~/.thalamus/traces)"
     )
-
-    eval_reflex_parser = eval_sub.add_parser(
-        "reflex",
-        help="The memory reflex read by arm: qualifying failures, what was served, "
-        "and the lexical and citation used-verdicts on what landed",
-    )
-    eval_reflex_parser.add_argument(
-        "--reflex", type=Path, default=None,
-        help="Reflex ledger dir (default: ~/.thalamus/reflex)",
-    )
-    eval_reflex_parser.add_argument(
-        "--traces", type=Path, default=None, help="Trace tap dir (default: ~/.thalamus/traces)"
-    )
-    eval_reflex_parser.add_argument(
-        "--url", default=DEFAULT_URL,
-        help="Gremlin endpoint for the verdict half; the ledger half renders without it",
-    )
-
-    eval_vocabulary_parser = eval_sub.add_parser(
-        "vocabulary",
-        help="Replay real reflex anchor sets through every retrieval-vocabulary tool "
-        "and report what each returns: rows, characters and time per call, and per "
-        "anchor set the totals a job cap has to sit under",
-    )
-    eval_vocabulary_parser.add_argument(
-        "--reflex", type=Path, default=None,
-        help="Reflex ledger dir the anchor sets come from (default: ~/.thalamus/reflex)",
-    )
-    eval_vocabulary_parser.add_argument(
-        "--limit", type=int, default=40, help="Most recent distinct anchor sets to replay"
-    )
-    eval_vocabulary_parser.add_argument(
-        "--scope", default=MAIN_SCOPE, help="Scope to retrieve in (default: main)"
-    )
-    eval_vocabulary_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
     # Pin commands — "the process is the pin"; spawn is the console's
     init_parser = subparsers.add_parser(
@@ -1367,7 +1255,7 @@ def _main():
 
     # Plugins add theirs after core's, so a name core already uses is refused as that
     # plugin's failure rather than shadowing the core command.
-    plugins.load().register_commands(subparsers)
+    plugins.loaded().register_commands(subparsers, groups={"eval": eval_sub})
 
     args = parser.parse_args()
     # Long-running commands (bootstrap, extract) are routinely piped to a log; without
@@ -1414,8 +1302,6 @@ def _main():
         _cmd_snapshot(args)
     elif args.command == "eval":
         _cmd_eval(args, eval_parser)
-    elif args.command == "reflex":
-        _cmd_reflex(args)
     elif args.command == "init":
         _cmd_init(args)
     elif args.command == "status":
@@ -2354,73 +2240,6 @@ def _cmd_delegate(args):
         f"{usage.output_tokens if usage.output_tokens is not None else '?'} out"
     )
     print(f"{args.scope} -> {result.harness}/{result.model} ({counts}) -> {result.output}")
-
-def _cmd_reflex(args):
-    """The hook's worker: everything it prints is injected, so it prints the digest or nothing."""
-    from thalamus.harness import reflex_worker
-    from thalamus.harness.reflex import fire, reflex_dir, shadow
-
-    if getattr(args, "job_tools", None):
-        from thalamus.harness.reflex_channel import serve_tools
-
-        serve_tools(args.job_tools)
-        return
-    if args.work:
-        reflex_worker.work(
-            reflex_dir(args.reflex_dir),
-            connect_graph=lambda: connect(args.url),
-            close_graph=close_connection,
-        )
-        return
-    if args.sweep:
-        counts = reflex_worker.sweep(reflex_dir(args.reflex_dir))
-        print(", ".join(f"{count} {outcome}" for outcome, count in counts.items()))
-        return
-    if not args.session_id:
-        print("reflex: --session-id is required", file=sys.stderr)
-        sys.exit(2)
-    if args.deliver:
-        digest = reflex_worker.deliver(
-            reflex_dir(args.reflex_dir), session_id=args.session_id, agent_id=args.agent_id,
-            event=args.event,
-        )
-        if digest:
-            print(digest)
-        return
-    if args.response_file is None:
-        print("reflex: --response-file is required", file=sys.stderr)
-        sys.exit(2)
-    try:
-        observed = args.response_file.read_text(encoding="utf-8", errors="replace")
-    except OSError as exc:
-        print(f"reflex: {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    if args.shadow:
-        shadow(session_id=args.session_id, observed=observed,
-               agent_id=args.agent_id, event=args.event)
-        return
-
-    graph = connect(args.url)
-    try:
-        digest = fire(
-            graph,
-            session_id=args.session_id,
-            observed=observed,
-            scope=args.scope,
-            agent_id=args.agent_id,
-            agent_type=args.agent_type,
-            cwd=args.cwd,
-            tool_name=args.tool_name,
-            event=args.event,
-            transcript=args.transcript,
-            tool_use_id=args.tool_use_id,
-            worker_url=args.url if args.url != DEFAULT_URL else "",
-        )
-    finally:
-        close_connection(graph)
-    if digest:
-        print(digest)
 
 
 def _report_delegation_plan(prepared) -> None:
@@ -3610,33 +3429,6 @@ def _cmd_eval(args, eval_parser):
                 conditioning_base=args.conditioning, traces_base=args.traces
             ).render()
         )
-    elif getattr(args, "eval_command", None) == "reflex":
-        from thalamus.eval.reflex import reflex_report
-
-        # The ledger half never needs the graph; the verdict half says so when it
-        # cannot have it, rather than turning a report into a connection error.
-        try:
-            graph = connect(args.url)
-        except GraphUnavailable:
-            graph = None
-        try:
-            print(reflex_report(
-                reflex_base=args.reflex, traces_base=args.traces, g=graph
-            ).render())
-        finally:
-            if graph is not None:
-                close_connection(graph)
-    elif getattr(args, "eval_command", None) == "vocabulary":
-        from thalamus.contract.manifest import available_scopes
-        from thalamus.eval.vocabulary import anchor_sets, measure
-
-        sets = anchor_sets(args.reflex, args.limit)
-        graph = connect(args.url)
-        try:
-            knowledge = [s for s in available_scopes() if s != args.scope]
-            print(measure(graph, sets, args.scope, knowledge).render())
-        finally:
-            close_connection(graph)
     elif getattr(args, "eval_command", None) == "pins":
         from thalamus.contract.manifest import available_scopes
         from thalamus.eval.cost import load_engaged, load_pins

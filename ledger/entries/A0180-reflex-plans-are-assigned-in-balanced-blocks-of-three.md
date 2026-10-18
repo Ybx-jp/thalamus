@@ -37,7 +37,31 @@ none
 
 ## Verdicts
 
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "PLANS" =sha256:b4cf29d99104d2a403f256a6a5c5dbfa3cb9c90f1335009f6ac75d52114c325f
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "assign_plan" =sha256:e49247251370b2f26e7b8567829aa332adc6f549be8340e8c5095d560818e5ba
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "_ASSIGNED_OUTCOMES" =sha256:0b272149f49bd66110a807a870d42915b5e95782a846067419557cb7a3571151
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex.py § "PLANS" =sha256:b4cf29d99104d2a403f256a6a5c5dbfa3cb9c90f1335009f6ac75d52114c325f
+  note: src/thalamus/harness/reflex.py moved into the thalamus-reflex plugin package as reflex.py with PLANS unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex.py § "assign_plan" =sha256:e49247251370b2f26e7b8567829aa332adc6f549be8340e8c5095d560818e5ba
+  note: src/thalamus/harness/reflex.py moved into the thalamus-reflex plugin package as reflex.py with assign_plan unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex.py § "_ASSIGNED_OUTCOMES" =sha256:0b272149f49bd66110a807a870d42915b5e95782a846067419557cb7a3571151
+  note: src/thalamus/harness/reflex.py moved into the thalamus-reflex plugin package as reflex.py with _ASSIGNED_OUTCOMES unchanged, so the assertion is unaffected
+
 ## References
 
 - docs/cli.md · standing · cites-as-live
-- src/thalamus/harness/reflex.py · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/reflex.py · standing · cites-as-live

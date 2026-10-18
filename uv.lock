@@ -14,6 +14,7 @@ resolution-markers = [
 members = [
     "thalamus-ingest",
     "thalamus-memory",
+    "thalamus-reflex",
 ]
 
 [[package]]
@@ -2999,6 +3000,7 @@ nli = [
 [package.dev-dependencies]
 plugins = [
     { name = "thalamus-ingest" },
+    { name = "thalamus-reflex" },
 ]
 
 [package.metadata]
@@ -3027,7 +3029,26 @@ requires-dist = [
 provides-extras = ["dev", "frames", "nli"]
 
 [package.metadata.requires-dev]
-plugins = [{ name = "thalamus-ingest", editable = "packages/thalamus-ingest" }]
+plugins = [
+    { name = "thalamus-ingest", editable = "packages/thalamus-ingest" },
+    { name = "thalamus-reflex", editable = "packages/thalamus-reflex" },
+]
+
+[[package]]
+name = "thalamus-reflex"
+source = { editable = "packages/thalamus-reflex" }
+dependencies = [
+    { name = "fastmcp" },
+    { name = "gremlinpython" },
+    { name = "thalamus-memory" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastmcp", specifier = ">=3.4.0" },
+    { name = "gremlinpython", specifier = ">=3.7,<3.8" },
+    { name = "thalamus-memory", editable = "." },
+]
 
 [[package]]
 name = "threadpoolctl"

@@ -41,9 +41,10 @@ from pathlib import Path
 from gremlin_python.process.graph_traversal import GraphTraversalSource
 
 from thalamus.contract.manifest import available_scopes
-from thalamus.harness import agentic, quick, reflex_channel, reflex_note, reflex_queue
+from thalamus.harness import quick
+from thalamus_reflex import agentic, reflex_channel, reflex_note, reflex_queue
 from thalamus.harness.extraction import ExtractionError
-from thalamus.harness.reflex import (
+from thalamus_reflex.reflex import (
     ARM_AGENTIC,
     ReflexBudget,
     _allocate_pointer,
@@ -56,7 +57,7 @@ from thalamus.harness.reflex import (
     render_pointer,
     DIGEST_CHAR_CAP,
 )
-from thalamus.harness.reflex_queue import SESSION_AGENT, append_outcome, key_dir, locked
+from thalamus_reflex.reflex_queue import SESSION_AGENT, append_outcome, key_dir, locked
 from thalamus.harness.retrieval import Job
 from thalamus.harness.transcripts import excerpt_for_job, tool_calls_after, trigger_text
 from thalamus.substrate import vocabulary

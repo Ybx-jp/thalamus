@@ -37,6 +37,14 @@ none
 
 ## Verdicts
 
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: tests/test_hook_scripts.py § "test_no_hook_reopens_its_stdin_by_path" =sha256:aa50412aaebbc1586ed975b550ac1409fd9e3fccd6540103974443d6183a5903
+  artifact: sha256:92932bbb8f66b444fdfb6ae54171c173d917e7b37f9901d68f1a8f906cbaf115
+  note: propagated from a moved ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: tests/test_hook_scripts.py § "test_no_hook_reopens_its_stdin_by_path" =sha256:92932bbb8f66b444fdfb6ae54171c173d917e7b37f9901d68f1a8f906cbaf115
+  note: the sweep reads every plugin's hooks under packages/*/src/*/hooks/ beside core's, so the two reflex scripts that moved into thalamus-reflex stay under the same test; the assertion is unaffected
+
 ## References
 
-- src/thalamus/harness/hooks/claude-code/reflex-pointer-tap.sh · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/hooks/claude-code/reflex-pointer-tap.sh · standing · cites-as-live

@@ -10,21 +10,21 @@ renders what came back as a digest that says it arrived unsolicited.
 
 Each firing runs one of three plans, assigned at random and blocked within the session
 by `assign_plan` (A0180, cites-as-live), each as one job of the retrieval compiler
-(`harness/retrieval.py`), which mints the handles and counts what the plan did. *Word match* is `recall()` fed
-with the extracted anchors. *Propagation* (`harness/propagation.py`) serves word
+(`thalamus.harness.retrieval`), which mints the handles and counts what the plan did. *Word match* is `recall()` fed
+with the extracted anchors. *Propagation* (`propagation.py`) serves word
 match's hits and then the `MAX_CANDIDATES` strongest nodes a two-hop spread from them
 over the graph's edges reached, each of those lines naming the edge it came over
 (A0177, cites-as-live). No model is in the
 loop of either: candidates are never paraphrased, so nothing here can re-voice a
-recorded decision into an instruction for the reader. *Agentic* (`harness/agentic.py`)
-is a model choosing the calls, Haiku or the local model (`harness/reflex_channel.py`);
+recorded decision into an instruction for the reader. *Agentic* (`agentic.py`)
+is a model choosing the calls, Haiku or the local model (`reflex_channel.py`);
 it is too slow for the hook to wait on, so its firing is queued and a detached worker's
 digest reaches the agent through the carrier on a later call
-(`harness/reflex_worker.py`) (A0191, cites-as-live). The model chooses records and
+(`reflex_worker.py`) (A0191, cites-as-live). The model chooses records and
 never rewrites them: its lines are built from the rows it chose, and the
 records are quoted verbatim like every other plan's. Its one piece of its own prose, a
 note on what the kept records establish, is checked and delivered as an arm of its own
-(`harness/reflex_note.py`). What enters the agent's context is a
+(`reflex_note.py`). What enters the agent's context is a
 digest: one line per candidate — a short handle (`R3.1`), its kind, tier, date, its
 own first sentence and the anchors it matched — sized in characters under
 `DIGEST_CHAR_CAP`. The candidates themselves are quoted verbatim through the reader's
@@ -64,8 +64,8 @@ from pathlib import Path
 
 from thalamus.contract.manifest import available_scopes
 from thalamus.contract.ontology import MAIN_SCOPE
-from thalamus.harness import propagation, reflex_channel, reflex_queue
-from thalamus.harness.extraction import _tokens
+from thalamus_reflex import propagation, reflex_channel, reflex_queue
+from thalamus.harness.extraction import word_forms
 from thalamus.harness.retrieval import Caps, Job
 from thalamus.harness.transcripts import trigger_text
 from thalamus.substrate import vocabulary
@@ -177,8 +177,8 @@ _NOISE = frozenset(
     }
 )
 
-# Anchors are tokens the ingress floor's tokenizer produces (`extraction._tokens`), so
-# `.`, `/`, `-` and `_` stay in-class and `harness/reflex.py` survives as one compound
+# Anchors are tokens the ingress floor's tokenizer produces (`extraction.word_forms`), so
+# `.`, `/`, `-` and `_` stay in-class and `harness/retrieval.py` survives as one compound
 # token with its parts emitted beside it. The dedup key is the sorted tuple of a
 # token's word parts — `tool-calls` and `tool calls` both key as `calls tool`.
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -201,9 +201,9 @@ def extract_anchors(text: str) -> list[str]:
     """
     # A separator left dangling by the character that cut the token — `).read_text()`
     # yields `.read_text` — is not part of the identifier.
-    tokens = {token.strip("./-_") for token in _tokens(text)} - {""}
+    tokens = {token.strip("./-_") for token in word_forms(text)} - {""}
     # A path's last two segments beside the whole path: a claim names a file the way
-    # a session spoke of it, which is `harness/reflex.py` far more often than the
+    # a session spoke of it, which is `harness/retrieval.py` far more often than the
     # absolute spelling a traceback prints.
     for token in list(tokens):
         if "/" in token:

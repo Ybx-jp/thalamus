@@ -1,9 +1,9 @@
 """The memory reflex's queue — where a firing that needs a model waits.
 
 Word match and propagation serve from the trigger hook itself. A firing assigned the
-agentic plan (`harness/agentic.py`) cannot: a model loop takes tens of seconds, and a
+agentic plan (`agentic.py`) cannot: a model loop takes tens of seconds, and a
 synchronous hook holds the agent for as long as it runs. The trigger hook appends a
-job here and returns; a detached worker (`harness/reflex_worker.py`) runs it; the
+job here and returns; a detached worker (`reflex_worker.py`) runs it; the
 result waits in a ready directory until the agent's next tool call, where the carrier
 hook delivers it.
 
@@ -33,7 +33,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from thalamus.harness.reflex_channel import thalamus_argv
+from thalamus_reflex.reflex_channel import thalamus_argv
 
 # The agent key of a firing from the session itself, which carries no `agent_id`.
 SESSION_AGENT = "session"

@@ -41,7 +41,31 @@ none
 
 ## Verdicts
 
+- 2026-10-18T16:14:12-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/harness/reflex_channel.py § "command" =sha256:2bbf94c55931ae8672536742ac621e70994de8564c01c8c18bac7cec3a151697
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/harness/reflex_channel.py § "DENIED_TOOLS" =sha256:e55e63cb86b24576b2c3ba95b789b549f178aa5c24d89030457800d22a5bbf6b
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/harness/reflex_channel.py § "run_loop" =sha256:1e3004636982992503cdc3aecb4dd3175358458a85886da6c7a1201656127f99
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex_channel.py § "command" =sha256:2bbf94c55931ae8672536742ac621e70994de8564c01c8c18bac7cec3a151697
+  note: src/thalamus/harness/reflex_channel.py moved into the thalamus-reflex plugin package as reflex_channel.py with command unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex_channel.py § "DENIED_TOOLS" =sha256:e55e63cb86b24576b2c3ba95b789b549f178aa5c24d89030457800d22a5bbf6b
+  note: src/thalamus/harness/reflex_channel.py moved into the thalamus-reflex plugin package as reflex_channel.py with DENIED_TOOLS unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex_channel.py § "run_loop" =sha256:1e3004636982992503cdc3aecb4dd3175358458a85886da6c7a1201656127f99
+  note: src/thalamus/harness/reflex_channel.py moved into the thalamus-reflex plugin package as reflex_channel.py with run_loop unchanged, so the assertion is unaffected
+
 ## References
 
 - docs/cli.md · standing · cites-as-live
-- src/thalamus/harness/reflex_channel.py · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/reflex_channel.py · standing · cites-as-live

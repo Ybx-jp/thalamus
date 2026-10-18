@@ -254,6 +254,7 @@ src/thalamus/
   pulse/       live telemetry dashboard
 packages/      plugins — each its own distribution, depending on the core alone
   thalamus-ingest/   curated ingestion: `thalamus ingest`, `thalamus backfill-chunks`
+  thalamus-reflex/   the memory reflex: its two hooks, `thalamus reflex`, `eval reflex|vocabulary`
 arch/          model.yaml — the committed architecture model the gates check against
 config/        expert manifests
 ledger/        the claims ledger — one entry per documented commitment, pinned to the
@@ -280,11 +281,14 @@ environment satisfies it; `tools/check-packages-install-alone.sh`, run as CI's
 `installs-alone` job, installs the core alone and each plugin with only the core, and
 imports every module the plugin ships.
 
-A plugin adds commands through the `register_commands` hook in
-`src/thalamus/plugins.py`, declared under the `thalamus` entry-point group. Its tests
-live in `tests/` beside the core's, so they run under the same isolation fixtures. A
-new extension point (MCP tools, hooks, skills) is added with the first plugin that
-needs it.
+A plugin registers through hooks in `src/thalamus/plugins.py`, declared under the
+`thalamus` entry-point group: `register_commands` for subcommands, top-level or under
+the core's `eval`, and `register_hooks` for hook scripts, which `thalamus init` wires
+beside the core's. A hook script sits under its package's `hooks/<harness>/` and
+sources the core's `resolve-scope.sh` through the path `init` records in
+`~/.thalamus/hook-library`. A plugin's tests live in `tests/` beside the core's, so
+they run under the same isolation fixtures. A new extension point (MCP tools, skills)
+is added with the first plugin that needs it.
 
 The layering rule that matters: **`substrate/` sits below the contract.** It knows
 nodes and edges. It does not know what an expert is, what a trust tier means, or which

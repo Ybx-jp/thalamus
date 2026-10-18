@@ -66,10 +66,24 @@ none
 - 2026-09-24T23:06:54-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:55e36f47f67e88eeedc9235d80601a79a2c9f128e744eaeb4c87b16e0194b106
   note: HOOK_WIRING gained a PostToolUseFailure row for reflex-pointer-tap.sh with no matcher; reflex.sh's rows on PostToolUse and PostToolUseFailure with matcher Bash are unchanged, so the assertion is unaffected
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:55e36f47f67e88eeedc9235d80601a79a2c9f128e744eaeb4c87b16e0194b106
+  artifact: sha256:5b0c2c094f0ef72fdeb201d5ebef4742ff4503e0a8d092f797f1d072c7585b49
+  note: propagated from a moved ground
 
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/hooks/claude-code/reflex.sh § "event" =sha256:e231cfa8a86a72cc9313e42e4601bfca8cbcc99345fe471b9a8a9c716d848816
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/plugin.py § "register_hooks" =sha256:16ea8a0d510a757c3aab50a1f1dc89b29a0e02ac65937f30c7bf16c55967f919
+  note: the reflex's wiring moved out of core's HOOK_WIRING into the thalamus-reflex plugin's register_hooks, which wires reflex.sh on Bash under both PostToolUse and PostToolUseFailure as the table did, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/hooks/claude-code/reflex.sh § "event" =sha256:e231cfa8a86a72cc9313e42e4601bfca8cbcc99345fe471b9a8a9c716d848816
+  note: src/thalamus/harness/hooks/claude-code/reflex.sh moved into the thalamus-reflex plugin package as hooks/claude-code/reflex.sh with event unchanged, so the assertion is unaffected
 
 ## References
 
 - docs/cli.md · standing · cites-as-live
-- src/thalamus/harness/hooks/claude-code/reflex.sh · standing · cites-as-live
-- src/thalamus/harness/reflex.py · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/hooks/claude-code/reflex.sh · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/reflex.py · standing · cites-as-live
