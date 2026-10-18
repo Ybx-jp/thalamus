@@ -190,10 +190,27 @@ citable address.
 thalamus schema                    # the session graph JSON schema
 thalamus contract check            # audit the live graph against the federation contract
                                    #   violations exit 1; advisories print and do not
+thalamus contract check --transcripts  # Claude Code transcripts against what distillation
+                                   #   assumes of their format; any finding exits 1
 thalamus pulse                     # live telemetry dashboard over the eval loop
 thalamus graph up|stop|ps          # the graph server, from the compose file the package ships
 thalamus snapshot                  # flush the in-memory graph to disk now
 ```
+
+Claude Code's transcript format is undocumented, and the readers that distil it skip
+whatever they do not recognise, so a release that changes it makes sessions distil
+thinner or credits the operator with text the harness wrote, and nothing fails.
+`contract check --transcripts` checks every transcript under `~/.claude/projects`, and
+every session the archive holds twice, against the rules in
+`harness/transcript_format.py`: each rule is one thing a reader depends on, and a record
+the readers take for the operator's words is checked for any discriminator outside the
+set measured as meaning that.<!-- (A0230, cites-as-live) -->
+Every Claude Code session `extract` distils is checked against the same rules as it is
+distilled; a finding is printed to stderr and appended to
+`~/.thalamus/logs/transcript-format.log`, and the distillation goes
+on.<!-- (A0231, cites-as-live) -->
+A finding is a decision to make: what the changed field means, and whether the reader or
+the rule's measured set is what changes.
 
 ## Running experts
 
