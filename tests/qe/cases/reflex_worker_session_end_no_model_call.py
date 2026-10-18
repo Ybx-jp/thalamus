@@ -57,7 +57,7 @@ _SITE = "tests/qe/cases/reflex_worker_session_end_no_model_call.py::run"
 _PROBE = r"""
 import json, sys
 from pathlib import Path
-from thalamus.harness import agentic, reflex_queue, reflex_worker
+from thalamus_reflex import agentic, reflex_queue, reflex_worker
 from thalamus.harness.agents import cli_for
 
 dead_id, live_id, root = sys.argv[1], sys.argv[2], Path(sys.argv[3])
@@ -188,7 +188,7 @@ def run() -> Finding | None:
                     "alive, against a real (temporary) session registry"
                 ),
                 witness=f"data={data!r}",
-                site="src/thalamus/harness/reflex_worker.py::session_alive",
+                site="packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py::session_alive",
             )
         if data["outcome_dead"] != "session_end":
             return Finding(
@@ -198,7 +198,7 @@ def run() -> Finding | None:
                     "as session_end"
                 ),
                 witness=f"data={data!r}",
-                site="src/thalamus/harness/reflex_worker.py::run_job",
+                site="packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py::run_job",
             )
         if data["model_calls"] != 1:
             return Finding(
@@ -210,7 +210,7 @@ def run() -> Finding | None:
                     "contributed zero"
                 ),
                 witness=f"data={data!r}",
-                site="src/thalamus/harness/reflex_worker.py::run_job",
+                site="packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py::run_job",
             )
         return None
 

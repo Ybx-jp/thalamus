@@ -2,7 +2,7 @@
 documented candidate count and keep the digest the agent receives under
 `DIGEST_CHAR_CAP` — regression guard for issue #251.
 
-`harness/reflex.py` used to document `MAX_CANDIDATES = 3` as "how many candidates it
+`thalamus_reflex/reflex.py` used to document `MAX_CANDIDATES = 3` as "how many candidates it
 may serve" and pass it straight through as `recall(..., limit=MAX_CANDIDATES, ...)`.
 `limit` only ever bounded `substrate.reader.recall`'s mixed session/knowledge window —
 chunk results are ranked in a window of their own, capped by `_CHUNK_WINDOW_CAP = 2`,
@@ -18,7 +18,7 @@ per-firing bound is now a character cap on the digest — `DIGEST_CHAR_CAP` — 
 than a block count, and the chunk tier stays in the candidate set: `recall()` still
 returns up to `MAX_CANDIDATES + _CHUNK_WINDOW_CAP` results, `fire()` still writes all
 of them to the pointer file, and only how much of their index the digest can afford is
-now bounded. `harness/reflex.py`'s comment above `MAX_ANCHORS`/`MAX_CANDIDATES` states
+now bounded. `thalamus_reflex/reflex.py`'s comment above `MAX_ANCHORS`/`MAX_CANDIDATES` states
 this composition directly: a firing selects up to `MAX_CANDIDATES + 2` candidates,
 the `2` being `substrate/reader.py`'s `_CHUNK_WINDOW_CAP`. This case now asserts that
 selection count against the documentation that describes it, and asserts the settled
@@ -108,8 +108,9 @@ def run() -> Finding | None:
     )
     from thalamus.contract.manifest import available_scopes  # noqa: PLC0415
     from thalamus.contract.ontology import MAIN_SCOPE, vid  # noqa: PLC0415
-    from thalamus.harness import reflex, retrieval  # noqa: PLC0415
-    from thalamus.harness.reflex import (  # noqa: PLC0415
+    from thalamus.harness import retrieval  # noqa: PLC0415
+    from thalamus_reflex import reflex  # noqa: PLC0415
+    from thalamus_reflex.reflex import (  # noqa: PLC0415
         DIGEST_CHAR_CAP,
         MAX_CANDIDATES,
         extract_anchors,
@@ -299,7 +300,7 @@ def run() -> Finding | None:
             )
 
         # DOC/CODE DRIFT CHECK: the comment above MAX_ANCHORS/MAX_CANDIDATES in
-        # harness/reflex.py documents a firing selecting "up to MAX_CANDIDATES + 2
+        # thalamus_reflex/reflex.py documents a firing selecting "up to MAX_CANDIDATES + 2
         # candidates" because the chunk tier is ranked in a window of its own
         # (`_CHUNK_WINDOW_CAP` in substrate/reader.py) and appended outside
         # `recall()`'s `limit` before the mixed session/knowledge window is
@@ -314,7 +315,7 @@ def run() -> Finding | None:
                 failure_class=FailureClass.DOC_CODE_DRIFT,
                 summary=(
                     "reflex.fire()'s recall() call selected a candidate count that "
-                    "disagrees with what harness/reflex.py's own comment documents: "
+                    "disagrees with what thalamus_reflex/reflex.py's own comment documents: "
                     "the chunk tier's _CHUNK_WINDOW_CAP is supposed to be appended "
                     "outside the mixed window's MAX_CANDIDATES limit, so a firing "
                     "whose anchors match exactly _CHUNK_WINDOW_CAP chunks and "
@@ -325,7 +326,7 @@ def run() -> Finding | None:
                     f"documented_max=MAX_CANDIDATES({MAX_CANDIDATES})"
                     f"+_CHUNK_WINDOW_CAP({_CHUNK_WINDOW_CAP})={documented_max}"
                 ),
-                site="src/thalamus/harness/reflex.py (comment above MAX_ANCHORS)",
+                site="packages/thalamus-reflex/src/thalamus_reflex/reflex.py (comment above MAX_ANCHORS)",
             )
 
         if digest == "":
@@ -339,7 +340,7 @@ def run() -> Finding | None:
                     "DIGEST_CHAR_CAP"
                 ),
                 witness=f"candidates_selected={len(results)} digest={digest!r}",
-                site="src/thalamus/harness/reflex.py::fire",
+                site="packages/thalamus-reflex/src/thalamus_reflex/reflex.py::fire",
             )
 
         if len(digest) > DIGEST_CHAR_CAP:
@@ -356,7 +357,7 @@ def run() -> Finding | None:
                     f"digest_len={len(digest)} DIGEST_CHAR_CAP={DIGEST_CHAR_CAP} "
                     f"candidates_selected={len(results)}"
                 ),
-                site="src/thalamus/harness/reflex.py::fire",
+                site="packages/thalamus-reflex/src/thalamus_reflex/reflex.py::fire",
             )
 
         # Regression guard on the other half of the settled repair: the chunk tier
@@ -376,7 +377,7 @@ def run() -> Finding | None:
                     "make the digest fit"
                 ),
                 witness=f"missing={sorted(missing_from_pointer)!r}",
-                site="src/thalamus/harness/reflex.py::render_pointer",
+                site="packages/thalamus-reflex/src/thalamus_reflex/reflex.py::render_pointer",
             )
 
         return None

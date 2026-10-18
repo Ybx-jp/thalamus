@@ -24,7 +24,7 @@ apart from "nothing in this session fires a second time no matter who asks", whi
 report a dead reflex as a working one.
 
 **Shown capable of going red.** Comment out the `if len(fresh) < MIN_NEW_ANCHORS:` guard
-(or empty the `seen` set unconditionally) in `src/thalamus/harness/reflex.py::fire` and
+(or empty the `seen` set unconditionally) in `packages/thalamus-reflex/src/thalamus_reflex/reflex.py::fire` and
 rerun: the second, identical firing re-queries the graph and returns a second digest;
 this case then reports `INVARIANT_FALSIFIED` with that digest as the witness. `qe`
 does not write `src/thalamus/harness/`, so the mutation is not carried in the case.
@@ -55,7 +55,8 @@ def _load_fixture():
 
 
 def run() -> Finding | None:
-    from thalamus.harness import reflex, retrieval  # noqa: PLC0415
+    from thalamus.harness import retrieval  # noqa: PLC0415
+    from thalamus_reflex import reflex  # noqa: PLC0415
 
     tr = _load_fixture()
     original_recall = retrieval.recall
@@ -108,7 +109,7 @@ def run() -> Finding | None:
                     "failure re-queries the graph on every retry"
                 ),
                 witness=f"second_call_result={second!r}",
-                site="src/thalamus/harness/reflex.py::fire",
+                site="packages/thalamus-reflex/src/thalamus_reflex/reflex.py::fire",
             )
     finally:
         retrieval.recall = original_recall

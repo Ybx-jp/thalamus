@@ -19,7 +19,7 @@ cannot be trusted to separate "at or over" from "under", and a refusal at the ce
 would say nothing about precision, only about the check firing on everything.
 
 **Shown capable of going red.** Comment out the `if spent >= SESSION_CHAR_BUDGET:` guard
-in `src/thalamus/harness/reflex.py::fire` and rerun: `fire()` proceeds to call `recall`
+in `packages/thalamus-reflex/src/thalamus_reflex/reflex.py::fire` and rerun: `fire()` proceeds to call `recall`
 and, given any matching content, returns a non-empty digest past the ceiling; this case
 then reports `INVARIANT_FALSIFIED` with that digest's length as the witness. `qe` does
 not write `src/thalamus/harness/`, so the mutation is not carried in the case.
@@ -45,7 +45,7 @@ _OBSERVED = (
 
 
 def run() -> Finding | None:
-    from thalamus.harness.reflex import (  # noqa: PLC0415
+    from thalamus_reflex.reflex import (  # noqa: PLC0415
         SESSION_CHAR_BUDGET,
         Firing,
         ReflexBudget,
@@ -107,7 +107,7 @@ def run() -> Finding | None:
                     "why the reflex stopped injecting"
                 ),
                 witness=f"refusal detail={last.detail!r}",
-                site="src/thalamus/harness/reflex.py::ReflexBudget.refusal",
+                site="packages/thalamus-reflex/src/thalamus_reflex/reflex.py::ReflexBudget.refusal",
             )
 
         return Finding(
@@ -123,7 +123,7 @@ def run() -> Finding | None:
                 f"digest_len={len(digest)} outcome={last.outcome if last else None!r} "
                 f"pointers={[str(p) for p in pointers]!r}"
             ),
-            site="src/thalamus/harness/reflex.py::fire",
+            site="packages/thalamus-reflex/src/thalamus_reflex/reflex.py::fire",
         )
 
 

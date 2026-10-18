@@ -33,7 +33,7 @@ still `session-end.sh`'s question — must the harness's exiting or continuing p
 wait on expensive work — but the text scan above cannot answer it for either, and
 applying it naively would be wrong twice over:
 
-- `hooks/claude-code/reflex.sh`'s enqueuing path runs `uv run ... thalamus reflex ...`
+- `thalamus_reflex/hooks/claude-code/reflex.sh`'s enqueuing path runs `uv run ... thalamus reflex ...`
   in the foreground, matching `_HEAVY` — and that is *correct*: the call appends to
   `pending.jsonl` and returns, cheap by design (docs/14 §4). The actual expensive
   work — the local model's loop, tens of seconds — is spawned from *inside* that
@@ -48,14 +48,14 @@ applying it naively would be wrong twice over:
   hook's process group or session, the same property `nohup`/`setsid` give a bash
   hook, and the one lab/050's race turned on: an interactive `/exit` does not stop a
   running hook's children, but a session-level signal could reach a non-detached one).
-- `hooks/claude-code/reflex-pointer-tap.sh` (the carrier) also runs a foreground
+- `thalamus_reflex/hooks/claude-code/reflex-pointer-tap.sh` (the carrier) also runs a foreground
   `uv run ... thalamus reflex --deliver ...`, and that too is correct: `--deliver`
   reads ready results and returns their digest, no model call
-  (`cli.py::_cmd_reflex`). The carrier never calls `spawn_worker()` — only `fire()`'s
+  (`thalamus_reflex/commands.py::reflex`). The carrier never calls `spawn_worker()` — only `fire()`'s
   agentic branch does — so there is no child spawn to check on the carrier's side.
   What the carrier could get wrong instead is a wiring drift: `--deliver` silently
   routed to `reflex_worker.work()` (the worker's own blocking loop) rather than
-  `reflex_worker.deliver()`. That is checked directly against `cli._cmd_reflex`.
+  `reflex_worker.deliver()`. That is checked directly against `commands.reflex`.
 """
 
 from __future__ import annotations
@@ -202,7 +202,7 @@ def _spawn_worker_is_detached() -> Finding | None:
     and PATH is pointed at a stub script that reports its own pid and then sleeps —
     standing in for the local model's tens-of-seconds loop.
     """
-    from thalamus.harness import reflex_queue  # noqa: PLC0415
+    from thalamus_reflex import reflex_queue  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -255,7 +255,7 @@ def _spawn_worker_is_detached() -> Finding | None:
                     "would be waiting on the worker instead of returning immediately"
                 ),
                 witness=f"elapsed={elapsed:.2f}s",
-                site="src/thalamus/harness/reflex_queue.py::spawn_worker",
+                site="packages/thalamus-reflex/src/thalamus_reflex/reflex_queue.py::spawn_worker",
             )
 
         deadline = time.monotonic() + 5.0
@@ -293,7 +293,7 @@ def _spawn_worker_is_detached() -> Finding | None:
                         "channel, measured') could reach the worker too"
                     ),
                     witness=f"child_sid={child_sid} own_sid={own_sid}",
-                    site="src/thalamus/harness/reflex_queue.py::spawn_worker",
+                    site="packages/thalamus-reflex/src/thalamus_reflex/reflex_queue.py::spawn_worker",
                 )
         finally:
             try:
@@ -308,16 +308,15 @@ def _carrier_deliver_never_runs_the_worker_loop() -> Finding | None:
 
     The carrier (`reflex-pointer-tap.sh`) never spawns anything itself — only
     `fire()`'s agentic branch calls `spawn_worker()` — so there is no child to check
-    on its side. What it depends on instead is `cli.py::_cmd_reflex` routing
+    on its side. What it depends on instead is `commands.py::reflex` routing
     `--deliver` to the cheap, synchronous `reflex_worker.deliver()` and never to
     `reflex_worker.work()`, the worker's own blocking model loop: if that ever
     drifted, the carrier's foreground `uv run ... --deliver` call — correct today
     because `--deliver` is cheap — would start waiting on the model loop instead.
     """
-    from thalamus import cli  # noqa: PLC0415
-    from thalamus.harness import reflex_worker  # noqa: PLC0415
+    from thalamus_reflex import commands, reflex_worker  # noqa: PLC0415
 
-    # `_cmd_reflex` does `from thalamus.harness import reflex_worker` at call time,
+    # `commands.reflex` does `from thalamus_reflex import reflex_worker` at call time,
     # which binds the same module object already in `sys.modules` — patching its
     # attributes here reaches that local import too.
     calls: list[str] = []
@@ -339,7 +338,7 @@ def _carrier_deliver_never_runs_the_worker_loop() -> Finding | None:
             work=False, sweep=False, deliver=True, session_id="s1", agent_id="",
             event="PostToolUse", reflex_dir=None, url="",
         )
-        cli._cmd_reflex(args)
+        commands.reflex(args)
     finally:
         reflex_worker.deliver = original_deliver
         reflex_worker.work = original_work
@@ -355,7 +354,7 @@ def _carrier_deliver_never_runs_the_worker_loop() -> Finding | None:
                 "returning a ready digest"
             ),
             witness=f"calls={calls!r}",
-            site="src/thalamus/cli.py::_cmd_reflex",
+            site="packages/thalamus-reflex/src/thalamus_reflex/commands.py::reflex",
         )
     if calls != ["deliver"]:
         return Finding(
