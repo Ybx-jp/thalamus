@@ -340,6 +340,38 @@ def test_command_only_sessions_with_no_work_are_not_remembered(tmp_path):
     assert "no substantive exchange" in results[0].skipped
 
 
+def test_a_compaction_summary_is_not_counted_as_an_operator_turn(tmp_path):
+    """
+    Scenario: A session that compacted once between two typed prompts
+
+    Verifications:
+    - the two prompts count; the summary the compaction wrote in a user record does not
+    - the first prompt is still the operator's
+    """
+    project = tmp_path / "projects" / "proj"
+    _write_transcript(
+        project,
+        "compacted",
+        [
+            {"type": "user", "message": {"content": "the governor is clamping too early"}},
+            {"type": "system", "subtype": "compact_boundary", "content": "Conversation compacted"},
+            {
+                "type": "user",
+                "isCompactSummary": True,
+                "message": {"content": "This session is being continued from a previous "
+                                       "conversation."},
+            },
+            {"type": "user", "message": {"content": "now rerun the clamp test"}},
+        ],
+    )
+
+    facts = transcripts.parse(project / "compacted.jsonl")
+
+    assert facts.prompt_turns == 2
+    assert facts.user_turns == 2
+    assert facts.first_prompt == "the governor is clamping too early"
+
+
 def test_slash_command_sessions_count_as_conversations(tmp_path):
     """
     Scenario: A session driven purely by slash commands (/teach lessons) — its
