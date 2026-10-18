@@ -17,6 +17,8 @@ extractor:
   - python
   # The core's source root, then one per plugin under `packages/`. One import graph
   # across all of them is what lets `arch rules` see a plugin -> plugin edge at all.
+  # Each root added changes what is measured, so it forks the scan key: the `digest`
+  # below is re-recorded with it, and scans either side are not compared.
   roots:
   - src
   - packages/thalamus-ingest/src
@@ -28,7 +30,7 @@ extractor:
   - '**/__pycache__/**'
   - '**/node_modules/**'
   - .venv/**
-  digest: 5b07a95d1463f355ff1542fc5c048fc56213f81a84f786e3f4395f9cf0904fdf
+  digest: ee7c97e5ec61e06f023c6385888f6ef03426ce8c73f2fe5153c34aea74d1428b
 # The second extraction channel: the dependency an HTTP boundary hides. `app.js` reaches
 # `server.py` by issuing requests, so an import-only walk reports the browser surface as
 # absent and publishes a propagation cost over the Python half as a fact about the
