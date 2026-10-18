@@ -39,7 +39,8 @@
 set -euo pipefail
 
 # core's hook library, at the path `thalamus init` recorded (install.HOOK_LIBRARY_RECORD).
-lib="$(cat "$HOME/.thalamus/hook-library" 2>/dev/null)/claude-code/resolve-scope.sh"
+read -r lib 2>/dev/null < "$HOME/.thalamus/hook-library" || lib=""
+lib="$lib/claude-code/resolve-scope.sh"
 if [ ! -f "$lib" ]; then
   mkdir -p "$HOME/.thalamus/logs" 2>/dev/null &&
     printf '%s reflex.sh: no hook library at %s — run `thalamus init`\n' \

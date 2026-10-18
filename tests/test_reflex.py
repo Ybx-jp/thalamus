@@ -825,6 +825,29 @@ def _failed_bash_call(error, is_interrupt=False, **overrides):
 
 
 class TestTheHook:
+    def test_without_the_hook_library_record_it_says_so_and_stays_out_of_the_way(
+            self, tmp_path):
+        """
+        Scenario: a box where the plugin is installed and `thalamus init` has not run
+        since, so `~/.thalamus/hook-library` is absent
+
+        The hook cannot reach the worker, so it records why in hook-failures.log, the
+        record `init --check` reads, and exits 0 without output: a hook that failed
+        the call over its own missing wiring would cost the agent the command.
+        """
+        bin_dir, argv_log, _ = _stub_uv(tmp_path, prints="never")
+
+        result = subprocess.run(
+            [str(HOOK)], input=json.dumps(_bash_call(stdout=PYTEST_FAILURE)),
+            capture_output=True, text=True, timeout=30,
+            env={"HOME": str(tmp_path), "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/local/bin"},
+        )
+
+        assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+        assert not argv_log.exists()
+        log = (tmp_path / ".thalamus" / "logs" / "hook-failures.log").read_text()
+        assert "reflex.sh: no hook library" in log and "run `thalamus init`" in log
+
     def test_a_failure_is_handed_to_the_worker_and_its_answer_injected(self, tmp_path):
         """
         Verifications:
