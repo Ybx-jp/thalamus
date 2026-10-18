@@ -1,6 +1,6 @@
 """The origin recorded for fetched bytes must be where the bytes actually came from.
 
-`fetch()` (`src/thalamus/harness/ingest.py:114-122`) returns `response.read(), location`
+`fetch()` (`packages/thalamus-ingest/src/thalamus_ingest/ingest.py:173-183`) returns `Fetched(payload, location, ...)`
 — the *requested* URL — while `urlopen` follows redirects and `response.url` (which
 names the host that actually answered) is discarded.
 
@@ -48,7 +48,7 @@ class _Target(BaseHTTPRequestHandler):
 
 
 def run() -> Finding | None:
-    from thalamus.harness import ingest as ingest_mod  # noqa: PLC0415
+    from thalamus_ingest import ingest as ingest_mod  # noqa: PLC0415
 
     target_server, target_port = _make_server(_Target)
     target_url = f"http://127.0.0.1:{target_port}/actually-served-here"
@@ -73,7 +73,7 @@ def run() -> Finding | None:
             summary="fetch() raised, so the redirect path was never exercised and this "
                     "case cannot distinguish a correct origin from an untested one",
             witness=f"{type(exc).__name__}: {exc}",
-            site="src/thalamus/harness/ingest.py:114",
+            site="packages/thalamus-ingest/src/thalamus_ingest/ingest.py:173",
         )
     finally:
         for server in (redirect_server, target_server):
@@ -90,7 +90,7 @@ def run() -> Finding | None:
             summary="control failed: the redirect was not followed, so origin==entry is "
                     "correct here and proves nothing about redirect handling",
             witness=f"got {len(payload)} bytes, expected the target's {len(_PAYLOAD)}",
-            site="src/thalamus/harness/ingest.py:119",
+            site="packages/thalamus-ingest/src/thalamus_ingest/ingest.py:179",
         )
 
     if origin == target_url:
@@ -107,7 +107,7 @@ def run() -> Finding | None:
             f"requested={entry_url} served-by={target_url} recorded-origin={origin} "
             f"(body came from the target, proving the redirect was followed)"
         ),
-        site="src/thalamus/harness/ingest.py:120",
+        site="packages/thalamus-ingest/src/thalamus_ingest/ingest.py:181",
     )
 
 
