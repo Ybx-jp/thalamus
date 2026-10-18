@@ -36,6 +36,7 @@ from thalamus.harness import (
     cursor_transcripts,
     extractor_policy,
     extraction,
+    transcript_format,
     transcripts,
 )
 from thalamus.harness import closes as closes_mod
@@ -440,6 +441,12 @@ def _main():
         "--capabilities", action="store_true",
         help="Re-ask the harness CLIs whether the capability declarations still hold. "
         "Reads no graph and makes no model call; needs the CLIs on PATH.",
+    )
+    contract_check_parser.add_argument(
+        "--transcripts", action="store_true",
+        help="Check every Claude Code transcript under ~/.claude/projects, and every "
+        "session the archive holds twice, against what distillation's readers assume "
+        "of the format. Reads no graph and makes no model call.",
     )
     contract_check_parser.add_argument(
         "--experts", action="store_true",
@@ -2186,6 +2193,19 @@ def _cmd_extract(args):
             # scanning at all — `report_secrets` is the consumer, on stderr and in
             # ~/.thalamus/logs/secret-scan.log.
             report_secrets(secrets, f"session {facts.session_id[:8]} transcript")
+            # The first session a changed Claude Code release writes is checked as it
+            # is distilled, so the release is caught by the first transcript it
+            # writes; codex and Cursor transcripts have no rules yet.
+            if args.harness == "claude":
+                try:
+                    format_report = transcript_format.check_transcript(facts.path)
+                except OSError:
+                    # The bytes are already retained; a check that cannot reread them
+                    # has nothing to report and no business ending the distillation.
+                    format_report = None
+                if format_report is not None:
+                    transcript_format.report_findings(
+                        format_report, f"session {facts.session_id[:8]}")
             # A Cursor session's ingress evidence lives outside its transcript, so the
             # transcript alone would not reach what the floor judged.
             transcripts.retain_ingress_receipt(facts)
@@ -3350,6 +3370,51 @@ def _report_capabilities():
     print("Capability declarations OK — every one re-asked and confirmed.")
 
 
+def _report_transcript_format():
+    """Check the transcripts on disk against the readers' assumptions, denominators shown.
+
+    Per version, because a finding is a fact about a release: the version a finding
+    first appears in is the one whose changelog says what moved. Any finding, in a
+    transcript or a snapshot pair, exits 1 (A0230, cites-as-live).
+    """
+    files = [path for paths in transcripts.discover().values() for path in paths]
+    by_version: dict[str, int] = {}
+    findings: list[transcript_format.Finding] = []
+    flagged = 0
+    for path in files:
+        report = transcript_format.check_transcript(path)
+        for version in report.versions or {"(no version)"}:
+            by_version[version] = by_version.get(version, 0) + 1
+        if report.findings:
+            flagged += 1
+            print(f"  ✗ {path}")
+            for line in transcript_format.summarise(report.findings):
+                print(f"      {line}")
+            findings += report.findings
+    pairs, broken = transcript_format.check_snapshots()
+    for line in broken:
+        print(f"  ✗ compaction: {line}")
+
+    newest = sorted(by_version, key=_version_key)[-3:]
+    print(f"\nChecked {len(files)} transcript(s) against {len(transcript_format.RULES)} "
+          f"rule(s); newest versions seen: {', '.join(newest) or 'none'}. "
+          f"Compared {pairs} pair(s) of archived snapshots of one session.")
+    if findings or broken:
+        print(f"{flagged} transcript(s) and {len(broken)} snapshot pair(s) break an "
+              "assumption distillation reads them by. Decide what each changed field "
+              "means, then change the reader or the rule's measured set in "
+              "harness/transcript_format.py.", file=sys.stderr)
+        sys.exit(1)
+    if not files:
+        print("No transcripts to check — this is not evidence of anything.")
+        return
+    print("Transcript format OK — every rule holds on every transcript.")
+
+
+def _version_key(version: str) -> tuple:
+    return tuple(int(part) if part.isdigit() else -1 for part in version.split("."))
+
+
 def _report_expert_boundaries():
     """Print what actually binds each scope, resolved rather than as declared.
 
@@ -3859,6 +3924,10 @@ def _cmd_contract(args, contract_parser):
     # unrunnable in exactly the situation it is for — a fresh box being wired up.
     if getattr(args, "capabilities", False):
         _report_capabilities()
+        return
+
+    if getattr(args, "transcripts", False):
+        _report_transcript_format()
         return
 
     if getattr(args, "experts", False):

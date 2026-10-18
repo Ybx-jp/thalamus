@@ -285,17 +285,24 @@ def archived_transcripts(archive_base: Path | None = None) -> dict[str, Path]:
     session is re-retained under a new hash as its transcript grows, so several files
     can carry one id; the largest is the most complete and wins.
     """
+    return {
+        session_id: max(paths, key=lambda path: path.stat().st_size)
+        for session_id, paths in archived_snapshots(archive_base).items()
+    }
+
+
+def archived_snapshots(archive_base: Path | None = None) -> dict[str, list[Path]]:
+    """Map session id -> every retained transcript carrying it, smallest first."""
     root = archive_base or archive_dir()
     if not root.is_dir():
         return {}
-    found: dict[str, Path] = {}
+    found: dict[str, list[Path]] = {}
     for path in sorted(root.glob("*/*.jsonl")):
         session_id = _archived_session_id(path)
-        if not session_id:
-            continue
-        held = found.get(session_id)
-        if held is None or path.stat().st_size > held.stat().st_size:
-            found[session_id] = path
+        if session_id:
+            found.setdefault(session_id, []).append(path)
+    for paths in found.values():
+        paths.sort(key=lambda path: path.stat().st_size)
     return found
 
 
