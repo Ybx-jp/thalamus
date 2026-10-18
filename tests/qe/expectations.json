@@ -81,6 +81,13 @@
       "witness_contains": "T1 read marked.py + curl: got block, expected pass; N1 python3 marked.py; ls: got pass, expected block; N2 python3 marked.py&& ls: got pass, expected block",
       "triaged_at_rev": "9c1a7f3",
       "note": "Issue #344. claude-code graph-guard.sh checks 'a .py token names a marker-bearing file' and 'an interpreter or network client is invoked' independently. A command that only reads a marker-bearing file and also runs an unrelated curl is blocked (T1); a script name with an attached separator (marked.py; / marked.py&&) does not match *.py, so the file is never read and the run passes (N1, N2). Controls asserted in the case: read+ls passes, clean file+curl passes, python3 marked.py blocks, main passes. A fix that reads a .py file only when it is an interpreter's script argument and strips shell separators from tokens makes the three verdicts correct and this entry goes stale."
+    },
+    {
+      "case": "project-override-names-one-project-on-both-sides",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "THALAMUS_PROJECT='acme' in a checkout named 'client-site': hook names project='acme', extract records project='client-site'",
+      "triaged_at_rev": "8e43554",
+      "note": "Issue #360. The SessionStart hooks resolve project=\"${THALAMUS_PROJECT:-$repo_name}\" and tell the agent to recall by it, while transcripts.parse / to_session_graph record Session.project as basename(repo_root) and read no override; recall filters on that recorded value, so an override that is not a substring of the checkout name returns nothing. The pin is the hook naming the override and the write path naming the checkout; the control (override unset, both name the checkout) is asserted in the case. A fix on either side makes the two equal and this entry goes stale."
     }
   ]
 }
