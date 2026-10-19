@@ -1,7 +1,8 @@
 """A blinded install and a never-installed one must not read the same.
 
 Issue #125. `verify_armed()` (`src/thalamus/harness/install.py:1862`) returns three
-states over the declared hook wirings (`HOOK_WIRING`, currently 20 entries): all
+states over the declared hook wirings (`install.claude_wiring()`: core's `HOOK_WIRING`, 20 entries, plus the installed
+reflex plugin's 4): all
 present (ok), some missing (fatal), or *all* missing (`pending=True`,
 `install.py:1899`-1905). `pending` is excluded from `failed` (`install.py:2294`-2295),
 so a HOME where every wiring is missing exits 0 — deliberately, because that is what a
@@ -118,15 +119,15 @@ def _row(report: dict, key: str) -> dict | None:
 
 
 def run() -> Finding | None:
-    from thalamus.harness.install import HOOK_WIRING  # noqa: PLC0415
+    from thalamus.harness.install import claude_wiring  # noqa: PLC0415
 
-    wiring = tuple(HOOK_WIRING)
+    wiring = tuple((event, matcher, path.name) for event, matcher, path in claude_wiring())
     if not wiring:
         return Finding(
             failure_class=FailureClass.COLLAPSED_SENTINEL,
-            summary="HOOK_WIRING is empty, so 'all missing' and 'nothing declared' are "
+            summary="the declared wiring is empty, so 'all missing' and 'nothing declared' are "
                     "indistinguishable and this case proves nothing",
-            witness="len(HOOK_WIRING) == 0",
+            witness="len(claude_wiring()) == 0",
             site="src/thalamus/harness/install.py",
         )
 
@@ -191,7 +192,7 @@ def run() -> Finding | None:
     def normalize(detail: str, home: Path, count: int) -> str:
         # The HOME path and the declared-wiring count are the only two things that
         # legitimately vary run to run — the path because it is a fresh temp dir each
-        # time, the count because `HOOK_WIRING` grows as hooks are added. Folding both
+        # time, the count because the declared wiring grows as hooks are added. Folding both
         # to fixed placeholders keeps the pinned witness (expectations.json) tracking
         # the defect rather than either number.
         return (

@@ -4,7 +4,7 @@ Retrieval vocabulary and compiler tests.
 Interfaces: thalamus.substrate.vocabulary (Row, _row, _summary, rows_for's confinement
             rule), thalamus.harness.retrieval (Job, TOOLS, Caps, Refused),
             thalamus.harness.mcp_server's vocabulary wrappers,
-            thalamus.eval.vocabulary (anchor_sets, measure)
+            thalamus_reflex.vocabulary (anchor_sets, measure)
 Infrastructure: recording fakes in place of the primitives and the graph; tmp_path as
                 the reflex ledger
 Scope: which nodes a scope may be shown, and what the compiler will and will not run
@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import pytest
 
-from thalamus.eval import vocabulary as measure_mod
-from thalamus.harness import mcp_server, reflex, retrieval
+from thalamus_reflex import vocabulary as measure_mod
+from thalamus.harness import mcp_server, retrieval
+from thalamus_reflex import reflex
 from thalamus.harness.retrieval import Caps, Job, Refused, Tool
 from thalamus.substrate import vocabulary
 from thalamus.substrate.vocabulary import Row, _row, _summary

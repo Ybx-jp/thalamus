@@ -98,12 +98,13 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 thalamus-ingest = { workspace = true }
+thalamus-reflex = { workspace = true }
 
 # The plugins are installed into the development environment by default, so the suite
 # and the gates see them. A dependency group rather than an extra because a group is
 # not published: the core's metadata on PyPI names no plugin.
 [dependency-groups]
-plugins = ["thalamus-ingest"]
+plugins = ["thalamus-ingest", "thalamus-reflex"]
 
 [tool.uv]
 default-groups = ["plugins"]

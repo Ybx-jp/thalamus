@@ -27,6 +27,9 @@ documents = [
     "src/thalamus/**/*.py",
     "src/thalamus/harness/hooks/*/*.sh",
     "src/thalamus/harness/skills/*/SKILL.md",
+    # The plugins under `packages/`, on the same terms as the core's source and hooks.
+    "packages/*/src/**/*.py",
+    "packages/*/src/*/hooks/*/*.sh",
     "src/thalamus/console/static/*.js",
     "src/thalamus/console/static/*.css",
     "src/thalamus/console/static/*.html",

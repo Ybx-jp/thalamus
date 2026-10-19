@@ -11,7 +11,7 @@
 # A matcher only. The cheap preconditions run here in bash — sandbox guard, the
 # failure test on the tool result, scope from the pin — and everything that costs
 # anything (anchor extraction, a graph round trip, rendering) is `thalamus reflex` in
-# harness/reflex.py, which is where the logic is measured and typed. On no match the
+# reflex.py, which is where the logic is measured and typed. On no match the
 # agent pays for no `uv run`: the shadow record below runs detached.
 #
 # Two events, one payload shape each. Claude Code sends a Bash call that exits 0 to
@@ -26,21 +26,28 @@
 # output — `grep` finding no match, `test -f` on a missing file, `diff` finding a
 # difference — reaches this script and exits here, and a pytest run that exits 0
 # behind `| tail` but prints `FAILED` fires (A0165, cites-as-live). The regex is
-# harness/reflex.py's FAILURE_PATTERN verbatim; tests/test_reflex.py holds the two
+# reflex.py's FAILURE_PATTERN verbatim; tests/test_reflex.py holds the two
 # equal.
 #
 # Bulk content travels by file, resolved fields as flags — `extract --transcript` and
 # `delegate --input`'s idiom. A 40-failure pytest dump on argv is what ARG_MAX exists
 # to break.
 #
-# Install (project .claude/settings.json), the same group under each event:
-#   {"hooks": {"PostToolUse": [{"matcher": "Bash", "hooks": [{"type": "command",
-#     "command": "$CLAUDE_PROJECT_DIR/src/thalamus/harness/hooks/claude-code/reflex.sh"}]}],
-#     "PostToolUseFailure": [ …the same group… ]}}
+# Wired by `thalamus init` from `thalamus_reflex.plugin.register_hooks`, on Bash under
+# both events.
 
 set -euo pipefail
 
-. "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
+# core's hook library, at the path `thalamus init` recorded (install.HOOK_LIBRARY_RECORD).
+read -r lib 2>/dev/null < "$HOME/.thalamus/hook-library" || lib=""
+lib="$lib/claude-code/resolve-scope.sh"
+if [ ! -f "$lib" ]; then
+  mkdir -p "$HOME/.thalamus/logs" 2>/dev/null &&
+    printf '%s reflex.sh: no hook library at %s — run `thalamus init`\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$lib" >> "$HOME/.thalamus/logs/hook-failures.log"
+  exit 0
+fi
+. "$lib"
 thalamus_sandbox_guard
 thalamus_require_binaries jq $(thalamus_cli_needs) || exit 0
 thalamus_cli_argv || exit 0

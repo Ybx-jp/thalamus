@@ -16,7 +16,7 @@ under the same string in `run.py` — is not eroding: the same file, the same
 Supersedes the case's own earlier shape: that shape asserted `PostToolUse` only,
 citing docs/14-memory-reflex.md §4's "Wired on `PostToolUse` only" — the sentence
 ledger A0181 grounded and A0189 has since superseded. `reflex-pointer-tap.sh` now runs
-on both events a tool call can end on (`install.py`'s `HOOK_WIRING` gained
+on both events a tool call can end on (the thalamus-reflex plugin's `register_hooks` gained
 `("PostToolUseFailure", None, "reflex-pointer-tap.sh")` beside the existing
 `PostToolUse` row), so a digest waiting for the agent no longer holds if the agent's
 next call happens to fail — a failed `pytest` run followed by a fix-and-rerun no
@@ -43,12 +43,15 @@ row on `PostToolUse`, a duplicated row on `PostToolUseFailure`, a matcher narrow
 `None` on either event, and a `PostToolUseFailure` row removed outright — the last one
 reproducing, on a controlled fixture, the exact gap the live table carried before
 `main`'s follow-up landed, so this case is shown capable of having caught it. Only once
-every control passes does `_check` run against the real `install.HOOK_WIRING`.
+every control passes does `_check` run against the real `install.claude_wiring()`.
 
-Hermetic: reads `install.HOOK_WIRING`, no environment or process.
+Hermetic: reads `install.claude_wiring()` (core's `HOOK_WIRING` plus the installed
+reflex plugin's rows), no environment or process.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from ..model import Case, FailureClass, Finding, Substrate, Tier
 
@@ -71,12 +74,12 @@ def _check(wiring) -> Finding | None:
                 failure_class=FailureClass.INVARIANT_FALSIFIED,
                 summary=(
                     f"the reflex carrier is not wired as exactly one entry on "
-                    f"{event} in HOOK_WIRING — either duplicated (it would run more "
+                    f"{event} in install.claude_wiring() — either duplicated (it would run more "
                     "than once per tool call) or absent (a digest waiting for the "
                     f"agent would not be delivered on a {event} call)"
                 ),
                 witness=f"event={event} rows={rows!r}",
-                site="src/thalamus/harness/install.py::HOOK_WIRING",
+                site="src/thalamus/harness/install.py::claude_wiring",
             )
         _event, matcher, _name = rows[0]
         if matcher is not None:
@@ -88,7 +91,7 @@ def _check(wiring) -> Finding | None:
                     "PostToolUse and PostToolUseFailure, all tools"
                 ),
                 witness=f"event={event} matcher={matcher!r}",
-                site="src/thalamus/harness/install.py::HOOK_WIRING",
+                site="src/thalamus/harness/install.py::claude_wiring",
             )
     other_events = [(event, matcher, name) for event, matcher, name in wiring
                      if name == _SCRIPT and event not in _EVENTS]
@@ -101,7 +104,7 @@ def _check(wiring) -> Finding | None:
                 "and the only shape its payload is documented to carry"
             ),
             witness=f"other_events={other_events!r}",
-            site="src/thalamus/harness/install.py::HOOK_WIRING",
+            site="src/thalamus/harness/install.py::claude_wiring",
         )
     return None
 
@@ -109,7 +112,11 @@ def _check(wiring) -> Finding | None:
 def run() -> Finding | None:
     from thalamus.harness import install  # noqa: PLC0415
 
-    live = list(install.HOOK_WIRING)
+    # claude_wiring() is core's table plus every installed plugin's rows, and the
+    # carrier's rows are the plugin's (thalamus_reflex.plugin.register_hooks); a plugin
+    # row carries an absolute script path, so rows are reduced to the script's name.
+    live = [(event, matcher, Path(script).name)
+            for event, matcher, script in install.claude_wiring()]
     # A known-good synthetic baseline: every OTHER script's live rows, untouched, plus
     # exactly the two correct carrier rows — built this way so the controls below do
     # not depend on the live table already being correct.

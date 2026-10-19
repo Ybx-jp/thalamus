@@ -68,9 +68,40 @@ none
 - 2026-10-16T22:10:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/harness/hooks/claude-code/reflex.sh § "log_dir" =sha256:7df901951e1fc04c08e28cf63b3a6fd06b67e186a4cbe078b153bdced8fdd283
   note: reflex.sh's detached shadow process runs the CLI through thalamus_cli_argv and passes it as positional words; it is still detached and unwaited. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/hooks/claude-code/reflex.sh § "log_dir" =sha256:7df901951e1fc04c08e28cf63b3a6fd06b67e186a4cbe078b153bdced8fdd283
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "ShadowRow" =sha256:7e5ab97d76a766ae16512d580a94ca9149f4e4612d7d9e2b0d0f25c0482fed82
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "shadow" =sha256:9330b922beb6a5d6a1215e21c4258fd07b0259db99bb67d3d35c83e2aa7bb4c2
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:d5c259425c08068b69e01b4911356bdbacf6f728c2818b820676eb0fbd6a5f6a
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/hooks/claude-code/reflex.sh § "log_dir" =sha256:7df901951e1fc04c08e28cf63b3a6fd06b67e186a4cbe078b153bdced8fdd283
+  note: src/thalamus/harness/hooks/claude-code/reflex.sh moved into the thalamus-reflex plugin package as hooks/claude-code/reflex.sh with log_dir unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex.py § "ShadowRow" =sha256:7e5ab97d76a766ae16512d580a94ca9149f4e4612d7d9e2b0d0f25c0482fed82
+  note: src/thalamus/harness/reflex.py moved into the thalamus-reflex plugin package as reflex.py with ShadowRow unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex.py § "shadow" =sha256:9330b922beb6a5d6a1215e21c4258fd07b0259db99bb67d3d35c83e2aa7bb4c2
+  note: src/thalamus/harness/reflex.py moved into the thalamus-reflex plugin package as reflex.py with shadow unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/report.py § "reflex_report" =sha256:d5c259425c08068b69e01b4911356bdbacf6f728c2818b820676eb0fbd6a5f6a
+  note: src/thalamus/eval/reflex.py moved into the thalamus-reflex plugin package as report.py with reflex_report unchanged, so the assertion is unaffected
 
 ## References
 
 - docs/cli.md · standing · cites-as-live
-- src/thalamus/harness/hooks/claude-code/reflex.sh · standing · cites-as-live
-- src/thalamus/harness/reflex.py · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/hooks/claude-code/reflex.sh · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/reflex.py · standing · cites-as-live

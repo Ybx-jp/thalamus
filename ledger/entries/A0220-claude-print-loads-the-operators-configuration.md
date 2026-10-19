@@ -41,4 +41,4 @@ The headless reference says that without --bare a -p run loads the same context 
 
 ## References
 
-- src/thalamus/harness/reflex_channel.py · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/reflex_channel.py · standing · cites-as-live

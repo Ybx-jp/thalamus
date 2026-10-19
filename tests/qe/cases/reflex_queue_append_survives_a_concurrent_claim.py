@@ -54,7 +54,7 @@ def _job(use_id: str) -> dict:
 
 
 def run() -> Finding | None:
-    from thalamus.harness import reflex_queue, reflex_worker  # noqa: PLC0415
+    from thalamus_reflex import reflex_queue, reflex_worker  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -136,7 +136,7 @@ def run() -> Finding | None:
                     "missing from the job that claim went on to claim"
                 ),
                 witness=f"claimed.lines={claimed.lines!r}",
-                site="src/thalamus/harness/reflex_queue.py::enqueue",
+                site="packages/thalamus-reflex/src/thalamus_reflex/reflex_queue.py::enqueue",
             )
 
         # --- Part 2: lost, without it — the race-detector control -----------------

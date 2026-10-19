@@ -44,4 +44,4 @@ The reference defines PostToolUseFailure as the event for a tool that started ex
 
 ## References
 
-- src/thalamus/harness/hooks/claude-code/reflex.sh · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/hooks/claude-code/reflex.sh · standing · cites-as-live

@@ -97,13 +97,27 @@ MARKS = (MARK_OK, MARK_PENDING, MARK_ADVISORY, MARK_BLOCKED, MARK_FAIL)
 #: Line shape, install.py:601: two spaces, marker, space, name, ": ", detail.
 CHECK_LINE = re.compile(r"^  ([" + "".join(MARKS) + r"]) ([^:]+): (.*)$")
 
-#: The substring install.py:623-626 uses to recognise its own hook entries.
+#: The substring `install.py` (`_is_ours`) uses to recognise core's own hook entries.
 OUR_HOOK_MARKER = "thalamus/harness/hooks"
 
-#: install.py:145 declares 17 scripts across 24 entries in HOOK_WIRING — the reflex
-#: carrier (reflex-pointer-tap.sh) carries a second, PostToolUseFailure row alongside
-#: its PostToolUse one (docs/14-memory-reflex.md §4, "The carrier"), so a digest
-#: waiting for the agent is delivered whether its next call succeeds or fails.
+#: The path shape of a plugin's hook script: `thalamus.plugins.PLUGIN_HOOK_PATH`, the
+#: rule `init --uninstall` recognises a plugin's entry by. Restated here rather than
+#: imported, so the oracle does not depend on the code it indicts; the root test
+#: `tests/test_install.py::TestTheInstallMatrixCountsTheSameWiring` fails if the count
+#: below stops matching `install.claude_wiring()`.
+PLUGIN_HOOK_PATH = re.compile(r"/thalamus_[a-z0-9_]+/hooks/[^/]+/[^/]+$")
+
+
+def is_our_hook(command: str) -> bool:
+    """A hook command this install wrote: core's script, or a plugin's by path shape."""
+    return OUR_HOOK_MARKER in command or PLUGIN_HOOK_PATH.search(command) is not None
+
+
+#: `install.claude_wiring()` on the matrix box: core's `HOOK_WIRING` (20 entries) plus
+#: the 4 entries of `thalamus_reflex.plugin.register_hooks` (reflex.sh on two events and
+#: reflex-pointer-tap.sh on two). The documented sequence is `uv sync` — whose default
+#: groups install the thalamus-reflex plugin — then `thalamus init`, so the plugin's
+#: rows are written and counted; a box without the plugin would carry 20.
 EXPECTED_HOOK_ENTRIES = 24
 
 #: The rendering a HEALTHY MCP registration produces: a backticked server name, the
@@ -301,7 +315,7 @@ def _hook_entries() -> list[dict]:
 
 
 def _our_hooks() -> list[str]:
-    return [e["command"] for e in _hook_entries() if OUR_HOOK_MARKER in e["command"]]
+    return [e["command"] for e in _hook_entries() if is_our_hook(e["command"])]
 
 
 def _shipped_skills() -> list[str]:
@@ -934,7 +948,7 @@ def check_hooks_are_armed_and_resolvable() -> Result:
     commands = after["our_hooks"]
     if not commands:
         return bad("the install wrote no hook commands carrying "
-                   f"{OUR_HOOK_MARKER!r}", "0 of our commands found in the settings file")
+                   f"{OUR_HOOK_MARKER!r} or a plugin hook path", "0 of our commands found in the settings file")
     broken = []
     for command in commands:
         path = Path(command)
@@ -1083,7 +1097,7 @@ def check_cursor_guards_are_failclosed() -> Result:
                     "so there is no guard to check the flag on")
 
     non_guard_ours = [k for k, e in actual_flat.items()
-                      if OUR_HOOK_MARKER in k[1] and e.get("failClosed") is not True]
+                      if is_our_hook(k[1]) and e.get("failClosed") is not True]
     if not non_guard_ours:
         return skip("every one of our own entries in ~/.cursor/hooks.json carries "
                     "`failClosed`, so this check cannot tell a guard that is "
@@ -1180,7 +1194,7 @@ def check_second_init_does_not_duplicate_wiring() -> Result:
         return bad(f"the second init added {len(after) - len(before)} hook command(s) "
                    f"— {len(before)} became {len(after)}, so re-running appends", control)
     if len(after) != EXPECTED_HOOK_ENTRIES:
-        return bad(f"{len(after)} of our hook entries are wired, but HOOK_WIRING "
+        return bad(f"{len(after)} of our hook entries are wired, but install.claude_wiring() "
                    f"declares {EXPECTED_HOOK_ENTRIES}", control)
     return ok(f"our hook entries stayed at {len(after)} across a second init", control)
 

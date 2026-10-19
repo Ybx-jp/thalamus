@@ -1,6 +1,6 @@
 """The memory reflex, read by arm — `thalamus eval reflex`.
 
-The reflex (harness/reflex.py) is measured on its own instrument, separate from
+The reflex (reflex.py) is measured on its own instrument, separate from
 `eval conditioning`: a reminder conditions the agent to *call* memory, an injected
 block is dynamic RAG, and the two axes are not pooled. What this reads:
 
@@ -32,7 +32,7 @@ from gremlin_python.process.traversal import Direction, T, TextP
 
 from thalamus.eval.rates import Rate
 from thalamus.eval.traces import load_events
-from thalamus.harness.reflex import (
+from thalamus_reflex.reflex import (
     ARM_AGENTIC,
     ARM_LEXICAL,
     POINTER_OPEN,
@@ -41,8 +41,8 @@ from thalamus.harness.reflex import (
     load_shadow,
     reflex_dir,
 )
-from thalamus.harness.reflex_note import NOTE_ARMS
-from thalamus.harness.reflex_queue import JOB_OUTCOMES, load_outcomes
+from thalamus_reflex.reflex_note import NOTE_ARMS
+from thalamus_reflex.reflex_queue import JOB_OUTCOMES, load_outcomes
 
 # The evidence `attribution._judge` writes when the agent quoted the node's id or the
 # handle it was shown for it: "cited by vertex ID", "cited by handle R3.1".

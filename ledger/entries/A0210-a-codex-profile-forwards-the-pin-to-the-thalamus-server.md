@@ -47,6 +47,13 @@ none
 - 2026-10-16T22:10:00-07:00 · corroborated · grade: argued · author: architect
   evidence: code: src/thalamus/harness/install.py § "uninstall" =sha256:ac3cfc4403a79a0483454d5d5904ebd15751fdb09d5fd37b8fec7c44673108a0
   note: uninstall also removes the interpreter record when it names this install; it still rewrites the codex profiles after deregistering. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
+- 2026-10-18T16:14:12-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "uninstall" =sha256:ac3cfc4403a79a0483454d5d5904ebd15751fdb09d5fd37b8fec7c44673108a0
+  artifact: sha256:7a54165e8d75270e9af17884a0af95e1541aa96ad6820e2c40c568138e9bcfd0
+  note: propagated from a moved ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: src/thalamus/harness/install.py § "uninstall" =sha256:7a54165e8d75270e9af17884a0af95e1541aa96ad6820e2c40c568138e9bcfd0
+  note: uninstall also removes the hook library record when it names this install; the codex profile rewrite is unchanged, so the assertion is unaffected
 
 ## References
 

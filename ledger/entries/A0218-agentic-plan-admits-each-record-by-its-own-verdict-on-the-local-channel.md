@@ -40,7 +40,47 @@ none
 
 ## Verdicts
 
+- 2026-10-18T16:14:12-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/harness/agentic.py § "run" =sha256:27e6f22ff409346af7187a2b6e3da861a0c4ad31d6b1af4034fb006e77bb73d8
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/harness/agentic.py § "pointwise_admission" =sha256:49fda38f1353a5e7fb39ed55579e1e3ff97b65bf4ff1cc3f1e0731d9f1481320
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/harness/agentic.py § "admit" =sha256:a858e8e862d43545c0577652f81c97d99ae5ce91bce4b671f658c48eb2c9af41
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/harness/agentic.py § "admitted" =sha256:56f43e4acdb4f805e09660bf344a07cbb341518139040e943ef874690deeda7f
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/harness/agentic.py § "salvage" =sha256:10aac63ad33798f223f4240d2f9a63fbf8018be6aef973877f7d5b7a8c630c16
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/agentic.py § "run" =sha256:27e6f22ff409346af7187a2b6e3da861a0c4ad31d6b1af4034fb006e77bb73d8
+  note: src/thalamus/harness/agentic.py moved into the thalamus-reflex plugin package as agentic.py with run unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/agentic.py § "pointwise_admission" =sha256:49fda38f1353a5e7fb39ed55579e1e3ff97b65bf4ff1cc3f1e0731d9f1481320
+  note: src/thalamus/harness/agentic.py moved into the thalamus-reflex plugin package as agentic.py with pointwise_admission unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/agentic.py § "admit" =sha256:a858e8e862d43545c0577652f81c97d99ae5ce91bce4b671f658c48eb2c9af41
+  note: src/thalamus/harness/agentic.py moved into the thalamus-reflex plugin package as agentic.py with admit unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/agentic.py § "admitted" =sha256:56f43e4acdb4f805e09660bf344a07cbb341518139040e943ef874690deeda7f
+  note: src/thalamus/harness/agentic.py moved into the thalamus-reflex plugin package as agentic.py with admitted unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/agentic.py § "salvage" =sha256:10aac63ad33798f223f4240d2f9a63fbf8018be6aef973877f7d5b7a8c630c16
+  note: src/thalamus/harness/agentic.py moved into the thalamus-reflex plugin package as agentic.py with salvage unchanged, so the assertion is unaffected
+
 ## References
 
 - docs/cli.md · standing · cites-as-live
-- src/thalamus/harness/agentic.py · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/agentic.py · standing · cites-as-live

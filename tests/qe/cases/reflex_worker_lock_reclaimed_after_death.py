@@ -55,7 +55,7 @@ time.sleep(60)
 
 
 def run() -> Finding | None:
-    from thalamus.harness import reflex_queue, reflex_worker  # noqa: PLC0415
+    from thalamus_reflex import reflex_queue, reflex_worker  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -127,7 +127,7 @@ def run() -> Finding | None:
                         "that the kernel leaves no stale lock to clear"
                     ),
                     witness=f"holder pid={holder.pid} returncode={holder.returncode}",
-                    site="src/thalamus/harness/reflex_queue.py::worker_running",
+                    site="packages/thalamus-reflex/src/thalamus_reflex/reflex_queue.py::worker_running",
                 )
 
             reflex_queue.enqueue(root, {
@@ -145,7 +145,7 @@ def run() -> Finding | None:
                         "the lock free"
                     ),
                     witness=f"worker_running={reflex_queue.worker_running(root)}",
-                    site="src/thalamus/harness/reflex_worker.py::claim_next",
+                    site="packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py::claim_next",
                 )
             return None
         finally:

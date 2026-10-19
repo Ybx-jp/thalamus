@@ -48,6 +48,9 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(install, "PROJECT_MCP", project_mcp)
     monkeypatch.setattr(install, "USER_AGENTS_DIR", agents)
     monkeypatch.setattr(install, "USER_SKILLS_DIR", skills)
+    # Written whenever an installed plugin wires a hook, which in this workspace one
+    # does; resolved from HOME at import, so unpatched it is the operator's own record.
+    monkeypatch.setattr(install, "HOOK_LIBRARY_RECORD", tmp_path / "user" / "hook-library")
     # The Cursor leg runs by default (harness="both"), so these must be
     # redirected too: an unpatched run rewrites the operator's real
     # ~/.cursor/hooks.json and strips the checkout's committed .cursor files.
@@ -511,12 +514,13 @@ class TestHookBlock:
         block = install.build_hook_block()
         commands = [h["command"] for groups in block.values()
                     for g in groups for h in g["hooks"]]
-        assert len(commands) == len(install.HOOK_WIRING)
+        assert len(commands) == len(install.claude_wiring())
         for cmd in commands:
             assert "$CLAUDE_PROJECT_DIR" not in cmd
             assert cmd.startswith("/")
 
-    def test_matchers_are_preserved_per_event(self):
+    def test_matchers_are_preserved_per_event(self, monkeypatch):
+        monkeypatch.setattr(install, "plugin_hooks", lambda harness: [])
         block = install.build_hook_block()
         post = {g.get("matcher") for g in block["PostToolUse"]}
         assert post == {
@@ -525,8 +529,6 @@ class TestHookBlock:
             "TaskCreate",
             "Agent",
             "mcp__thalamus__memory_query",
-            # reflex-pointer-tap.sh: a pointer file is read through Read, Grep and Bash alike.
-            None,
         }
         assert all("matcher" not in g for g in block["SessionEnd"])
 
@@ -1591,6 +1593,9 @@ class TestTheInstallMatrixCountsTheSameWiring:
 
     Read out of the source text rather than imported, so this stays a consistency
     guard and does not make the oracle depend on the package by a back route.
+
+    Counted with the plugins: the matrix installs a checkout by `uv sync`, whose default
+    groups install every plugin in the workspace, as this suite's environment does.
     """
 
     def test_expected_hook_entries_matches_hook_wiring(self):
@@ -1598,10 +1603,10 @@ class TestTheInstallMatrixCountsTheSameWiring:
         match = re.search(r"^EXPECTED_HOOK_ENTRIES = (\d+)$", source, re.M)
         assert match, "checks.py no longer declares EXPECTED_HOOK_ENTRIES"
 
-        assert int(match.group(1)) == len(install.HOOK_WIRING), (
+        assert int(match.group(1)) == len(install.claude_wiring()), (
             "tests/qe/install/checks.py:EXPECTED_HOOK_ENTRIES is stale — the install "
             "matrix will fail every cell until it is bumped to "
-            f"{len(install.HOOK_WIRING)}"
+            f"{len(install.claude_wiring())}"
         )
 
 
@@ -1973,3 +1978,68 @@ class TestTheExamplesShipAndSeedAnEmptyConfigRoot:
         assert any(str(root) in line for line in install._consent_lines(("claude",)))
         install.seed_config()
         assert not any(str(root) in line for line in install._consent_lines(("claude",)))
+
+
+class TestPluginHooks:
+    """A plugin's hook scripts (`plugins.register_hooks`) are wired, verified and removed
+    beside core's, and the scripts find core's shell library through a record `init`
+    writes."""
+
+    @pytest.fixture
+    def plugin(self, sandbox, tmp_path, monkeypatch):
+        script = tmp_path / "site" / "thalamus_fake" / "hooks" / "claude-code" / "tap.sh"
+        script.parent.mkdir(parents=True)
+        script.write_text("#!/bin/bash\n")
+        script.chmod(0o755)
+        hook = install.plugins.Hook("claude", "PostToolUse", "Read", script)
+        monkeypatch.setattr(install, "plugin_hooks",
+                            lambda harness: [hook] if harness == "claude" else [])
+        return hook
+
+    def test_install_wires_the_plugin_script_by_absolute_path_and_records_the_library(
+            self, sandbox, plugin):
+        install.install(harnesses=("claude",))
+
+        hooks = install._load_json(sandbox["user"])["hooks"]["PostToolUse"]
+        assert {"matcher": "Read",
+                "hooks": [{"type": "command", "command": str(plugin.script)}]} in hooks
+        assert install.HOOK_LIBRARY_RECORD.read_text().strip() == str(install.HOOK_ROOT)
+        assert (install.HOOK_ROOT / "claude-code" / "resolve-scope.sh").is_file()
+        checks = {c.name: c for c in install.verify(("claude",))}
+        assert checks["declared hooks armed"].ok, checks["declared hooks armed"].detail
+        assert checks["hook library recorded"].ok
+
+    def test_a_plugin_script_unwired_or_unrecorded_fails_the_check(self, sandbox, plugin):
+        checks = {c.name: c for c in install.verify(("claude",))}
+        assert checks["hook library recorded"].state == "pending"
+
+        install.install(harnesses=("claude",))
+        install.HOOK_LIBRARY_RECORD.write_text("/somewhere/else\n")
+        settings = install._load_json(sandbox["user"])
+        settings["hooks"]["PostToolUse"] = [
+            g for g in settings["hooks"]["PostToolUse"] if g.get("matcher") != "Read"]
+        install._write_json(sandbox["user"], settings)
+
+        checks = {c.name: c for c in install.verify(("claude",))}
+        assert checks["hook library recorded"].state == "failed"
+        assert checks["declared hooks armed"].state == "failed"
+        assert "tap.sh on PostToolUse/Read" in checks["declared hooks armed"].detail
+
+    def test_uninstall_removes_a_plugin_hook_after_the_plugin_is_gone(
+            self, sandbox, plugin, monkeypatch):
+        install.install(harnesses=("claude",))
+        monkeypatch.setattr(install, "plugin_hooks", lambda harness: [])
+
+        install.uninstall()
+
+        left = install._load_json(sandbox["user"])
+        assert str(plugin.script) not in json.dumps(left)
+        assert not install.HOOK_LIBRARY_RECORD.exists()
+
+    def test_no_record_is_written_when_no_plugin_wires_a_hook(self, sandbox, monkeypatch):
+        monkeypatch.setattr(install, "plugin_hooks", lambda harness: [])
+
+        install.install(harnesses=("claude",))
+
+        assert not install.HOOK_LIBRARY_RECORD.exists()
+        assert "hook library recorded" not in {c.name for c in install.verify(("claude",))}

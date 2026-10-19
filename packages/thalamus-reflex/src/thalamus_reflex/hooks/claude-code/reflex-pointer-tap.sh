@@ -5,7 +5,7 @@
 # Two jobs on every tool call, each behind a test that costs no process when it fails.
 #
 # The carrier. A reflex firing assigned the agentic plan is not served from the hook
-# that fired it: a local model's loop runs in a detached worker (harness/reflex_worker.py)
+# that fired it: a local model's loop runs in a detached worker (reflex_worker.py)
 # and leaves its digest in `~/.thalamus/reflex/queue/<session>/<agent>/ready/`. On the
 # agent's next tool call this hook delivers it as `additionalContext` through
 # `thalamus reflex --deliver`, which charges the session's budget and writes the trace
@@ -29,10 +29,8 @@
 # carry `tool_input` and accept `additionalContext`; the script reads `hook_event_name`
 # and answers under whichever event ran it.
 #
-# Install (project .claude/settings.json), the same group under each event:
-#   {"hooks": {"PostToolUse": [{"hooks": [{"type": "command",
-#     "command": "$CLAUDE_PROJECT_DIR/src/thalamus/harness/hooks/claude-code/reflex-pointer-tap.sh"}]}],
-#     "PostToolUseFailure": [ …the same group… ]}}
+# Wired by `thalamus init` from `thalamus_reflex.plugin.register_hooks`, on every tool
+# under both events.
 
 set -euo pipefail
 
@@ -67,7 +65,16 @@ esac
 
 [ "$ready" = 1 ] || [ "$pointer_named" = 1 ] || exit 0
 
-. "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
+# core's hook library, at the path `thalamus init` recorded (install.HOOK_LIBRARY_RECORD).
+read -r lib 2>/dev/null < "$HOME/.thalamus/hook-library" || lib=""
+lib="$lib/claude-code/resolve-scope.sh"
+if [ ! -f "$lib" ]; then
+  mkdir -p "$HOME/.thalamus/logs" 2>/dev/null &&
+    printf '%s reflex-pointer-tap.sh: no hook library at %s — run `thalamus init`\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$lib" >> "$HOME/.thalamus/logs/hook-failures.log"
+  exit 0
+fi
+. "$lib"
 thalamus_sandbox_guard
 thalamus_require_binaries jq || exit 0
 

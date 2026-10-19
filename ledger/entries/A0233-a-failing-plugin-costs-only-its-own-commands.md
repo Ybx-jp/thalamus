@@ -35,6 +35,14 @@ none
 
 ## Verdicts
 
+- 2026-10-18T16:14:12-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/plugins.py § "Plugins" =sha256:9a69e6f2b9b52cbe5d024c68b57b5458eef635cb8060d0627395f9c644ee50a6
+  artifact: sha256:3c66b58c71a13d4c1894b8d87a6827d93ea48b1353d0e3dde7408c344822d958
+  note: propagated from a moved ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: src/thalamus/plugins.py § "Plugins" =sha256:3c66b58c71a13d4c1894b8d87a6827d93ea48b1353d0e3dde7408c344822d958
+  note: Plugins gained hooks(), which calls each plugin's register_hooks inside its own try block as register_commands does, and register_commands now passes groups to an implementation that takes it; each implementation is still called on its own, so the assertion is unaffected
+
 ## References
 
 - docs/cli.md · standing · cites-as-live
