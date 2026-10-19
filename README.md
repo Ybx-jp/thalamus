@@ -94,8 +94,8 @@ fresh, for everyone.
 | **jq** | every hook parses its stdin with it; without it the hook layer dies silently |
 | **A coding-agent CLI**: Claude Code (`claude`), Cursor (`agent`), codex (`codex`), or any mix | distillation shells out to it |
 
-The console additionally needs **tmux**: it runs pinned sessions as tmux windows
-([docs/console.md](docs/console.md)).
+The console, in the `thalamus-console` plugin, additionally needs **tmux**: it runs
+pinned sessions as tmux windows ([docs/console.md](docs/console.md)).
 
 ### Install
 
@@ -195,8 +195,9 @@ controls and no key bindings, and no artwork ships.
   reaches the whole graph<!-- (A0148, cites-as-live) -->,
   so a PreToolUse guard keeps a pinned session off it and on the tools that confine a
   read to the pin.
-- **The console.** Optional, and the part that needs tmux: it runs pinned sessions as
-  tmux windows so all of them are addressable from one place. `thalamus console`
+- **The console.** Optional — the `thalamus-console` plugin — and the part that needs
+  tmux: it runs pinned sessions as tmux windows so all of them are addressable from one
+  place. `thalamus console`
   serves them to a browser: a tab per window, the live pane, a composer, and one tap
   to spawn an expert in a project. It installs as a PWA on a phone over a tailnet.
 - **Consultations.** Cross-expert questions ride single-use tickets where minting the
@@ -247,7 +248,6 @@ Roadmap and open work live in
 src/thalamus/
   substrate/   storage kernel: schema, Gremlin writer, Gremlin reader, query span tap
   contract/    the federation boundary: ontology, expert manifests, conformance
-  console/     the optional browser/PWA control plane: tmux windows, rooms, dispatch
   archive/     immutable content-addressed store for retained evidence
   harness/     where it meets the agent: MCP server, hooks, skills, bootstrap
   plugins.py   the extension points a plugin package registers through
@@ -257,6 +257,7 @@ src/thalamus/
   arch/        the `architect` scope's instrument: a declared-policy import extractor
                and the structural metrics computed over it, gated in CI
 packages/      plugins, each its own distribution depending on the core alone
+  thalamus-console/  rooms and the console: tmux windows, `spawn`, `room`, `dispatch`, `ceremony`, `console`
   thalamus-ingest/   curated ingestion: `thalamus ingest`, `thalamus backfill-chunks`
   thalamus-measure/  the eval loop's reports and the dashboard: `eval report|uses|pins|withholding|gremlin|recipes|profile`, `thalamus pulse`
   thalamus-reflex/   the memory reflex: its two hooks, `thalamus reflex`, `eval reflex|vocabulary`

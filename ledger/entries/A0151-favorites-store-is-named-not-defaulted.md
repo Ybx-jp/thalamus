@@ -56,9 +56,16 @@ none
 - 2026-10-16T22:10:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/console/server.py § "Config" =sha256:8a2bfc10a4c2ee663584182e29f0c1cb63e882375428134b706326bf78d246c8
   note: Config's project_root default reads paths.CHECKOUT instead of the removed pin.PROJECT_ROOT; the favorites store is untouched. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
+- 2026-10-18T22:07:41-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/console/server.py § "Config" =sha256:8a2bfc10a4c2ee663584182e29f0c1cb63e882375428134b706326bf78d246c8
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T22:10:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-console/src/thalamus_console/server.py § "Config" =sha256:8a2bfc10a4c2ee663584182e29f0c1cb63e882375428134b706326bf78d246c8
+  note: src/thalamus/console/server.py moved into the thalamus-console plugin package as server.py with Config unchanged, so the assertion is unaffected
 
 ## References
 
-- src/thalamus/console/server.py · standing · cites-as-live
-- src/thalamus/cli.py · standing · cites-as-live
+- packages/thalamus-console/src/thalamus_console/server.py · standing · cites-as-live
+- packages/thalamus-console/src/thalamus_console/commands.py · standing · cites-as-live
 - docs/console.md · standing · cites-as-live

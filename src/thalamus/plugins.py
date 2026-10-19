@@ -81,18 +81,36 @@ class Spec:
     """The extension points core offers. Each is added when a plugin needs it."""
 
     @hookspec
-    def register_commands(self, subparsers, groups) -> None:
+    def register_commands(self, subparsers, groups, commands) -> None:
         """Add subcommands to the `thalamus` CLI.
 
         `subparsers` is the object `argparse.ArgumentParser.add_subparsers` returned.
         `groups` maps a core command that has subcommands of its own — `eval` — to its
-        subparsers object, so a plugin can add `thalamus eval <name>`. An
-        implementation may take either argument alone.
+        subparsers object, so a plugin can add `thalamus eval <name>`. `commands` maps
+        a core command a plugin may add options to — `pin`, `eval cost` — to its
+        parser; the plugin runs those options through `claim_command`. An
+        implementation may take any of the three alone.
 
         A command names its handler with `set_defaults(plugin_run=fn)`, and `fn` is
         called with the parsed arguments. A name core already uses is refused by
         argparse, and the refusal is reported as this plugin's failure.
         """
+
+    @hookspec(firstresult=True)
+    def claim_command(self, command, args):
+        """Run core command `command` in this plugin's place, when the options this
+        plugin added to it through `commands` ask for that.
+
+        `command` is a key of `register_commands`' `commands`. Return True when the
+        plugin ran it; None leaves it to the next plugin and then to core. pytest's
+        `pytest_cmdline_main` is the shape: the first answer that is not None wins.
+        """
+
+    @hookspec
+    def capability_rows(self):
+        """Rows for `thalamus contract check --capabilities`, after core's: a list of
+        `(label, outcome, detail)` strings, `outcome` one of core's probe outcomes
+        (`confirmed`, `drift`, `malformed`, `unprobeable`, `unavailable`)."""
 
     @hookspec
     def register_hooks(self):
@@ -121,14 +139,52 @@ class Plugins:
         self.manager = manager
         self.failures = failures
         self._hooks: list[Hook] | None = None
+        self._unclaimed: set[str] = set()
 
-    def register_commands(self, subparsers, groups=None) -> None:
-        offered = {"subparsers": subparsers, "groups": dict(groups or {})}
+    def register_commands(self, subparsers, groups=None, commands=None) -> None:
+        offered = {"subparsers": subparsers, "groups": dict(groups or {}),
+                   "commands": dict(commands or {})}
         for impl in self.manager.hook.register_commands.get_hookimpls():
             try:
                 impl.function(**{name: offered[name] for name in impl.argnames})
             except Exception as e:
                 self._fail(impl.plugin_name, "register its commands", e)
+                # Its options may be half-added to a core command, so it does not claim
+                # one either: the command runs as core's.
+                self._unclaimed.add(impl.plugin_name)
+
+    def claim_command(self, command: str, args) -> bool:
+        """Whether a plugin ran core command `command` itself.
+
+        Not isolated the way registration is: a plugin that raises here has started
+        running the user's command, and core carrying on without it would run a
+        different one than was asked for."""
+        # Newest first, the order pluggy calls a firstresult hook in.
+        for impl in reversed(self.manager.hook.claim_command.get_hookimpls()):
+            if impl.plugin_name in self._unclaimed:
+                continue
+            offered = {"command": command, "args": args}
+            if impl.function(**{name: offered[name] for name in impl.argnames}) is not None:
+                return True
+        return False
+
+    def capability_rows(self) -> list[tuple[str, str, str]]:
+        """Every plugin's capability rows, in load order; one that raises costs only
+        its own rows."""
+        rows: list[tuple[str, str, str]] = []
+        for impl in self.manager.hook.capability_rows.get_hookimpls():
+            try:
+                returned = impl.function()
+                if not (isinstance(returned, (list, tuple)) and all(
+                        isinstance(row, tuple) and len(row) == 3
+                        and all(isinstance(cell, str) for cell in row)
+                        for row in returned)):
+                    raise TypeError("capability_rows must return a list of "
+                                    "(label, outcome, detail) strings")
+                rows.extend(returned)
+            except Exception as e:
+                self._fail(impl.plugin_name, "report its capability rows", e)
+        return rows
 
     def hooks(self) -> list[Hook]:
         """Every plugin's hook wirings that core accepts, in load order.

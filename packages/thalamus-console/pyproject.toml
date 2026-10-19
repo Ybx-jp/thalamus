@@ -1,0 +1,51 @@
+[project]
+name = "thalamus-console"
+dynamic = ["version"]
+description = "Rooms and the console for thalamus: pinned sessions in tmux windows, messages between them, and a phone-sized browser surface over both"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Jackson Porter" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    # The floor is the first core with `claim_command`, `capability_rows` and the
+    # `commands` argument to `register_commands`; against an older core, registering
+    # the console's commands collides with core's own and the plugin is refused.
+    # Everything else is the standard library: tmux is the one other prerequisite, and
+    # it is a binary, not a Python dependency.
+    "thalamus-memory>=0.1.1.dev3",
+]
+
+[project.urls]
+Homepage = "https://github.com/Ybx-jp/thalamus"
+Repository = "https://github.com/Ybx-jp/thalamus"
+Issues = "https://github.com/Ybx-jp/thalamus/issues"
+
+[project.entry-points.thalamus]
+console = "thalamus_console.plugin"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/thalamus_console/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/thalamus_console"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/README.md"]
+
+[tool.uv.sources]
+thalamus-memory = { workspace = true }

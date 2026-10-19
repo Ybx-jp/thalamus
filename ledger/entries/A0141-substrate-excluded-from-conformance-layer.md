@@ -62,6 +62,13 @@ none
 - 2026-10-18T21:25:00-07:00 · corroborated · grade: measured · author: architect
   evidence: yaml: arch/model.yaml § "rules" =sha256:e3cf0832f71b3d9966f3541ed326a1494735a8115cf5fa489d9c2bfb04c0e502
   note: the rules gained the plugin-measure layer and the plugin-reflex comment now names only the trace tap; the substrate rule is unchanged at [vocabulary, archive], so the assertion is unaffected
+- 2026-10-18T22:07:40-07:00 · contested · grade: measured · author: propagation
+  evidence: yaml: arch/model.yaml § "rules" =sha256:e3cf0832f71b3d9966f3541ed326a1494735a8115cf5fa489d9c2bfb04c0e502
+  artifact: sha256:3f56ab3e75be92ff3235749ac9b8a263bb5242c1bee55f827d3f6354d19cfb7a
+  note: propagated from a moved ground
+- 2026-10-18T22:10:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: yaml: arch/model.yaml § "rules" =sha256:3f56ab3e75be92ff3235749ac9b8a263bb5242c1bee55f827d3f6354d19cfb7a
+  note: the rules gained the plugin-console layer; the substrate rule is unchanged at [vocabulary, archive], so the assertion is unaffected
 
 ## References
 

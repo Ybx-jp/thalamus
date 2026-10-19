@@ -1,7 +1,7 @@
 """
 Control-plane tests: the window projection, the spawn whitelist, the key allowlist.
 
-Interfaces: thalamus.console.server
+Interfaces: thalamus_console.server
 Infrastructure: a stubbed `tmux` callable and tmp_path directories — no tmux
 server, no claude, no graph.
 Scope: the two things the client trusts blind and the one thing a client must not
@@ -27,9 +27,9 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.console import windows
-from thalamus.console import server
-from thalamus.console.server import Config, Handler, parse_windows, spawn_dirs
+from thalamus_console import windows
+from thalamus_console import server
+from thalamus_console.server import Config, Handler, parse_windows, spawn_dirs
 
 WINDOW_FIELDS = "0\tmain\t1\tclaude\t60\t50\t0\t/home/op/code/thalamus"
 
@@ -325,7 +325,7 @@ def test_the_reduction_reads_only_module_constants_the_real_module_has():
     Derived from source for the same reason as above — a fourth constant is covered
     the day it is read, not the day someone remembers to add it here.
     """
-    from thalamus.console import dispatch as dispatch_mod
+    from thalamus_console import dispatch as dispatch_mod
 
     reads = _attribute_reads(server.attach_blocked, "dispatch")
     # `dispatch.quick` is the module's own import, reached for `live_sessions()`.
@@ -377,7 +377,7 @@ def test_the_poll_composes_the_ledger_join_and_the_descriptor_read(tmp_path,
     The descriptor carries no `procStart`, which skips the `/proc` liveness check —
     the same trick `test_dispatch.py` uses. No tmux, no claude, no graph.
     """
-    from thalamus.console import transcript as tr
+    from thalamus_console import transcript as tr
 
     config = tmp_path / "config"
     (config / "sessions").mkdir(parents=True)
@@ -444,7 +444,7 @@ def test_screen_rev_moves_with_the_pane_text_and_only_with_it(tmp_path, monkeypa
     poll's for equality and never parses it, so the format is free to change without
     the client changing with it.
     """
-    from thalamus.console import transcript as tr
+    from thalamus_console import transcript as tr
 
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setattr(tr, "PINS", tmp_path / "pins.jsonl")
@@ -488,7 +488,7 @@ SHELL_PANE = ("4\tshell\t0\tbash\t60\t50\t0\t/home/op/code/thalamus\t\t%9\t4243"
 
 def _no_real_ledger(monkeypatch, tmp_path):
     """Keep `/api/panes` off the operator's real pins while it joins launch facts."""
-    from thalamus.console import transcript as tr
+    from thalamus_console import transcript as tr
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setattr(tr, "PINS", tmp_path / "pins.jsonl")
     monkeypatch.setattr(server, "_LEDGER", None)
@@ -575,7 +575,7 @@ def test_the_poll_join_is_by_pane_and_a_mismatch_does_not_borrow_a_row(tmp_path,
     session under someone else's project and looks identical to a correct one.
     Under-grouping is honest; over-grouping asserts a relation that does not hold.
     """
-    from thalamus.console import transcript as tr
+    from thalamus_console import transcript as tr
 
     config = tmp_path / "config"
     (config / "sessions").mkdir(parents=True)
@@ -1432,25 +1432,25 @@ CRASHED = '{\n\t"LastExitStatus" = 256;\n\t"Label" = "com.x";\n};\n'
 def test_launchd_states_arrive_in_the_vocabulary_the_sheet_renders(
         tmp_path, monkeypatch, stdout, code, state):
     cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"),
-                 services=["com.thalamus.console"])
+                 services=["com.thalamus_console"])
     _on_darwin(monkeypatch)
     calls = _launchctl(monkeypatch, stdout, code)
 
     assert server.service_status(cfg) == [
-        {"unit": "com.thalamus.console", "state": state}
+        {"unit": "com.thalamus_console", "state": state}
     ]
-    assert calls == [["launchctl", "list", "com.thalamus.console"]]
+    assert calls == [["launchctl", "list", "com.thalamus_console"]]
 
 
 def test_a_mac_without_launchctl_reports_it_like_any_other_absent_supervisor(
         tmp_path, monkeypatch):
     cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"),
-                 services=["com.thalamus.console"])
+                 services=["com.thalamus_console"])
     _on_darwin(monkeypatch)
     _no_binary(monkeypatch, "launchctl")
 
     assert server.service_status(cfg) == [
-        {"unit": "com.thalamus.console", "state": server.NO_SUPERVISOR}
+        {"unit": "com.thalamus_console", "state": server.NO_SUPERVISOR}
     ]
 
 
@@ -1477,10 +1477,10 @@ def test_a_launchd_restart_is_launchds_work_and_outlives_this_process(monkeypatc
 
     monkeypatch.setattr(server.subprocess, "Popen", fake_popen)
 
-    assert server.service_restart("com.thalamus.console") is None
+    assert server.service_restart("com.thalamus_console") is None
     assert spawned["command"] == [
         "launchctl", "kickstart", "-k",
-        f"gui/{os.getuid()}/com.thalamus.console",
+        f"gui/{os.getuid()}/com.thalamus_console",
     ]
     assert spawned["kw"]["start_new_session"] is True
 
@@ -1493,7 +1493,7 @@ def test_a_mac_restart_with_no_launchctl_answers_with_the_reason(monkeypatch):
 
     monkeypatch.setattr(server.subprocess, "Popen", raiser)
 
-    assert "launchctl" in (server.service_restart("com.thalamus.console") or "")
+    assert "launchctl" in (server.service_restart("com.thalamus_console") or "")
 
 
 def test_an_endpoint_that_raises_answers_an_error_rather_than_dropping_the_socket(
@@ -1820,7 +1820,7 @@ def test_an_uninstalled_extractor_reaches_the_phone_as_its_reason(tmp_path, monk
 
 def _watching(tmp_path, monkeypatch):
     """A `DistillWatch` over throwaway files, installed as the console's singleton."""
-    from thalamus.console.distill import STATE_V, DistillWatch     # noqa: PLC0415
+    from thalamus_console.distill import STATE_V, DistillWatch     # noqa: PLC0415
 
     logs = tmp_path / "logs"
     logs.mkdir()
@@ -1842,7 +1842,7 @@ def test_a_row_whose_id_is_not_hex_is_still_dismissible(tmp_path, monkeypatch):
     the operator's live ledger with `qe000000` before it was fixed. Under a hex guard
     those rows were the ones that could never be cleared — the button drawn, the tap
     refused, the row permanent."""
-    from thalamus.console.distill import record_kill                # noqa: PLC0415
+    from thalamus_console.distill import record_kill                # noqa: PLC0415
 
     watch = _watching(tmp_path, monkeypatch)
     record_kill("qe000000", "qe", "/tmp", "close", path=watch.kills)
@@ -2037,7 +2037,7 @@ def test_the_dispatch_endpoint_declares_its_roomlessness_to_the_real_signature()
     """
     import inspect
 
-    from thalamus.console import dispatch as dispatch_mod
+    from thalamus_console import dispatch as dispatch_mod
 
     parameters = inspect.signature(dispatch_mod.dispatch).parameters
     assert "caller_room" in parameters, (
@@ -2078,7 +2078,7 @@ def test_the_dialogue_delegates_rather_than_reimplementing_the_preflight(tmp_pat
     implementation here, however small, would be a second policy about when it is
     safe to type into somebody's session, and the two would drift.
     """
-    from thalamus.console import dispatch as dispatch_mod
+    from thalamus_console import dispatch as dispatch_mod
 
     seen = {}
 
@@ -2173,7 +2173,7 @@ def _read_fixture(tmp_path, monkeypatch, *, ledger=True, transcript=None,
     `pending` branches, and they are staged by absence rather than by patching the
     resolver, so the test exercises the same code the phone does.
     """
-    from thalamus.console import transcript as tr
+    from thalamus_console import transcript as tr
 
     # Rebuilt, not reused: a transcript left behind by an earlier stage would make
     # the `pending` branch resolve, and the sweep below stages several in a row.
@@ -2429,7 +2429,7 @@ def test_the_module_serves_when_run_as_a_module(tmp_path):
         port = probe.getsockname()[1]
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "thalamus.console.server", "--port", str(port)],
+        [sys.executable, "-m", "thalamus_console.server", "--port", str(port)],
         cwd=tmp_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     try:
@@ -2726,7 +2726,7 @@ def test_starring_without_a_store_is_refused_rather_than_written_somewhere(tmp_p
 def test_the_console_command_names_the_machine_global_store(tmp_path):
     """`thalamus console` is what knows it serves this box, so it is what names the
     store. The Config it builds carries FAVORITES_STORE; the dataclass does not."""
-    source = (Path(server.__file__).parent.parent / "cli.py").read_text()
+    source = (Path(server.__file__).parent / "commands.py").read_text()
     call = source[source.index("cfg = Config("):]
     call = call[:call.index(")\n")]
     assert "favorites_store=FAVORITES_STORE" in call

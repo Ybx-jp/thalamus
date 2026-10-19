@@ -265,7 +265,7 @@ def render_digest(
                 elif block.get("type") == "tool_use":
                     if block.get("name") in EXTERNAL_INGRESS_TOOLS and block.get("id"):
                         external_tool_uses.add(block["id"])
-                    lines.append(f"{tag}  tool: {_tool_use_line(block)}")
+                    lines.append(f"{tag}  tool: {tool_use_line(block)}")
 
     digest = "\n".join(lines)
     if len(digest) <= budget:
@@ -376,7 +376,7 @@ def _codex_output_text(output) -> str:
     return "\n".join(part for part in parts if part).strip()
 
 
-def _tool_use_line(block: dict) -> str:
+def tool_use_line(block: dict) -> str:
     name = block.get("name", "?")
     tool_input = block.get("input") or {}
     for key in ("file_path", "notebook_path", "path", "pattern", "url"):
@@ -390,7 +390,7 @@ def _tool_use_line(block: dict) -> str:
     # fallback below dumps the whole option tree as escaped JSON, which is the
     # least readable line in the feed and the one most worth reading — it is the
     # session saying it is blocked on a human.
-    asked = _questions(tool_input)
+    asked = asked_questions(tool_input)
     if asked:
         more = f" (+{len(asked) - 1} more)" if len(asked) > 1 else ""
         return f"{name} — {_clip(asked[0]['question'], _COMMAND_CAP)}{more}"
@@ -398,7 +398,7 @@ def _tool_use_line(block: dict) -> str:
     return f"{name} {_clip(rendered, _COMMAND_CAP)}"
 
 
-def _questions(tool_input: dict) -> list[dict]:
+def asked_questions(tool_input: dict) -> list[dict]:
     """The questions in an `AskUserQuestion` input, normalised, or []."""
     raw = tool_input.get("questions")
     if not isinstance(raw, list):

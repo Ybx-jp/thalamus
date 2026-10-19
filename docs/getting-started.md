@@ -219,7 +219,8 @@ PATH.
 ## 8. Optional: the console
 
 The console runs pinned sessions as tmux windows and serves them to a browser, so it
-needs **tmux** (`tmux -V`) on top of the prerequisites above.
+needs **tmux** (`tmux -V`) on top of the prerequisites above. It is the
+`thalamus-console` plugin, which `uv sync` installs in a checkout.
 
 ```bash
 thalamus console

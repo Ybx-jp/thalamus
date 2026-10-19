@@ -74,7 +74,7 @@ def occasion_windows(ledger_path: Path | None = None) -> list[tuple[str, str, da
     burn to a single id would answer the question item 8 asks with a number that
     cannot be right for more than one ceremony.
     """
-    from thalamus.console import ceremonies
+    from thalamus_console import ceremonies
 
     rows = ceremonies.read_rows(ledger_path)
     ends: dict[str, datetime] = {}

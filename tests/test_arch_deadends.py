@@ -928,15 +928,21 @@ def test_the_module_the_role_guard_imports_is_not_an_orphan():
     assert "src/thalamus/contract/ownership.py" not in orphan_modules(graph, None, walked)
 
 
+CONSOLE_SERVER = "packages/thalamus-console/src/thalamus_console/server.py"
+
+
 @pytest.mark.skipif(not (REPO_ROOT / "tests").is_dir(), reason="needs a full checkout")
 def test_the_framework_dispatched_symbols_are_excused_rather_than_reported():
     """The false-positive class: names whose caller is a registry, a protocol or a base.
 
-    `pulse/web.py`'s `health` is not in the exempted list either — it is defined inside
+    thalamus-measure's `pulse/web.py` `health` is not in the exempted list either — it is defined inside
     the app factory, so it is a local binding the census never enters. It is checked
     here because it must not be *reported*, and that is what is asserted.
     """
-    report = test_only_symbols(REPO_ROOT, DeadEndPolicy(report_unreferenced=True))
+    report = test_only_symbols(REPO_ROOT, DeadEndPolicy(
+        source_roots=("src", "packages/thalamus-console/src",
+                      "packages/thalamus-measure/src"),
+        report_unreferenced=True))
     reported = {item.name for item in [*report.test_only, *report.unreferenced]}
     assert reported.isdisjoint(
         {"memory_recall", "memory_open_threads", "health", "do_GET", "do_POST", "log_message"}
@@ -947,6 +953,6 @@ def test_the_framework_dispatched_symbols_are_excused_rather_than_reported():
     }
     assert by_rule[("src/thalamus/harness/mcp_server.py", "memory_recall")] == RULE_DECORATOR
     assert by_rule[("src/thalamus/harness/mcp_server.py", "memory_open_threads")] == RULE_DECORATOR
-    assert by_rule[("src/thalamus/console/server.py", "do_GET")] == RULE_OVERRIDE
-    assert by_rule[("src/thalamus/console/server.py", "do_POST")] == RULE_OVERRIDE
-    assert by_rule[("src/thalamus/console/server.py", "log_message")] == RULE_OVERRIDE
+    assert by_rule[(CONSOLE_SERVER, "do_GET")] == RULE_OVERRIDE
+    assert by_rule[(CONSOLE_SERVER, "do_POST")] == RULE_OVERRIDE
+    assert by_rule[(CONSOLE_SERVER, "log_message")] == RULE_OVERRIDE

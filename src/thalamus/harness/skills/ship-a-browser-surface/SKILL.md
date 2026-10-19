@@ -1,6 +1,6 @@
 ---
 name: ship-a-browser-surface
-description: How to take a change to one of this repo's browser surfaces — the console PWA, pulse — from edit to believed-working, and how to verify an accessibility claim by measuring the rendered DOM rather than reading the stylesheet. Use BEFORE editing anything under src/thalamus/console/static/, BEFORE claiming a colour or target size conforms, when a change is correct on disk and wrong on the phone, and when adding a renderer that draws a session row.
+description: How to take a change to one of this repo's browser surfaces — the console PWA, pulse — from edit to believed-working, and how to verify an accessibility claim by measuring the rendered DOM rather than reading the stylesheet. Use BEFORE editing anything under packages/thalamus-console/src/thalamus_console/static/, BEFORE claiming a colour or target size conforms, when a change is correct on disk and wrong on the phone, and when adding a renderer that draws a session row.
 ---
 
 # Ship a Browser Surface
@@ -13,7 +13,7 @@ still shows something else.
 
 | surface | source | build | tests |
 |---|---|---|---|
-| console PWA | `src/thalamus/console/static/` | **none** — files served as written | `tests/js/*.test.mjs` under node, driven by `tests/test_console_js.py` |
+| console PWA | `packages/thalamus-console/src/thalamus_console/static/` | **none** — files served as written | `tests/js/*.test.mjs` under node, driven by `tests/test_console_js.py` |
 | pulse | `packages/thalamus-measure/src/thalamus_measure/pulse/static/index.html` | none — one page, plus copies of the console's Plex faces | no JS suite; `tests/test_pulse.py` pins its tokens, `hashHue` and fonts to the console's |
 
 The console is dependency-free on purpose: one of the server's jobs is restarting
@@ -72,7 +72,7 @@ Run all four from the checkout the service is running out of:
 ```sh
 git rev-parse --short HEAD
 git branch --show-current
-md5sum src/thalamus/console/static/app.js
+md5sum packages/thalamus-console/src/thalamus_console/static/app.js
 curl -s "$CONSOLE/app.js" | md5sum
 ```
 
