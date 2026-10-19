@@ -17,7 +17,7 @@ Two properties are load-bearing:
   your network (a VPN/overlay network, an authenticating reverse proxy, an SSH
   tunnel).
 
-The bridge itself is stdlib-only, unlike the FastAPI surface in `pulse/`: one of
+The bridge itself is stdlib-only, unlike thalamus-measure's FastAPI pulse: one of
 its jobs is restarting the service unit that hosts it, so the
 fewer moving parts between a tap and a tmux call, the better. The expert layer —
 the scope list, spawn, roster sync — is the one part that needs the rest of the

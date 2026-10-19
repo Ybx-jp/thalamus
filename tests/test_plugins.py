@@ -3,11 +3,10 @@ Plugin loading — the `thalamus` entry-point group, `register_commands` and
 `register_hooks`.
 
 Interfaces: thalamus.plugins.load/Plugins.register_commands/Plugins.hooks/Hook,
-cli._main's dispatch on `plugin_run`, the thalamus-ingest and thalamus-reflex plugins'
-registration
+cli._main's dispatch on `plugin_run`, the thalamus-ingest, thalamus-measure and
+thalamus-reflex plugins' registration
 Infrastructure: fake entry points patched into `thalamus.plugins.entry_points`; the
-real installed thalamus-ingest and thalamus-reflex for the end-to-end cases; no graph,
-no model
+real installed plugins for the end-to-end cases; no graph, no model
 Scope: that an installed plugin's commands reach the CLI, and that a broken plugin
 costs only its own commands. The second is the property every hook script relies on,
 because SessionEnd distillation runs through the same `thalamus` entry point.
@@ -221,6 +220,23 @@ def test_one_refused_hook_drops_every_hook_that_plugin_declared(
 def test_the_reflex_plugin_adds_its_commands_to_the_installed_cli(argv):
     """End to end through the real entry-point table, including the two that land
     under core's `eval` group."""
+    result = subprocess.run(
+        [sys.executable, "-m", "thalamus", *argv, "--help"],
+        capture_output=True, text=True, timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"thalamus {' '.join(argv)}" in result.stdout
+    assert "failed to" not in result.stderr
+
+
+@pytest.mark.parametrize("argv", [
+    ["eval", "report"], ["eval", "uses"], ["eval", "pins"], ["eval", "gremlin"],
+    ["eval", "recipes"], ["eval", "profile"], ["eval", "withholding"], ["pulse"],
+])
+def test_the_measure_plugin_adds_its_commands_to_the_installed_cli(argv):
+    """End to end through the real entry-point table: the eval loop's reports under
+    core's `eval` group, and the dashboard as a command of its own."""
     result = subprocess.run(
         [sys.executable, "-m", "thalamus", *argv, "--help"],
         capture_output=True, text=True, timeout=60,

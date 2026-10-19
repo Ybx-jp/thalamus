@@ -137,7 +137,7 @@ MIN_NEW_ANCHORS = 2
 
 # What a session may spend on unsolicited context over its life, in digest characters
 # — what entered context, not what the pointer files hold. ~4 chars/token (the dial
-# `eval/report.py` prices with), so ~6k tokens. Every injected character rides every
+# thalamus-measure's `report.py` prices with), so ~6k tokens. Every injected character rides every
 # later call in the session, and the measured ignored share of injected retrieval is a
 # third (`substrate/reader.py`), so the ceiling is deliberately low; `eval reflex`
 # reports how often it is hit.

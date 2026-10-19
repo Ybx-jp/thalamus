@@ -815,7 +815,7 @@ def test_pin_report_excludes_idle_spawns_from_the_routing_denominator():
     - the render discloses the exclusion in neutral bring-up language
     - engaged=None (no engagement records in the ledger) keeps old behavior
     """
-    from thalamus.eval.pins import build_pin_report
+    from thalamus_measure.pins import build_pin_report
 
     pins = {"idle": "homelab", "asked": "homelab"}
 
@@ -842,7 +842,7 @@ def test_scope_report_renders_priced_verdicts_and_ranks_by_waste():
     - decay candidates carry both repeat count and wasted tokens
     - a zero-priced report (all traces pre-layer-1b) renders without the cost line
     """
-    from thalamus.eval.report import ScopeReport
+    from thalamus_measure.report import ScopeReport
 
     priced = ScopeReport(
         scope="main",
@@ -888,7 +888,7 @@ def test_pin_report_disambiguates_pin_quality_from_expert_quality():
     - pinned low + consulted low -> the expert-needs-work signal
     - consulted counts only the expert's nodes served into OTHER scopes' traces
     """
-    from thalamus.eval.pins import TraceRow, VerdictRow, build_pin_report
+    from thalamus_measure.pins import TraceRow, VerdictRow, build_pin_report
 
     traces, verdicts = [], []
 
@@ -950,7 +950,7 @@ def test_pin_report_refuses_a_verdict_below_the_sample_floor():
     - the signal is "insufficient data", not a verdict — no unmeasured claims
       applies to the routing signal too
     """
-    from thalamus.eval.pins import TraceRow, VerdictRow, build_pin_report
+    from thalamus_measure.pins import TraceRow, VerdictRow, build_pin_report
 
     vid = "scope:literature:trace:t0"
     traces = [TraceRow(vid=vid, scope="literature", session_id="s1",
@@ -976,7 +976,7 @@ def test_pin_report_renders_per_session_rows_priced_in_tokens():
     - ledger-only pinned sessions are counted and named as a signal
     - a global Artifact return (no scope segment) never attributes to an expert
     """
-    from thalamus.eval.pins import TraceRow, VerdictRow, build_pin_report
+    from thalamus_measure.pins import TraceRow, VerdictRow, build_pin_report
 
     t1 = "scope:literature:trace:t1"
     t2 = "scope:literature:trace:t2"
@@ -1062,7 +1062,7 @@ def test_scope_report_window_excludes_undated_traces_and_flags_a_straddle():
     """
     from collections import Counter
 
-    from thalamus.eval.report import ScopeReport, parse_window_bound
+    from thalamus_measure.report import ScopeReport, parse_window_bound
 
     straddle = ScopeReport(
         scope="main",
@@ -1106,7 +1106,7 @@ def test_a_bare_until_date_covers_its_whole_day():
     Verification: the bound lands at the end of that day, not its start — a window
     that silently drops its last day produces a number nobody can reproduce.
     """
-    from thalamus.eval.report import parse_window_bound
+    from thalamus_measure.report import parse_window_bound
 
     upper = parse_window_bound("2026-07-20", end_of_day=True)
     assert upper.hour == 23 and upper.minute == 59

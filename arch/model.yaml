@@ -22,6 +22,7 @@ extractor:
   roots:
   - src
   - packages/thalamus-ingest/src
+  - packages/thalamus-measure/src
   - packages/thalamus-reflex/src
   import_depth: all
   resolve: deepest-matching-module
@@ -31,7 +32,7 @@ extractor:
   - '**/__pycache__/**'
   - '**/node_modules/**'
   - .venv/**
-  digest: b7f3ee3d24ffd6c1ed6c96dd6c8ebfb080f16ccfa32b83ed9a4ad0900c7ff188
+  digest: 1e2632fcd869725a744b5b78ac8112edea32aea3f7662c1550c1f7343ee1b2f2
 # The second extraction channel: the dependency an HTTP boundary hides. `app.js` reaches
 # `server.py` by issuing requests, so an import-only walk reports the browser surface as
 # absent and publishes a propagation cost over the Python half as a fact about the
@@ -119,7 +120,6 @@ layers:
 - name: surfaces
   includes:
   - src/thalamus/console/**
-  - src/thalamus/pulse/**
   - src/thalamus/arch/**
 # The extension points, and the one module of core a plugin is written against for its
 # own sake rather than for what it reuses. Stdlib and pluggy only.
@@ -132,6 +132,9 @@ layers:
 - name: plugin-ingest
   includes:
   - packages/thalamus-ingest/src/**
+- name: plugin-measure
+  includes:
+  - packages/thalamus-measure/src/**
 - name: plugin-reflex
   includes:
   - packages/thalamus-reflex/src/**
@@ -162,8 +165,12 @@ rules:
   may_depend_on: []
 - layer: plugin-ingest
   may_depend_on: [vocabulary, archive, substrate, harness, conformance, extension]
-# `eval` for the trace tap (`eval/traces.py`, `eval/rates.py`), which stays in core when
-# the eval loop leaves it; this rule narrows to the tap's own layer when that split lands.
+# `eval` is core's half of the eval loop: the trace tap, `sync`, cost and conditioning.
+# The reports over it are thalamus-measure's, which reads `harness` for the shipped
+# recipe store.
+- layer: plugin-measure
+  may_depend_on: [vocabulary, substrate, harness, eval, extension]
+# `eval` for the trace tap (`eval/traces.py`, `eval/rates.py`).
 - layer: plugin-reflex
   may_depend_on: [vocabulary, archive, substrate, harness, eval, extension]
 
@@ -227,7 +234,8 @@ accepted:
 deadends:
   version: 1
   enabled: true
-  source_roots: [src, packages/thalamus-ingest/src, packages/thalamus-reflex/src]
+  source_roots: [src, packages/thalamus-ingest/src, packages/thalamus-measure/src,
+                 packages/thalamus-reflex/src]
   test_roots: [tests]
   reference_extensions: ['.sh']
   # Modules whose caller is outside the scanned import graph, so a fan-in of zero says

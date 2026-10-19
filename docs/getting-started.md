@@ -288,7 +288,7 @@ goes through a headless model pass to produce claims and open threads.
 ## 10. Look at what it remembers
 
 ```bash
-thalamus pulse              # live telemetry over the eval loop
+thalamus pulse              # live telemetry over the eval loop (thalamus-measure)
 thalamus contract check     # audit the graph against the contract
 ```
 

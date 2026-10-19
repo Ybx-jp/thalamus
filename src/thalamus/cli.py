@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-import uvicorn
 import yaml
 
 from thalamus import __version__, plugins
@@ -28,8 +27,6 @@ from thalamus.contract.conformance import (
 )
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.eval import snapshots
-from thalamus.eval.profile import DEFAULT_REPEAT as PROFILE_REPEAT
-from thalamus.eval.withholding import DRAWS as WITHHOLD_DRAWS
 from thalamus.harness import (
     agents,
     codex_transcripts,
@@ -546,9 +543,11 @@ def _main():
         "being discarded is already known-bad.",
     )
 
-    # Eval command — layer 1 of the eval loop
+    # Eval command — layer 1 of the eval loop. Core lands the trace tap and prices it;
+    # the reports over what landed are thalamus-measure's, added through `groups`.
     eval_parser = subparsers.add_parser(
-        "eval", help="Eval loop v0: land retrieval traces in the graph and report used-vs-ignored"
+        "eval", help="The eval loop: land retrieval traces in the graph, price what memory "
+        "costs, and the reports installed plugins add"
     )
     eval_sub = eval_parser.add_subparsers(dest="eval_command")
 
@@ -565,53 +564,6 @@ def _main():
         "--write",
         action="store_true",
         help="Write to the graph. Without it, sync runs and is reported but not persisted.",
-    )
-
-    eval_report_parser = eval_sub.add_parser(
-        "report", help="Per-scope retrieval-utility numbers from landed traces"
-    )
-    eval_report_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    eval_report_parser.add_argument(
-        "--scope", default=MAIN_SCOPE, help="Scope to report on (default: main)"
-    )
-    eval_report_parser.add_argument(
-        "--top", type=int, default=5, help="How many most-ignored nodes to list"
-    )
-    eval_report_parser.add_argument(
-        "--since",
-        default=None,
-        help="Only count traces at or after this ISO date/datetime (UTC), e.g. 2026-07-18",
-    )
-    eval_report_parser.add_argument(
-        "--until",
-        default=None,
-        help="Only count traces at or before this ISO date/datetime (UTC); a bare date "
-        "covers the whole day",
-    )
-
-    eval_uses_parser = eval_sub.add_parser(
-        "uses",
-        help="Attribution subgraphs: who cited what, whether it compounds, and what "
-        "the served stamp can speak about",
-    )
-    eval_uses_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    eval_uses_parser.add_argument(
-        "--scope",
-        default=None,
-        help="Narrow to subgraphs rooted in this scope (default: every scope — an "
-        "attribution subgraph may reach another scope's knowledge, and filtering by "
-        "the target would hide exactly those edges)",
-    )
-    eval_uses_parser.add_argument(
-        "--since",
-        default=None,
-        help="Only count sessions at or after this ISO date/datetime (UTC)",
-    )
-    eval_uses_parser.add_argument(
-        "--until",
-        default=None,
-        help="Only count sessions at or before this ISO date/datetime (UTC); a bare "
-        "date covers the whole day",
     )
 
     eval_cost_parser = eval_sub.add_parser(
@@ -632,86 +584,6 @@ def _main():
         "--by-occasion", action="store_true", dest="by_occasion",
         help="Attribute room members' burn to the ceremony occasion it happened "
              "inside, with each room's out-of-occasion burn beside it",
-    )
-
-    eval_pins_parser = eval_sub.add_parser(
-        "pins",
-        help="Pin-quality routing signal: per-expert pinned vs consulted utility "
-        "from priced traces (the pin or the expert — the data says which)",
-    )
-    eval_pins_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    eval_pins_parser.add_argument(
-        "--pins-file", type=Path, default=None, help="Pin ledger (default: ~/.thalamus/pins/pins.jsonl)"
-    )
-
-    eval_gremlin_parser = eval_sub.add_parser(
-        "gremlin",
-        help="Gremlin fluency metrics: guard rescue rate, rejection classes, recipe reuse",
-    )
-    eval_gremlin_parser.add_argument(
-        "--traces", type=Path, default=None, help="Trace tap dir (default: ~/.thalamus/traces)"
-    )
-    eval_gremlin_parser.add_argument(
-        "--guards", type=Path, default=None, help="Guard event dir (default: ~/.thalamus/guards)"
-    )
-
-    eval_recipes_parser = eval_sub.add_parser(
-        "recipes",
-        help="Smoke-run every stored gremlin recipe read-only (rolling freshness signal)",
-    )
-    eval_recipes_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    eval_recipes_parser.add_argument(
-        "--staged", action="store_true",
-        help="Show queries the PostToolUse hook staged for RECIPES.md instead of "
-             "smoke-running the store",
-    )
-
-    eval_profile_parser = eval_sub.add_parser(
-        "profile",
-        help="Gremlin query cost: what each traversal shape costs in wall time, and "
-        "where a single query spends it step by step",
-    )
-    eval_profile_parser.add_argument(
-        "--profiles", type=Path, default=None,
-        help="Span ledger directory (default: ~/.thalamus/profiles)",
-    )
-    eval_profile_parser.add_argument(
-        "--top", type=int, default=10, help="How many costliest shapes to list"
-    )
-    eval_profile_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    eval_profile_parser.add_argument(
-        "--query",
-        default="",
-        help="Step-profile one read-only gremlin-lang traversal instead of reading the "
-        "ledger. Server-side per-step metrics via TinkerPop's profile(); profiling "
-        "impedes the traversal, so read the steps against each other.",
-    )
-    eval_profile_parser.add_argument(
-        "--corpus",
-        action="store_true",
-        help="Step-profile every gremlin-lang recipe the skills store, slowest first",
-    )
-    eval_profile_parser.add_argument(
-        "--repeat", type=int, default=None,
-        help=f"Timed runs per query for --query/--corpus (default: {PROFILE_REPEAT})",
-    )
-
-    eval_withholding_parser = eval_sub.add_parser(
-        "withholding",
-        help="The randomized-withholding ledger as an outcome: do withheld nodes come back?",
-    )
-    eval_withholding_parser.add_argument(
-        "--url", default=DEFAULT_URL, help="Gremlin endpoint"
-    )
-    eval_withholding_parser.add_argument(
-        "--scope", default="main",
-        help="Scope to analyse (default: main, 80%% of the corpus). "
-             "Pass '' for the pooled exploratory read across every scope.",
-    )
-    eval_withholding_parser.add_argument(
-        "--draws", type=int, default=WITHHOLD_DRAWS,
-        help=f"Permutation draws (default: {WITHHOLD_DRAWS}); the attainable "
-             "two-sided p floor is 1/(draws+1)",
     )
 
     eval_conditioning_parser = eval_sub.add_parser(
@@ -1240,19 +1112,6 @@ def _main():
              "the last fetch somebody ran)"
     )
 
-    # Pulse command — the live telemetry dashboard
-    pulse_parser = subparsers.add_parser(
-        "pulse",
-        help="Serve the live telemetry dashboard over the eval loop's measurements",
-    )
-    pulse_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    pulse_parser.add_argument(
-        "--host", default="127.0.0.1", help="Bind address (default: localhost)"
-    )
-    pulse_parser.add_argument(
-        "--port", type=int, default=8379, help="Port (default: 8379; /pulse via tailscale serve)"
-    )
-
     # Plugins add theirs after core's, so a name core already uses is refused as that
     # plugin's failure rather than shadowing the core command.
     plugins.loaded().register_commands(subparsers, groups={"eval": eval_sub})
@@ -1326,8 +1185,6 @@ def _main():
         _cmd_dispatch(args)
     elif args.command == "console":
         _cmd_console(args)
-    elif args.command == "pulse":
-        _cmd_pulse(args)
     elif args.command == "arch":
         _cmd_arch(args, arch_parser)
     else:
@@ -3336,37 +3193,6 @@ def _cmd_eval(args, eval_parser):
         print(outcome.summary())
         if not args.write:
             print("DRY RUN — nothing written to the graph. Re-run with --write to persist.")
-    elif getattr(args, "eval_command", None) == "report":
-        from thalamus.eval.report import scope_report
-
-        graph = connect(args.url)
-        try:
-            print(
-                scope_report(
-                    graph,
-                    scope=args.scope,
-                    top=args.top,
-                    since=args.since,
-                    until=args.until,
-                ).render()
-            )
-        finally:
-            close_connection(graph)
-    elif getattr(args, "eval_command", None) == "uses":
-        from thalamus.eval.uses import uses_report
-
-        graph = connect(args.url)
-        try:
-            print(
-                uses_report(
-                    graph,
-                    scope=args.scope,
-                    since=args.since,
-                    until=args.until,
-                ).render()
-            )
-        finally:
-            close_connection(graph)
     elif getattr(args, "eval_command", None) == "cost":
         from datetime import date, timedelta
 
@@ -3382,45 +3208,6 @@ def _cmd_eval(args, eval_parser):
             print(occasion_burn(since).render())
         else:
             print(cost_report(project_dir, since, traces_base=args.traces).render())
-    elif getattr(args, "eval_command", None) == "gremlin":
-        from thalamus.eval.gremlin import gremlin_report
-
-        print(gremlin_report(traces_base=args.traces, guards_base=args.guards).render())
-    elif getattr(args, "eval_command", None) == "recipes":
-        from thalamus.eval.gremlin import render_smoke, render_staged, smoke_recipes, staged_recipes
-
-        if args.staged:
-            print(render_staged(staged_recipes()))
-            return
-        results = smoke_recipes(args.url)
-        print(render_smoke(results))
-        if any(not r.ok for r in results):
-            sys.exit(1)
-    elif getattr(args, "eval_command", None) == "profile":
-        from thalamus.eval.profile import (
-            profile_corpus,
-            profile_query,
-            profile_report,
-            render_corpus,
-            render_query_profile,
-        )
-
-        repeat = args.repeat if args.repeat is not None else PROFILE_REPEAT
-        if args.query:
-            print(render_query_profile(profile_query(args.url, args.query, repeat=repeat)))
-        elif args.corpus:
-            print(render_corpus(profile_corpus(args.url, repeat=repeat)))
-        else:
-            print(profile_report(base=args.profiles, top=args.top).render(top=args.top))
-    elif getattr(args, "eval_command", None) == "withholding":
-        from thalamus.eval.withholding import recurrence_report
-
-        graph = connect(args.url)
-        try:
-            print(recurrence_report(
-                graph, scope=args.scope, draws=args.draws).render())
-        finally:
-            close_connection(graph)
     elif getattr(args, "eval_command", None) == "conditioning":
         from thalamus.eval.conditioning import conditioning_report
 
@@ -3429,20 +3216,6 @@ def _cmd_eval(args, eval_parser):
                 conditioning_base=args.conditioning, traces_base=args.traces
             ).render()
         )
-    elif getattr(args, "eval_command", None) == "pins":
-        from thalamus.contract.manifest import available_scopes
-        from thalamus.eval.cost import load_engaged, load_pins
-        from thalamus.eval.pins import pin_report
-
-        graph = connect(args.url)
-        try:
-            report = pin_report(
-                graph, load_pins(args.pins_file), available_scopes(),
-                engaged=load_engaged(args.pins_file),
-            )
-        finally:
-            close_connection(graph)
-        print(report.render())
     else:
         eval_parser.print_help()
         sys.exit(1)
@@ -4242,19 +4015,6 @@ def _cmd_dispatch(args):
         sys.exit(1)
 
 
-
-
-def _cmd_pulse(args):
-    from thalamus.pulse.web import create_pulse_app
-
-    print(f"Thalamus Pulse: http://{args.host}:{args.port}")
-    print("Press Ctrl+C to stop.")
-    uvicorn.run(
-        create_pulse_app(url=args.url),
-        host=args.host,
-        port=args.port,
-        log_level="warning",
-    )
 
 
 def _cmd_console(args):

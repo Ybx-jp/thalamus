@@ -14,7 +14,7 @@ still shows something else.
 | surface | source | build | tests |
 |---|---|---|---|
 | console PWA | `src/thalamus/console/static/` | **none** — files served as written | `tests/js/*.test.mjs` under node, driven by `tests/test_console_js.py` |
-| pulse | `src/thalamus/pulse/static/index.html` | none — one page, plus copies of the console's Plex faces | no JS suite; `tests/test_pulse.py` pins its tokens, `hashHue` and fonts to the console's |
+| pulse | `packages/thalamus-measure/src/thalamus_measure/pulse/static/index.html` | none — one page, plus copies of the console's Plex faces | no JS suite; `tests/test_pulse.py` pins its tokens, `hashHue` and fonts to the console's |
 
 The console is dependency-free on purpose: one of the server's jobs is restarting
 the systemd unit that hosts it, so the fewer moving parts between a tap and a tmux

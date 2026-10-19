@@ -52,6 +52,7 @@ installed on its own and depending on the core and nothing else:
 | Package | Adds |
 |---|---|
 | `thalamus-ingest` | `ingest`, `backfill-chunks` |
+| `thalamus-measure` | the eval loop's reports: `eval report`, `eval uses`, `eval pins`, `eval withholding`, `eval gremlin`, `eval recipes`, `eval profile`; and the `pulse` dashboard |
 | `thalamus-reflex` | the memory reflex: `reflex`, `eval reflex`, `eval vocabulary`, and the Claude Code hooks `reflex.sh` and `reflex-pointer-tap.sh` |
 
 A plugin declares a module under the `thalamus` entry-point group, and every `thalamus`
@@ -227,7 +228,7 @@ thalamus contract check            # audit the live graph against the federation
                                    #   violations exit 1; advisories print and do not
 thalamus contract check --transcripts  # Claude Code transcripts against what distillation
                                    #   assumes of their format; any finding exits 1
-thalamus pulse                     # live telemetry dashboard over the eval loop
+thalamus pulse                     # live telemetry dashboard over the eval loop (thalamus-measure)
 thalamus graph up|stop|ps          # the graph server, from the compose file the package ships
 thalamus snapshot                  # flush the in-memory graph to disk now
 ```
@@ -309,20 +310,21 @@ thalamus thread audit              # the close ledger
 ## The eval loop
 
 Layer 1 measures what retrieval did, from what the harness already logs — this is the
-whole of what `thalamus eval` runs.
+whole of what `thalamus eval` runs. The core lands and prices the traces (`sync`, `cost`,
+`conditioning`); the reports that read them back come from plugins, named beside each.
 
 ```bash
 thalamus eval sync --write         # land retrieval traces and used-vs-ignored verdicts
-thalamus eval report               # per-scope retrieval-utility numbers, priced
-thalamus eval uses                 # attribution subgraphs: coverage, depth, stamp, targets
+thalamus eval report               # per-scope retrieval-utility numbers, priced (thalamus-measure)
+thalamus eval uses                 # attribution subgraphs: coverage, depth, stamp, targets (thalamus-measure)
 thalamus eval cost                 # session and operation token-cost buckets
-thalamus eval pins                 # per-expert routing signal: pinned vs consulted utility
+thalamus eval pins                 # per-expert routing signal: pinned vs consulted utility (thalamus-measure)
 thalamus eval conditioning         # per-firing behavioural join on injected reminders
 thalamus eval reflex               # the memory reflex, read by arm: fired, served, used (thalamus-reflex)
-thalamus eval withholding          # the randomized-withholding ledger, read as an outcome
-thalamus eval gremlin              # gremlin fluency: guard rescue rate, rejection classes
-thalamus eval recipes              # smoke-run every stored gremlin recipe, read-only
-thalamus eval profile              # gremlin query cost: wall time per traversal shape
+thalamus eval withholding          # the randomized-withholding ledger, read as an outcome (thalamus-measure)
+thalamus eval gremlin              # gremlin fluency: guard rescue rate, rejection classes (thalamus-measure)
+thalamus eval recipes              # smoke-run every stored gremlin recipe, read-only (thalamus-measure)
+thalamus eval profile              # gremlin query cost: wall time per traversal shape (thalamus-measure)
 ```
 
 `eval profile` reads the span tap: every traversal issued through `connect()` and

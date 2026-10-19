@@ -1,0 +1,53 @@
+[project]
+name = "thalamus-measure"
+dynamic = ["version"]
+description = "The eval loop's reports and the pulse dashboard for thalamus: whether what retrieval served was used, and how the loop is doing"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Jackson Porter" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    # The floor is the first core that no longer defines these commands itself. Against
+    # an older core, registering them collides with core's own, and the plugin is
+    # refused.
+    "thalamus-memory>=0.1.1.dev2",
+    # Imported here directly, so declared here, at core's own floor.
+    "gremlinpython>=3.7,<3.8",
+    # pulse's server. Nothing in core imports either.
+    "fastapi>=0.139.0",
+    "uvicorn[standard]>=0.51.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Ybx-jp/thalamus"
+Repository = "https://github.com/Ybx-jp/thalamus"
+Issues = "https://github.com/Ybx-jp/thalamus/issues"
+
+[project.entry-points.thalamus]
+measure = "thalamus_measure.plugin"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/thalamus_measure/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/thalamus_measure"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/README.md"]
+
+[tool.uv.sources]
+thalamus-memory = { workspace = true }

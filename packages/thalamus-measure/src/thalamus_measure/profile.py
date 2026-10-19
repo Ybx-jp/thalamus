@@ -388,7 +388,7 @@ def lang_corpus(paths: list[Path] | None = None) -> list[tuple[str, str]]:
     the store, so a recipe promoted for reuse is a query this instrument prices
     from then on, with no second list to keep in step.
     """
-    from thalamus.eval.gremlin import RECALL_STRATEGY_PATH, RECIPES_PATH, _dated_blocks
+    from thalamus_measure.gremlin import RECALL_STRATEGY_PATH, RECIPES_PATH, _dated_blocks
 
     corpus: list[tuple[str, str]] = []
     seen: set[str] = set()

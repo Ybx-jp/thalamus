@@ -251,14 +251,14 @@ src/thalamus/
   archive/     immutable content-addressed store for retained evidence
   harness/     where it meets the agent: MCP server, hooks, skills, bootstrap
   plugins.py   the extension points a plugin package registers through
-  eval/        trace tap, attribution, cost: the live-serving half of the eval loop.
+  eval/        trace tap, attribution, sync, cost: the live-serving half of the eval loop.
                The counterfactual harness (task battery, arms, oracle) is research
                instrumentation; it lives in the private thalamus-eval companion repo
   arch/        the `architect` scope's instrument: a declared-policy import extractor
                and the structural metrics computed over it, gated in CI
-  pulse/       live telemetry dashboard over the eval loop
 packages/      plugins, each its own distribution depending on the core alone
   thalamus-ingest/   curated ingestion: `thalamus ingest`, `thalamus backfill-chunks`
+  thalamus-measure/  the eval loop's reports and the dashboard: `eval report|uses|pins|withholding|gremlin|recipes|profile`, `thalamus pulse`
   thalamus-reflex/   the memory reflex: its two hooks, `thalamus reflex`, `eval reflex|vocabulary`
 arch/          model.yaml, the committed architecture model the gates check against
 config/        expert manifests

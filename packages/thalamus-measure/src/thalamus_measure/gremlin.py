@@ -33,6 +33,7 @@ from datetime import datetime
 from pathlib import Path
 
 from thalamus.eval.traces import TraceEvent, load_events
+from thalamus.harness.install import SKILL_DIR
 from thalamus.substrate.query import run_query
 from thalamus.substrate.spans import step_shape
 
@@ -40,12 +41,9 @@ GUARDS_DIR = Path.home() / ".thalamus" / "guards"
 
 # This module's own guard, named because the ledger directory is shared with others.
 TERMINAL_STEP_GUARD = "terminal-step"
-RECIPES_PATH = (
-    Path(__file__).parents[1] / "harness" / "skills" / "gremlin-python" / "RECIPES.md"
-)
-RECALL_STRATEGY_PATH = (
-    Path(__file__).parents[1] / "harness" / "skills" / "recall-strategy" / "SKILL.md"
-)
+# The skills core ships, which hold the recipe store.
+RECIPES_PATH = SKILL_DIR / "gremlin-python" / "RECIPES.md"
+RECALL_STRATEGY_PATH = SKILL_DIR / "recall-strategy" / "SKILL.md"
 
 # A fingerprint shorter than this matches half of all traversals; it carries no
 # reuse signal and is skipped.

@@ -809,7 +809,7 @@ keeps that true.
 `src/thalamus/console/` — `server.py`, `transcript.py` and `distill.py` plus
 `static/`. Stdlib Python and a dependency-free client.
 
-- **Stdlib `http.server`, not FastAPI** like `pulse/`. One of its jobs
+- **Stdlib `http.server`, not FastAPI** like thalamus-measure's pulse. One of its jobs
   is restarting the service unit hosting it; the fewer moving parts between a tap
   on a phone and a tmux call, the better.
 - **The read view is a deferred import.** It reuses the harness's transcript
