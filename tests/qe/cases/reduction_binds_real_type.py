@@ -37,7 +37,7 @@ from ..model import Case, FailureClass, Finding, Substrate, Tier
 # receiver whose attributes must exist on the real type. Grown when a new reduction
 # reaches the wire, not when one breaks.
 REDUCTIONS = (
-    ("thalamus.console.server", "attach_blocked"),
+    ("thalamus_console.server", "attach_blocked"),
 )
 
 
@@ -50,7 +50,7 @@ def _reads(fn, receiver: str) -> set[str]:
 def run() -> Finding | None:
     import importlib  # noqa: PLC0415
 
-    from thalamus.console import dispatch  # noqa: PLC0415
+    from thalamus_console import dispatch  # noqa: PLC0415
     from thalamus.harness.quick import LiveSession  # noqa: PLC0415
 
     carried = {f.name for f in dataclasses.fields(LiveSession)}
@@ -108,7 +108,7 @@ def run() -> Finding | None:
             "and a fake grows whatever attribute the code asks it for"
         ),
         witness="; ".join(drifted),
-        site="src/thalamus/console/server.py::attach_blocked",
+        site="packages/thalamus-console/src/thalamus_console/server.py::attach_blocked",
     )
 
 
