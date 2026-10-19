@@ -29,8 +29,6 @@ dependencies = [
     "pyyaml>=6.0",
     "pydantic>=2.0",
     "fastmcp>=3.4.0",
-    "fastapi>=0.139.0",
-    "uvicorn[standard]>=0.51.0",
     # Loads the plugins installed under the `thalamus` entry-point group
     # (`thalamus.plugins`). pytest's own plugin manager, pure Python.
     "pluggy>=1.5",
@@ -98,13 +96,14 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 thalamus-ingest = { workspace = true }
+thalamus-measure = { workspace = true }
 thalamus-reflex = { workspace = true }
 
 # The plugins are installed into the development environment by default, so the suite
 # and the gates see them. A dependency group rather than an extra because a group is
 # not published: the core's metadata on PyPI names no plugin.
 [dependency-groups]
-plugins = ["thalamus-ingest", "thalamus-reflex"]
+plugins = ["thalamus-ingest", "thalamus-measure", "thalamus-reflex"]
 
 [tool.uv]
 default-groups = ["plugins"]

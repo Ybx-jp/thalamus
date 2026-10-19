@@ -42,8 +42,15 @@ none
 - 2026-09-20T20:37:29-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/eval/uses.py § "_session_rows" =sha256:37f90645991e0e69a45c0b7a6eddf4de858bffb91692574ce9f1d43dbd8f73d7
   note: the citation marker inside this section now names the entry by id alone, under the `citation-slug` rule `claims-ledger.toml` sets for source files, and the docstring was rewrapped. The assertion is unaffected.
+- 2026-10-18T21:22:47-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/eval/uses.py § "_session_rows" =sha256:37f90645991e0e69a45c0b7a6eddf4de858bffb91692574ce9f1d43dbd8f73d7
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T21:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-measure/src/thalamus_measure/uses.py § "_session_rows" =sha256:37f90645991e0e69a45c0b7a6eddf4de858bffb91692574ce9f1d43dbd8f73d7
+  note: src/thalamus/eval/uses.py moved into the thalamus-measure plugin package as uses.py with _session_rows unchanged, so the assertion is unaffected
 
 ## References
 
 - docs/cli.md · standing · cites-as-live
-- src/thalamus/eval/uses.py · standing · cites-as-live
+- packages/thalamus-measure/src/thalamus_measure/uses.py · standing · cites-as-live

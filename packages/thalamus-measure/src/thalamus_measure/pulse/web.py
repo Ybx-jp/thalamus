@@ -21,7 +21,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 
-from thalamus.pulse import metrics
+from thalamus_measure.pulse import metrics
 
 logger = logging.getLogger(__name__)
 

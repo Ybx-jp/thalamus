@@ -196,7 +196,7 @@ def test_the_used_rate_is_refused_when_the_window_straddles_two_rankers():
     warned number is still the number that gets quoted, and this rate had already
     travelled once as a point estimate on n=5.
     """
-    from thalamus.eval.report import ScopeReport
+    from thalamus_measure.report import ScopeReport
 
     report = ScopeReport(
         scope="main",
@@ -222,7 +222,7 @@ def test_the_used_rate_is_refused_when_the_window_straddles_two_rankers():
 
 def test_a_single_ranker_window_gets_one_rate_with_a_session_clustered_interval():
     """One setting is attributable, so the rate renders — with its own interval."""
-    from thalamus.eval.report import ScopeReport
+    from thalamus_measure.report import ScopeReport
 
     report = ScopeReport(
         scope="main",

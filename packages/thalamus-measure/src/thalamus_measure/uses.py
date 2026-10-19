@@ -40,7 +40,7 @@ from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import T
 
 from thalamus.eval.rates import Rate, wilson_interval
-from thalamus.eval.report import parse_window_bound
+from thalamus_measure.report import parse_window_bound
 
 # The stamping rule `eval sync` writes, and the only role it can speak about. A
 # rejected alternative is minted by the extraction that rejected it, so no trace ever

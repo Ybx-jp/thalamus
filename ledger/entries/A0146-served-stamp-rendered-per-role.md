@@ -42,8 +42,15 @@ none
 - 2026-09-20T20:37:29-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/eval/uses.py § "UsesReport" =sha256:f608e78d4fe59a1864ee2494e32cf2db2dfe2064cf23f8c278accbb8c42b8aff
   note: the citation marker inside this section now names the entry by id alone, under the `citation-slug` rule `claims-ledger.toml` sets for source files, and the docstring was rewrapped. The assertion is unaffected.
+- 2026-10-18T21:22:47-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/eval/uses.py § "UsesReport" =sha256:f608e78d4fe59a1864ee2494e32cf2db2dfe2064cf23f8c278accbb8c42b8aff
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T21:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-measure/src/thalamus_measure/uses.py § "UsesReport" =sha256:f608e78d4fe59a1864ee2494e32cf2db2dfe2064cf23f8c278accbb8c42b8aff
+  note: src/thalamus/eval/uses.py moved into the thalamus-measure plugin package as uses.py with UsesReport unchanged, so the assertion is unaffected
 
 ## References
 
 - docs/cli.md · standing · cites-as-live
-- src/thalamus/eval/uses.py · standing · cites-as-live
+- packages/thalamus-measure/src/thalamus_measure/uses.py · standing · cites-as-live

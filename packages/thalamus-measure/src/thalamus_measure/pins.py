@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 
 from gremlin_python.process.graph_traversal import GraphTraversalSource
 from thalamus.contract.ontology import MAIN_SCOPE
-from thalamus.eval.report import (
+from thalamus_measure.report import (
     _as_bool,
     _as_int,
     _edge_source,
@@ -44,7 +44,7 @@ from thalamus.eval.report import (
 )
 from gremlin_python.process.traversal import T
 
-# Rendered chars per token — the same rough dial as eval/cost.py and eval/report.py.
+# Rendered chars per token — the same rough dial as core's eval/cost.py and report.py.
 _CHARS_PER_TOKEN = 4
 
 SIGNAL_FLOOR = 10  # attributed nodes required on each side before a signal renders

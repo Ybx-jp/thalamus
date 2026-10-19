@@ -1,7 +1,7 @@
 """
 Pulse dashboard tests: the JSON view-models and the web app's honesty states.
 
-Interfaces: thalamus.pulse.metrics, thalamus.pulse.web
+Interfaces: thalamus_measure.pulse.metrics, thalamus_measure.pulse.web
 Infrastructure: tmp_path ledgers + a stubbed graph read — no live graph, no model
 Scope: the projections the frontend trusts blind. The dashboard's whole contract
 is that honesty states (tap-only, pending, undefined-rate, floors) are produced
@@ -19,16 +19,17 @@ import pytest
 
 from fastapi.testclient import TestClient
 
-from thalamus.pulse import metrics
-from thalamus.pulse.metrics import (
+from thalamus_measure.pulse import metrics
+from thalamus_measure.pulse.metrics import (
     _TimedTrace,
     _GraphRead,
     live_snapshot,
     report_snapshot,
 )
-from thalamus.eval.pins import VerdictRow
+from thalamus_measure.pins import VerdictRow
+from thalamus.contract.paths import PACKAGE_DIR
 from thalamus.eval.traces import TraceEvent
-from thalamus.pulse.web import create_pulse_app
+from thalamus_measure.pulse.web import create_pulse_app
 
 
 def _tap_line(**overrides) -> str:
@@ -405,9 +406,9 @@ def test_build_reports_how_far_the_checkout_moved_since_boot(tmp_path):
 
     (repo / "README").write_text("b")
     _vcs(repo, "commit", "-qam", "two")
-    (repo / "src/thalamus/pulse").mkdir(parents=True)
-    (repo / "src/thalamus/pulse/web.py").write_text("")
-    _vcs(repo, "add", "src")
+    (repo / "packages/thalamus-measure/src/thalamus_measure/pulse").mkdir(parents=True)
+    (repo / "packages/thalamus-measure/src/thalamus_measure/pulse/web.py").write_text("")
+    _vcs(repo, "add", "packages")
     _vcs(repo, "commit", "-qm", "three")
 
     now = metrics._build_dict(build)
@@ -427,7 +428,7 @@ def test_build_reports_how_far_the_checkout_moved_since_boot(tmp_path):
     assert metrics._build_dict(metrics.record_build(nowhere))["behind"] is None
 
 
-_CONSOLE = Path(metrics.__file__).parents[1] / "console" / "static"
+_CONSOLE = PACKAGE_DIR / "console" / "static"
 _PULSE = Path(metrics.__file__).parent / "static"
 
 
@@ -478,7 +479,7 @@ def test_web_app_serves_dashboard_and_degrades_without_graph(tmp_path, monkeypat
     - /api/report returns a tap-only report instead of failing
     """
     ledgers = _ledgers(tmp_path)
-    monkeypatch.setattr("thalamus.pulse.web._try_connect", lambda url: None)
+    monkeypatch.setattr("thalamus_measure.pulse.web._try_connect", lambda url: None)
     app = create_pulse_app(project_dir=tmp_path / "nowhere", **ledgers)
     client = TestClient(app)
 
@@ -506,7 +507,7 @@ def test_web_app_serves_the_pwa_install_surface(tmp_path, monkeypatch):
       WebAPKs ignore ports, so /pulse/ must stay disjoint from /console/ etc.)
     - unknown asset names 404 instead of leaking arbitrary paths
     """
-    monkeypatch.setattr("thalamus.pulse.web._try_connect", lambda url: None)
+    monkeypatch.setattr("thalamus_measure.pulse.web._try_connect", lambda url: None)
     client = TestClient(create_pulse_app(**_ledgers(tmp_path)))
 
     assert '<link rel="manifest" href="manifest.webmanifest">' in client.get("/").text

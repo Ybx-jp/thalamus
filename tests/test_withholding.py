@@ -1,7 +1,7 @@
 """
 Randomized-withholding recurrence tests (tracker #107).
 
-Interfaces: thalamus.eval.withholding (Event, analyse, _later_universes)
+Interfaces: thalamus_measure.withholding (Event, analyse, _later_universes)
 Infrastructure: hand-built Events; no live graph, no ledger on disk
 Scope: the outcome layer only — eligibility, the within-event permutation null, and
 the two recurrence universes. The graph/ledger join (`load_events`) is exercised
@@ -10,7 +10,7 @@ against the live corpus, not here.
 
 import pytest
 
-from thalamus.eval.withholding import Event, _later_universes, analyse
+from thalamus_measure.withholding import Event, _later_universes, analyse
 
 
 def _event(ts, offered, withheld, surfaced=None, session="s1"):

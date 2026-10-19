@@ -13,6 +13,7 @@ resolution-markers = [
 [manifest]
 members = [
     "thalamus-ingest",
+    "thalamus-measure",
     "thalamus-memory",
     "thalamus-reflex",
 ]
@@ -2962,16 +2963,32 @@ requires-dist = [
 ]
 
 [[package]]
+name = "thalamus-measure"
+source = { editable = "packages/thalamus-measure" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "gremlinpython" },
+    { name = "thalamus-memory" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.139.0" },
+    { name = "gremlinpython", specifier = ">=3.7,<3.8" },
+    { name = "thalamus-memory", editable = "." },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.51.0" },
+]
+
+[[package]]
 name = "thalamus-memory"
 source = { editable = "." }
 dependencies = [
-    { name = "fastapi" },
     { name = "fastmcp" },
     { name = "gremlinpython" },
     { name = "pluggy" },
     { name = "pydantic" },
     { name = "pyyaml" },
-    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.optional-dependencies]
@@ -3000,13 +3017,13 @@ nli = [
 [package.dev-dependencies]
 plugins = [
     { name = "thalamus-ingest" },
+    { name = "thalamus-measure" },
     { name = "thalamus-reflex" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "claims-ledger", marker = "extra == 'dev'", specifier = ">=0.0.4" },
-    { name = "fastapi", specifier = ">=0.139.0" },
     { name = "fastmcp", specifier = ">=3.4.0" },
     { name = "gremlinpython", specifier = ">=3.7,<3.8" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.1" },
@@ -3024,13 +3041,13 @@ requires-dist = [
     { name = "torch", marker = "extra == 'nli'", specifier = ">=2.5" },
     { name = "transformers", marker = "extra == 'nli'", specifier = ">=4.46" },
     { name = "ty", marker = "extra == 'dev'", specifier = "==0.0.74" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.51.0" },
 ]
 provides-extras = ["dev", "frames", "nli"]
 
 [package.metadata.requires-dev]
 plugins = [
     { name = "thalamus-ingest", editable = "packages/thalamus-ingest" },
+    { name = "thalamus-measure", editable = "packages/thalamus-measure" },
     { name = "thalamus-reflex", editable = "packages/thalamus-reflex" },
 ]
 

@@ -34,6 +34,13 @@ if "$work/core/bin/thalamus" reflex --help >/dev/null 2>&1; then
   echo "core alone answers \`thalamus reflex\`, which belongs to thalamus-reflex" >&2
   exit 1
 fi
+if "$work/core/bin/thalamus" pulse --help >/dev/null 2>&1; then
+  echo "core alone answers \`thalamus pulse\`, which belongs to thalamus-measure" >&2
+  exit 1
+fi
+# The SessionEnd hooks run `eval sync --write` after every distillation, so the core has
+# to answer it with no plugin installed.
+"$work/core/bin/thalamus" eval sync --help >/dev/null
 echo "ok  thalamus-memory alone"
 
 # Each plugin with the core and its own declared dependencies, nothing more.
@@ -80,3 +87,15 @@ assert {h.script.name for h in hooks} == {"reflex.sh", "reflex-pointer-tap.sh"},
 assert all(os.access(h.script, os.X_OK) for h in hooks), hooks
 EOF
 echo "ok  thalamus reflex, thalamus eval reflex|vocabulary, and its two hook scripts"
+
+# The measure plugin's commands under core's `eval`, the dashboard, and the page it
+# serves, which ships in the wheel beside the module that reads it.
+for cmd in report uses pins withholding gremlin recipes profile; do
+  "$work/thalamus_measure/bin/thalamus" eval "$cmd" --help >/dev/null
+done
+"$work/thalamus_measure/bin/thalamus" pulse --help >/dev/null
+"$work/thalamus_measure/bin/python" -I - <<'EOF'
+from thalamus_measure.pulse.web import STATIC_DIR
+assert (STATIC_DIR / "index.html").is_file(), STATIC_DIR
+EOF
+echo "ok  thalamus eval report|uses|pins|withholding|gremlin|recipes|profile, thalamus pulse and its page"

@@ -31,13 +31,14 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from thalamus.contract.manifest import available_scopes
+from thalamus.contract.paths import default_project_dir
 from thalamus.eval.conditioning import conditioning_report
 from thalamus.eval.cost import PINS_FILE, cost_report, load_pins
-from thalamus.eval.gremlin import gremlin_report
-from thalamus.eval.profile import profile_report, to_json as profile_json
-from thalamus.eval.pins import TraceRow, VerdictRow
-from thalamus.eval.report import scope_report
 from thalamus.eval.traces import load_events
+from thalamus_measure.gremlin import gremlin_report
+from thalamus_measure.profile import profile_report, to_json as profile_json
+from thalamus_measure.pins import TraceRow, VerdictRow
+from thalamus_measure.report import scope_report
 
 logger = logging.getLogger(__name__)
 
@@ -66,11 +67,13 @@ RESTART_COMMAND = "systemctl --user restart thalamus-pulse"
 GRAPH_COMMAND = "thalamus graph up"
 LOG_COMMAND = "journalctl --user -u thalamus-pulse -n 50"
 
-# The paths whose commits change what this page shows: pulse itself and the eval
-# reports it projects.
-_BUILD_PATHS = ("src/thalamus/pulse", "src/thalamus/eval")
+# The paths whose commits change what this page shows: this plugin, which holds pulse
+# and the reports it projects, and core's eval package, which holds the tap, cost and
+# conditioning reads it projects beside them.
+_BUILD_PATHS = ("packages/thalamus-measure", "src/thalamus/eval")
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+# Where this module sits in a source checkout, relative to its root.
+_SOURCE_PATH = "packages/thalamus-measure/src/thalamus_measure/pulse/metrics.py"
 
 
 def _iso(ts: datetime) -> str:
@@ -181,7 +184,7 @@ class _GraphRead:
 
 
 def _read_graph(g) -> _GraphRead:
-    """The pin_report read (eval/pins.py idiom) widened with ts/tool for the trend."""
+    """The pin_report read (pins.py idiom) widened with ts/tool for the trend."""
     from gremlin_python.process.traversal import T
 
     read = _GraphRead()
@@ -283,7 +286,7 @@ def report_snapshot(
     try:
         out["cost"] = _cost_dict(
             cost_report(
-                project_dir or REPO_ROOT, since,
+                project_dir or default_project_dir(), since,
                 traces_base=traces_base, projects_base=projects_base,
             ),
             since,
@@ -470,7 +473,7 @@ def _checkout_root() -> Path | None:
     if not top:
         return None
     root = Path(top)
-    return root if (root / "src/thalamus/pulse/metrics.py").resolve() == here else None
+    return root if (root / _SOURCE_PATH).resolve() == here else None
 
 
 def record_build(root: Path | None = None) -> dict:
