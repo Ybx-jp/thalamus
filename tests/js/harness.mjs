@@ -16,7 +16,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-export const APP_JS = path.resolve(HERE, "../../src/thalamus/console/static/app.js");
+export const APP_JS = path.resolve(HERE, "../../packages/thalamus-console/src/thalamus_console/static/app.js");
 
 export function readApp() {
   return fs.readFileSync(APP_JS, "utf8");

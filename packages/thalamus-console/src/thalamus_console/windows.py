@@ -16,8 +16,8 @@ import subprocess
 import time
 from pathlib import Path
 
-from thalamus.console import tmux
-from thalamus.console.rooms import (
+from thalamus_console import tmux
+from thalamus_console.rooms import (
     _entered_room,
     _in_room,
     _room_env,

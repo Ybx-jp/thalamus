@@ -1,10 +1,10 @@
 """
-Plugin loading — the `thalamus` entry-point group, `register_commands` and
-`register_hooks`.
+Plugin loading — the `thalamus` entry-point group, `register_commands`,
+`claim_command`, `capability_rows` and `register_hooks`.
 
-Interfaces: thalamus.plugins.load/Plugins.register_commands/Plugins.hooks/Hook,
-cli._main's dispatch on `plugin_run`, the thalamus-ingest, thalamus-measure and
-thalamus-reflex plugins' registration
+Interfaces: thalamus.plugins.load/Plugins.register_commands/claim_command/
+capability_rows/hooks/Hook, cli._main's dispatch on `plugin_run`, the installed
+plugins' registration
 Infrastructure: fake entry points patched into `thalamus.plugins.entry_points`; the
 real installed plugins for the end-to-end cases; no graph, no model
 Scope: that an installed plugin's commands reach the CLI, and that a broken plugin
@@ -245,3 +245,112 @@ def test_the_measure_plugin_adds_its_commands_to_the_installed_cli(argv):
     assert result.returncode == 0, result.stderr
     assert f"thalamus {' '.join(argv)}" in result.stdout
     assert "failed to" not in result.stderr
+
+
+def _module(name, **hooks):
+    module = types.ModuleType(f"fake_{name}")
+    for hook, fn in hooks.items():
+        setattr(module, hook, plugins.hookimpl(fn))
+    return module
+
+
+def _pin_cli():
+    parser = argparse.ArgumentParser(prog="thalamus")
+    subparsers = parser.add_subparsers(dest="command")
+    pin_parser = subparsers.add_parser("pin")
+    pin_parser.add_argument("scope")
+    return parser, subparsers, pin_parser
+
+
+def test_a_plugin_option_on_a_core_command_is_run_by_the_plugin_that_added_it(monkeypatch):
+    """`commands` is how `--room` reaches core's `pin`, and `claim_command` is how the
+    console, not core, then runs a `pin` that names one."""
+    ran = []
+
+    def register(commands):
+        commands["pin"].add_argument("--room", default=None)
+
+    def claim(command, args):
+        if command == "pin" and args.room:
+            ran.append(args.room)
+            return True
+        return None
+
+    _with_points(monkeypatch, _Point("rooms", _module(
+        "rooms", register_commands=register, claim_command=claim)))
+    parser, subparsers, pin_parser = _pin_cli()
+
+    loaded = plugins.load()
+    loaded.register_commands(subparsers, commands={"pin": pin_parser})
+
+    assert loaded.claim_command("pin", parser.parse_args(["pin", "qe", "--room", "atlas"]))
+    assert ran == ["atlas"]
+    # Without the option, the plugin answers None and core runs its own `pin`.
+    assert not loaded.claim_command("pin", parser.parse_args(["pin", "qe"]))
+    assert loaded.failures == []
+
+
+def test_a_plugin_whose_registration_failed_claims_nothing(monkeypatch, capsys):
+    """Its option may be on core's parser and its handlers are not, so the command
+    runs as core's rather than half as the plugin's."""
+    def register(commands):
+        commands["pin"].add_argument("--room", default=None)
+        raise RuntimeError("after the option, before the rest")
+
+    def claim(command, args):
+        raise AssertionError("never called")
+
+    _with_points(monkeypatch, _Point("rooms", _module(
+        "rooms", register_commands=register, claim_command=claim)))
+    parser, subparsers, pin_parser = _pin_cli()
+
+    loaded = plugins.load()
+    loaded.register_commands(subparsers, commands={"pin": pin_parser})
+
+    assert not loaded.claim_command("pin", parser.parse_args(["pin", "qe", "--room", "atlas"]))
+    assert [(f.plugin, f.stage) for f in loaded.failures] == [
+        ("rooms", "register its commands")]
+
+
+def test_capability_rows_come_from_every_plugin_and_a_broken_one_costs_only_its_own(
+        monkeypatch, capsys):
+    good = [("room.peer_identity on claude [provided]", "confirmed", "")]
+    _with_points(
+        monkeypatch,
+        _Point("good", _module("good", capability_rows=lambda: good)),
+        _Point("raises", _module("raises", capability_rows=lambda: 1 / 0)),
+        _Point("shapeless", _module("shapeless", capability_rows=lambda: ["not a row"])),
+    )
+
+    loaded = plugins.load()
+
+    assert loaded.capability_rows() == good
+    assert [(f.plugin, f.stage) for f in loaded.failures] == [
+        ("raises", "report its capability rows"),
+        ("shapeless", "report its capability rows"),
+    ]
+
+
+@pytest.mark.parametrize("argv", [
+    ["spawn"], ["room"], ["ceremony"], ["dispatch"], ["console"],
+])
+def test_the_console_plugin_adds_its_commands_to_the_installed_cli(argv):
+    result = subprocess.run(
+        [sys.executable, "-m", "thalamus", *argv, "--help"],
+        capture_output=True, text=True, timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"thalamus {' '.join(argv)}" in result.stdout
+    assert "failed to" not in result.stderr
+
+
+@pytest.mark.parametrize("argv,option", [(["pin"], "--room"), (["eval", "cost"], "--by-occasion")])
+def test_the_console_plugin_adds_its_options_to_core_commands(argv, option):
+    result = subprocess.run(
+        [sys.executable, "-m", "thalamus", *argv, "--help"],
+        capture_output=True, text=True, timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert option in result.stdout

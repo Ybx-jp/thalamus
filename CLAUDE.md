@@ -281,9 +281,10 @@ the thing in ordinary words, and cut what he did not ask about.
 - **A plugin under `packages/` depends on the core and on nothing else**, and the core
   imports no plugin; `arch rules --gate` holds both directions, and CI's `installs-alone`
   job (`tools/check-packages-install-alone.sh`) catches an import a plugin did not
-  declare. Commands arrive through `register_commands` in `src/thalamus/plugins.py` and
-  hook scripts through `register_hooks`; add a new extension point with the first plugin
-  that needs it. See CONTRIBUTING.md §"Plugins".
+  declare. Commands, and options on a core command, arrive through `register_commands`
+  in `src/thalamus/plugins.py`, a core command a plugin runs itself through
+  `claim_command`, capability rows through `capability_rows`, and hook scripts through
+  `register_hooks`; add a new extension point with the first plugin that needs it. See CONTRIBUTING.md §"Plugins".
 - `substrate/` sits below the contract: it knows nodes and edges, not experts or trust
   tiers.<!-- (A0141, cites-as-live) -->
   An import of `contract/` into `substrate/` means the change belongs elsewhere.

@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from thalamus.console.distill import (
+from thalamus_console.distill import (
     ABANDON_AFTER_S, STALL_AFTER_S, STATE_V, DistillWatch, record_kill,
 )
 
@@ -74,7 +74,7 @@ def box(tmp_path, monkeypatch):
     """A watcher over throwaway logs/ledger/state, seeded as if freshly started."""
     # A box that booted long before any log here. A CI runner booted minutes ago, and
     # every aged log below would otherwise predate the boot and read as a shutdown.
-    from thalamus.console import distill          # noqa: PLC0415
+    from thalamus_console import distill          # noqa: PLC0415
     monkeypatch.setattr(distill, "BOOTED_AT", 0.0)
     logs = tmp_path / "logs"
     logs.mkdir()
@@ -160,7 +160,7 @@ def test_a_killed_window_record_carries_its_own_grouping_keys(box):
     anything up later — whatever it fails to record is unrecoverable."""
     box.kill("aaaa8888", op="recycle", scope="qe")
     box.watch._scanned_at = 0.0
-    from thalamus.console.distill import record_kill
+    from thalamus_console.distill import record_kill
     record_kill("aaaa9999", "designer", "/home/op/code/thalamus", "close",
                 project="thalamus", repo_root="/home/op/code/thalamus",
                 path=box.kills)
@@ -432,7 +432,7 @@ def test_a_log_that_stopped_before_this_boot_was_interrupted(box, monkeypatch):
     """No process survives a reboot, so a log with no ending that predates the boot is
     a job the shutdown killed — not one that may yet finish, and not a stall to wait
     out for twenty minutes before saying so."""
-    from thalamus.console import distill          # noqa: PLC0415
+    from thalamus_console import distill          # noqa: PLC0415
     monkeypatch.setattr(distill, "BOOTED_AT", time.time() - 60)
     box.pin("cccc2222")
     box.log("cccc2222", SHUTDOWN, age_s=120)
@@ -444,7 +444,7 @@ def test_a_log_that_stopped_before_this_boot_was_interrupted(box, monkeypatch):
 
 def test_a_log_that_finished_before_this_boot_is_still_done(box, monkeypatch):
     """The boot only speaks for a job with no ending; a summary already settled it."""
-    from thalamus.console import distill          # noqa: PLC0415
+    from thalamus_console import distill          # noqa: PLC0415
     monkeypatch.setattr(distill, "BOOTED_AT", time.time() - 60)
     box.pin("cccc3333")
     box.log("cccc3333", DONE + TEARDOWN, age_s=120)
@@ -531,7 +531,7 @@ def test_a_stall_ages_into_abandonment_while_the_console_stays_up(box, monkeypat
 
     Nothing about the file changes here. Only the clock moves.
     """
-    from thalamus.console import distill          # noqa: PLC0415
+    from thalamus_console import distill          # noqa: PLC0415
 
     box.watch.state_path.write_text(json.dumps(
         {"v": STATE_V, "seeded_at": time.time() - 10 * ABANDON_AFTER_S,

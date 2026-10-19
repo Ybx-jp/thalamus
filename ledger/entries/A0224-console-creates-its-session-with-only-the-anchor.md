@@ -43,6 +43,21 @@ none
 - 2026-10-16T22:10:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/cli.py § "_cmd_console" =sha256:64c760e0f7b1bc61fec9eba101a408f4ade8864925e235e76ad9c008e01c3ea6
   note: _cmd_console's default project root comes from paths.default_project_dir; session creation is unchanged. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
+- 2026-10-18T22:07:41-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/console/windows.py § "ensure_anchor" =sha256:e4534595d28cf54eb7d2750ffca3dee6ae6fb9d6cd5d1acefd90023fb5661ba7
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T22:07:41-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/cli.py § "_cmd_console" =sha256:64c760e0f7b1bc61fec9eba101a408f4ade8864925e235e76ad9c008e01c3ea6
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T22:10:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-console/src/thalamus_console/windows.py § "ensure_anchor" =sha256:e4534595d28cf54eb7d2750ffca3dee6ae6fb9d6cd5d1acefd90023fb5661ba7
+  note: src/thalamus/console/windows.py moved into the thalamus-console plugin package as windows.py with ensure_anchor unchanged, so the assertion is unaffected
+- 2026-10-18T22:10:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-console/src/thalamus_console/commands.py § "console" =sha256:5e421e6f3b6aa58a5e754bedca2bd06b8429910cd3551f7e460d613e1d60958b
+  note: the handler moved out of cli.py into the thalamus-console plugin's commands.py as `console`, its body unchanged but for the plugin's module paths in its imports: a missing tmux session is still created with only the main anchor window, so the assertion is unaffected
 
 ## References
 

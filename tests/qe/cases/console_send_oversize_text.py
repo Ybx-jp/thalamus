@@ -46,7 +46,7 @@ from pathlib import Path
 from ..model import Case, FailureClass, Finding, Substrate, Tier
 from .console_send_text_is_data_not_argv import _WINDOWS, _PrivateTmux
 
-_SITE = "src/thalamus/console/server.py"
+_SITE = "packages/thalamus-console/src/thalamus_console/server.py"
 _SELF = "tests/qe/cases/console_send_oversize_text.py"
 
 
@@ -118,7 +118,7 @@ def _settle(private: _PrivateTmux, want: int) -> bytes:
 
 
 def run() -> Finding | None:
-    from thalamus.console import server as console  # noqa: PLC0415
+    from thalamus_console import server as console  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmp:
         private = _PrivateTmux(Path(tmp))

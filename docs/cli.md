@@ -51,6 +51,7 @@ installed on its own and depending on the core and nothing else:
 
 | Package | Adds |
 |---|---|
+| `thalamus-console` | rooms and the console: `spawn`, `room`, `dispatch`, `ceremony`, `console`; `--room` on `pin`, and inside tmux `pin` opens a window; `--by-occasion` on `eval cost`; the room-member rows of `contract check --capabilities` |
 | `thalamus-ingest` | `ingest`, `backfill-chunks` |
 | `thalamus-measure` | the eval loop's reports: `eval report`, `eval uses`, `eval pins`, `eval withholding`, `eval gremlin`, `eval recipes`, `eval profile`; and the `pulse` dashboard |
 | `thalamus-reflex` | the memory reflex: `reflex`, `eval reflex`, `eval vocabulary`, and the Claude Code hooks `reflex.sh` and `reflex-pointer-tap.sh` |
@@ -252,9 +253,9 @@ the rule's measured set is what changes.
 
 ```bash
 thalamus pin <scope>               # launch a session pinned to an expert scope
-thalamus spawn <scope>             # console: one on-demand pinned tmux window
+thalamus spawn <scope>             # one on-demand pinned tmux window (thalamus-console)
 thalamus console                   # drive pinned sessions from a browser or phone;
-                                   #   creates its tmux session if missing
+                                   #   creates its tmux session if missing (thalamus-console)
 thalamus quick ask <scope> "<q>"   # consult a live expert by forking its own session
 thalamus quick targets             # which experts are forkable, and how warm each is
 thalamus quick delta               # what a fork contributed back
@@ -273,6 +274,7 @@ thalamus preset remove cost deep                           # refused while a man
 ### Rooms
 
 A room is a private set of live sessions whose members see and message only each other.
+Rooms, `--room` and these commands come from the `thalamus-console` plugin.
 
 ```bash
 thalamus room create <name>        # create a room's config directory
@@ -284,7 +286,7 @@ thalamus dispatch <room> "<msg>"   # deliver to live room members; refuses on `w
 ### Ceremonies
 
 An append-only ledger of occasions, written at the start so an aborted occasion still
-leaves a row.
+leaves a row. From the `thalamus-console` plugin.
 
 ```bash
 thalamus ceremony start|end|skip   # an occasion, its close, its non-occurrence

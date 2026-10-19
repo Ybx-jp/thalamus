@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import pytest
 
-from thalamus.console import rooms
-from thalamus.console import dispatch
-from thalamus.console import panes as panes_mod
+from thalamus_console import rooms
+from thalamus_console import dispatch
+from thalamus_console import panes as panes_mod
 
 # --- captured screens -------------------------------------------------------------
 

@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 import pytest
 
 from thalamus.harness import codex_transcripts as ct
-from thalamus.console import server
+from thalamus_console import server
 
 
 def meta(originator="codex-tui", source="cli"):
@@ -116,7 +116,7 @@ class TestLiveStatus:
         """Spelled in `codex_transcripts` rather than imported, because `dispatch`
         pulls in half the harness and this module is on the extraction path. This is
         what keeps the duplication from drifting."""
-        dispatch = pytest.importorskip("thalamus.console.dispatch")
+        dispatch = pytest.importorskip("thalamus_console.dispatch")
         assert (ct.CODEX_IDLE, ct.CODEX_BUSY) == (dispatch.IDLE_STATUS,
                                                   dispatch.BUSY_STATUS)
         assert ct.CODEX_UNKNOWN not in dispatch.DELIVERABLE_STATUSES

@@ -2,7 +2,7 @@
 Deploy path: what the console reports about the code it is serving, and what
 `deploy` will and will not do to the checkout it serves from.
 
-Interfaces: thalamus.console.server.build_info / deploy / self_unit
+Interfaces: thalamus_console.server.build_info / deploy / self_unit
 Infrastructure: real `git` repositories under tmp_path, wired to a local bare
 remote — no network, no systemd, no tmux.
 Scope: the console is normally an editable install running out of a checkout, so
@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.console import server
-from thalamus.console.server import Config
+from thalamus_console import server
+from thalamus_console.server import Config
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 
@@ -298,7 +298,7 @@ def test_self_unit_answers_the_leaf_or_nothing(tmp_path: Path, leaf, expected,
 
 
 @pytest.mark.parametrize("xpc, expected", [
-    ("com.thalamus.console", "com.thalamus.console"),
+    ("com.thalamus_console", "com.thalamus_console"),
     # What launchd leaves on a process it did not start as a job.
     ("0", None),
     ("", None),

@@ -1,7 +1,7 @@
 """
 Dispatch tests (console/dispatch.py) — delivery mechanics.
 
-Interfaces: thalamus.console.dispatch (preflight, announcement, dispatch, ledger_panes)
+Interfaces: thalamus_console.dispatch (preflight, announcement, dispatch, ledger_panes)
 Infrastructure: tmp_path config dir + pin ledger + guard dir; tmux is never invoked —
 the live pane set is injected and the send is a recording fake
 Scope: the refusals. Every test here is anchored on something that costs more than a
@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from thalamus.console import dispatch
+from thalamus_console import dispatch
 
 
 def _descriptor(sessions_dir, scope, session_id, pid, status, updated_at=1000):

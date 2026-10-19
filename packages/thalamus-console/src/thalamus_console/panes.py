@@ -68,7 +68,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 
-from thalamus.console.tmux import argv as tmux_argv
+from thalamus_console.tmux import argv as tmux_argv
 
 # Which harness a window is running, read from the command it was created with. The
 # binary is the only honest signal: `pane_current_command` shows whatever is in the

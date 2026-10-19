@@ -41,8 +41,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..harness.extraction import _questions, _tool_use_line
-from ..harness.transcripts import CLAUDE_PROJECTS, tool_result_text
+from thalamus.harness.extraction import asked_questions, tool_use_line
+from thalamus.harness.transcripts import CLAUDE_PROJECTS, tool_result_text
 
 PINS = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
 
@@ -60,7 +60,7 @@ RESULT_LINE_CAP = 40
 # The one-line trace of a result that rides along with the feed itself.
 PREVIEW_CAP = 160
 
-# `extraction._tool_use_line` clips commands at 300 chars, which is right for the
+# `extraction.tool_use_line` clips commands at 300 chars, which is right for the
 # extractor model reading a digest and far too wide for a phone: a heredoc commit
 # renders as a paragraph where the reader wanted a chip. Clipped for display only,
 # leaving the shared helper's own cap alone.
@@ -408,9 +408,9 @@ class Feed:
                 item = self._emit({
                     "kind": "tool",
                     "name": block.get("name") or "?",
-                    "summary": shorten(_tool_use_line(block), self.cwd),
+                    "summary": shorten(tool_use_line(block), self.cwd),
                     "status": "pending",
-                    "ask": _questions(block.get("input") or {}),
+                    "ask": asked_questions(block.get("input") or {}),
                     "result": "",
                     "truncated": False,
                     "sidechain": sidechain,

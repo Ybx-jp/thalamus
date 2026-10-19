@@ -54,7 +54,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from thalamus.console import panes as panes_mod
+from thalamus_console import panes as panes_mod
 
 READINESS_DIR = Path.home() / ".thalamus" / "readiness"
 
