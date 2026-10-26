@@ -76,8 +76,29 @@ rather than filtered out when it is read.<!-- (A0025, cites-as-live) -->
 ### You can see what memory cost
 
 Every memory lookup is logged<!-- (A0097, cites-as-live) -->
-and priced. `thalamus pulse` serves a live dashboard of what retrieval actually
-cost.<!-- (A0085, cites-as-live) -->
+and priced. `thalamus pulse`, from the `thalamus-measure` package, serves a live
+dashboard of what retrieval actually cost.<!-- (A0085, cites-as-live) -->
+
+## Packages
+
+Thalamus is a core and five optional packages, each its own distribution with its own
+version. A plugin adds its commands to `thalamus` when it is installed beside the core,
+and a plugin that fails to load costs only its own
+commands.<!-- (A0233, cites-as-live) -->
+
+| Package | What it adds | Depends on |
+|---|---|---|
+| `thalamus-memory` | the core: distillation, recall, the MCP server, experts, pinning, consultations, and the trace tap that logs and prices every memory lookup. Imported as `thalamus`, run as `thalamus` | — |
+| `thalamus-console` | rooms and the console: pinned sessions as tmux windows, messages between them, and a browser surface that works from a phone | the core, tmux |
+| `thalamus-ingest` | curated ingestion: third-party documents into an expert's knowledge, gated by its manifest | the core |
+| `thalamus-measure` | the eval loop's reports (`thalamus eval report`, `uses`, `pins`, …) and the `thalamus pulse` dashboard | the core |
+| `thalamus-reflex` | the memory reflex: when a command in a Claude Code session fails, what the graph holds about its output is served into the session unasked | the core |
+| `thalamus-arch` | a structural gate for any Python repository: its import graph against the layers it declares. `thalamus-arch`, or `thalamus arch` beside the core | nothing of thalamus |
+
+A clone installs all of them. From PyPI, install the core and add the packages you want
+to the same environment; a package that is not on PyPI yet installs from a clone with
+`pip install ./packages/<package>`.
+[CONTRIBUTING.md](CONTRIBUTING.md#releasing) says how each one is released.
 
 ## Quick start
 
@@ -99,17 +120,32 @@ pinned sessions as tmux windows ([docs/console.md](docs/console.md)).
 
 ### Install
 
+From a clone, with every package and the development tools:
+
 ```bash
 git clone https://github.com/Ybx-jp/thalamus && cd thalamus
 
 docker compose up -d           # the graph, on 127.0.0.1:8182; no licence, no account
-uv sync --extra dev            # creates .venv with the package and its CLI
+uv sync --extra dev            # creates .venv with the core, every package and the CLI
 uv run thalamus init           # wire your editor, then verify what it wired
 ```
 
 The graph answers a few seconds after `up -d` returns, because Docker publishes the
 port before the server finishes starting. `docker compose ps` says `healthy` when it is
 actually serving.
+
+Or from PyPI, the core and the packages you choose:
+
+```bash
+uv tool install thalamus-memory --with thalamus-arch   # or: pip install thalamus-memory
+thalamus graph up              # the graph, from the compose file the core ships; waits until healthy
+thalamus init
+```
+
+An installed core has no checkout. It finds its own hook scripts and skills, its hooks
+run the CLI under the interpreter `thalamus init` records, and `init` copies two
+example experts into `~/.thalamus/config/experts/`. The examples below write `uv run
+thalamus`, which is the clone's spelling; with a PyPI install it is `thalamus`.
 
 `thalamus init` installs at user scope, so the harness arms in every directory rather
 than only inside this checkout. It wires every supported harness by default; use
@@ -143,18 +179,16 @@ answers the other half: whether the wiring that writes it is armed.
 The full walkthrough, including what the first run looks like, is
 [docs/getting-started.md](docs/getting-started.md).
 
-## What this release is
+## Upgrading
 
-Thalamus runs from a clone, and `git pull` is the upgrade path. A wheel built from
-the tree installs outside a checkout: it finds its own hook scripts and skills, and its
-hooks run the CLI under the interpreter `thalamus init` records, and `init` gives it
-two example experts, and `thalamus graph up` brings up the graph from the compose file
-it ships. A version tag publishes it to PyPI as `thalamus-memory` (CONTRIBUTING.md,
-"Releasing"); the import name and the CLI stay `thalamus`.
+A clone upgrades with `git pull` then `uv sync --extra dev`; the sync is what installs
+a package the pull added or moved. A PyPI install upgrades with `uv tool upgrade
+thalamus-memory`, or `pip install -U` on each package. Run `thalamus init` again after
+adding or removing a package that brings hooks, so they are wired or taken out.
 
-One feature is experimental and off by default: frame themes, which render the pane
-inside artwork, behind `thalamus console --frames PATH`. Without the flag there are no
-controls and no key bindings, and no artwork ships.
+One feature is experimental and off by default: frame themes, which render the
+console's pane inside artwork, behind `thalamus console --frames PATH`. Without the
+flag there are no controls and no key bindings, and no artwork ships.
 
 ## What's live
 
@@ -168,7 +202,8 @@ controls and no key bindings, and no artwork ships.
   repo.<!-- (A0087, cites-as-live) -->
   The graph is a view over that log that can be rebuilt from it: re-extract, never
   migrate.
-- **Curated ingestion.** An expert's document half is fed one document at a time.
+- **Curated ingestion**, in `thalamus-ingest`. An expert's document half is fed one
+  document at a time.
   `thalamus ingest <url|path> --scope <expert>` refuses bytes whose serving origin the
   scope's manifest does not allowlist<!-- (A0088, cites-as-live) -->,
   retains what survives the gate in the archive, and on `--write` lands it as a `Source`
@@ -195,9 +230,9 @@ controls and no key bindings, and no artwork ships.
   reaches the whole graph<!-- (A0148, cites-as-live) -->,
   so a PreToolUse guard keeps a pinned session off it and on the tools that confine a
   read to the pin.
-- **The console.** Optional — the `thalamus-console` plugin — and the part that needs
-  tmux: it runs pinned sessions as tmux windows so all of them are addressable from one
-  place. `thalamus console`
+- **The console**, in `thalamus-console`, and the part that needs tmux: it runs pinned
+  sessions as tmux windows so all of them are addressable from one place.
+  `thalamus console`
   serves them to a browser: a tab per window, the live pane, a composer, and one tap
   to spawn an expert in a project. It installs as a PWA on a phone over a tailnet.
 - **Consultations.** Cross-expert questions ride single-use tickets where minting the
@@ -205,23 +240,28 @@ controls and no key bindings, and no artwork ships.
   consulted scope.<!-- (A0094, cites-as-live) -->
   Beside it, `thalamus quick ask` forks an expert's live session rather than
   cold-starting one.<!-- (A0063, cites-as-live) -->
-- **Rooms.** Part of the console: a private set of live sessions whose members see and
-  message each other and nobody else,
-  enforced by a per-room config directory and an outbound
-  guard.<!-- (A0096, cites-as-live) -->
+- **Rooms**, in `thalamus-console` with the console: a private set of live sessions
+  whose members see and message each other and nobody else, enforced by a per-room
+  config directory and an outbound guard.<!-- (A0096, cites-as-live) -->
 - **The eval loop.** Every memory-tool call is logged as a `Trace` node, judged used or
   ignored against the retained transcript, and priced in injected
   tokens.<!-- (A0097, cites-as-live) -->
-  Above it, a counterfactual harness runs one task with memory on, off and degraded in
-  a confined worktree, graded by an oracle whose rungs are validated against a mutant
-  set before any run is scored.
+  The core writes those nodes; `thalamus-measure` reads them back as reports and the
+  `pulse` dashboard. Above it, a counterfactual harness runs one task with memory on,
+  off and degraded in a confined worktree, graded by an oracle whose rungs are
+  validated against a mutant set before any run is scored. The harness is research
+  instrumentation and lives in a private companion repository.
+- **The memory reflex**, in `thalamus-reflex`. When a Bash call in a Claude Code session
+  fails, a hook retrieves against the identifiers in its output and serves what the
+  graph holds about them into the session, marked as unsolicited.
 - **Trust enforcement, first pass.** The transcript-ingress floor down-tiers distilled
   claims that rest on pages fetched with the agent's web tools.
 
 ## Status
 
-Built and running: the graph, the archive, curated ingestion, experts and pinning, the console,
-consultations, rooms, and the eval loop's trace, attribution and cost layers.
+Built and running: the graph, the archive, curated ingestion, experts and pinning, the
+console, consultations, rooms, the memory reflex, and the eval loop's trace,
+attribution and cost layers.
 
 In progress: counterfactual measurement at a scale that can settle whether recalled
 memory changes task outcomes. What the instrument shows today is that memory gets
@@ -255,7 +295,8 @@ src/thalamus/
                The counterfactual harness (task battery, arms, oracle) is research
                instrumentation; it lives in the private thalamus-eval companion repo
   growth.py    what the memory store accumulates, and what nothing refers to: `thalamus growth`
-packages/      plugins, each its own distribution depending on the core alone
+packages/      the optional packages, each its own distribution: five plugins that depend
+               on the core alone, and thalamus-arch, which depends on nothing of thalamus
   thalamus-arch/     the structural gate: a declared-policy import extractor, its metrics and the three arch gates. Depends on nothing of thalamus; `thalamus-arch`, or `thalamus arch` beside the core
   thalamus-console/  rooms and the console: tmux windows, `spawn`, `room`, `dispatch`, `ceremony`, `console`
   thalamus-ingest/   curated ingestion: `thalamus ingest`, `thalamus backfill-chunks`

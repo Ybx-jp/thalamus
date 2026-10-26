@@ -19,7 +19,7 @@ classifiers = [
 dependencies = [
     # The floor is the first core with the `thalamus` entry-point group; an older core
     # installs this package and never loads it.
-    "thalamus-memory>=0.1.1.dev0",
+    "thalamus-memory>=0.1.1",
     # A required dependency rather than an extra: PDF is the only format ICSE, CHI, FSE
     # and TSE publish, and pypdf is pure Python with no native build.
     "pypdf>=5.0",

@@ -19,6 +19,6 @@ Installing it adds:
 It depends on `thalamus-memory` and nothing else from thalamus, and registers through the
 `thalamus` entry-point group.
 
-It is not on PyPI yet. From a checkout of the repository, `uv sync` installs it into the
-development environment, and `pip install . ./packages/thalamus-measure` installs it with
-the core into any other.
+`pip install thalamus-measure` installs it with the core it needs, or `uv tool install
+thalamus-memory --with thalamus-measure`. In a checkout of the repository, `uv sync`
+installs it into the development environment.

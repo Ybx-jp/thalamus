@@ -26,7 +26,7 @@ It depends on PyYAML and pluggy and on nothing from thalamus. Installed beside
 [thalamus](https://github.com/Ybx-jp/thalamus), it also answers as `thalamus arch`,
 through the `thalamus` entry-point group.
 
-It is not on PyPI yet. From a checkout of the repository, `uv sync` installs it into the
-development environment, and `pip install ./packages/thalamus-arch` installs it into any
-other. The repository's own [`arch/model.yaml`](https://github.com/Ybx-jp/thalamus/blob/master/arch/model.yaml) is a worked
+`pip install thalamus-arch` installs it, or `uv tool install thalamus-arch` as a
+command of its own. In a checkout of the thalamus repository, `uv sync` installs it into
+the development environment. The repository's own [`arch/model.yaml`](https://github.com/Ybx-jp/thalamus/blob/master/arch/model.yaml) is a worked
 example of every block.

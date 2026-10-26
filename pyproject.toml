@@ -4,9 +4,11 @@
 name = "thalamus-memory"
 # Single-sourced from the package, so a tag can never disagree with what an
 # installed `thalamus.__version__` reports.
-dynamic = ["version"]
+#
+# The readme is dynamic too: `README.md` with its relative links rewritten to GitHub
+# URLs, below, because PyPI renders it outside the repository.
+dynamic = ["version", "readme"]
 description = "Federated graph memory for coding agents — with a trust model and a measured utility loop"
-readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -84,8 +86,25 @@ thalamus = "thalamus.cli:main"
 thalamus-mcp = "thalamus.harness.mcp_server:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-fancy-pypi-readme>=24.1"]
 build-backend = "hatchling.build"
+
+# The repository's own README, kept relative so that `tests/test_docs_links.py` can hold
+# every link to a file that exists. hatch-fancy-pypi-readme's documented substitution
+# for exactly this case rewrites them for the published metadata only.
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '\]\(#'
+replacement = '](https://github.com/Ybx-jp/thalamus#'
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '\]\((?!https?://|mailto:|#)([^)\s]+)\)'
+replacement = '](https://github.com/Ybx-jp/thalamus/blob/master/\1)'
 
 # One repository, one lockfile, several distributions. This file is the core,
 # `thalamus-memory`; each directory under `packages/` is a plugin that depends on the

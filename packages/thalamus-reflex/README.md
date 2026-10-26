@@ -19,6 +19,7 @@ Installing it adds:
 It depends on `thalamus-memory` and nothing else from thalamus, and registers through the
 `thalamus` entry-point group.
 
-It is not on PyPI yet. From a checkout of the repository, `uv sync` installs it into the
-development environment, and `pip install . ./packages/thalamus-reflex` installs it with
-the core into any other. Run `thalamus init` after installing it, so the hooks are wired.
+`pip install thalamus-reflex` installs it with the core it needs, or `uv tool install
+thalamus-memory --with thalamus-reflex`. In a checkout of the repository, `uv sync`
+installs it into the development environment. Run `thalamus init` after installing it,
+so the hooks are wired.
