@@ -249,9 +249,9 @@ src/thalamus/
   eval/        trace tap, attribution, sync, cost — the live-serving half of the eval loop.
                The counterfactual harness (task battery, arms, oracle) is research
                instrumentation; it lives in the private thalamus-eval companion repo
-  arch/        the `architect` scope's instrument — a declared-policy import extractor
-               and the structural metrics computed over it, behind the three arch gates
+  growth.py    what the memory store accumulates, and what nothing refers to — `thalamus growth`
 packages/      plugins — each its own distribution, depending on the core alone
+  thalamus-arch/     the structural gate — a declared-policy import extractor, its metrics and the three arch gates. Depends on nothing of thalamus; `thalamus-arch`, or `thalamus arch` beside the core
   thalamus-console/  rooms and the console: tmux windows, `spawn`, `room`, `dispatch`, `ceremony`, `console`
   thalamus-ingest/   curated ingestion: `thalamus ingest`, `thalamus backfill-chunks`
   thalamus-measure/  the eval loop's reports and the dashboard: `eval report|uses|pins|withholding|gremlin|recipes|profile`, `thalamus pulse`
@@ -281,6 +281,13 @@ an import the plugin's own `pyproject.toml` does not declare, because the shared
 environment satisfies it; `tools/check-packages-install-alone.sh`, run as CI's
 `installs-alone` job, installs the core alone and each plugin with only the core, and
 imports every module the plugin ships.
+
+`thalamus-arch` is the one package that depends on nothing of thalamus: its rule names
+no layer at all, and `installs-alone` also installs it by itself and checks that no
+`thalamus` came with it.<!-- (A0236, cites-as-live) --> It is a tool for any Python repository, with its own
+`thalamus-arch` command. Its `plugin.py` registers the same subcommands as `thalamus
+arch`, marked with a pluggy marker it builds for the `thalamus` group rather than
+core's `hookimpl`, so it imports nothing of the core.
 
 A plugin registers through hooks in `src/thalamus/plugins.py`, declared under the
 `thalamus` entry-point group: `register_commands` for subcommands, top-level or under

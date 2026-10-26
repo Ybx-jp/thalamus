@@ -284,7 +284,11 @@ the thing in ordinary words, and cut what he did not ask about.
   declare. Commands, and options on a core command, arrive through `register_commands`
   in `src/thalamus/plugins.py`, a core command a plugin runs itself through
   `claim_command`, capability rows through `capability_rows`, and hook scripts through
-  `register_hooks`; add a new extension point with the first plugin that needs it. See CONTRIBUTING.md §"Plugins".
+  `register_hooks`; add a new extension point with the first plugin that needs it.
+  `thalamus-arch` is the exception the other way: it depends on nothing of thalamus,
+  imports nothing of it (not even `thalamus.plugins.hookimpl`), and installs alone with
+  its own `thalamus-arch` command.<!-- (A0236, cites-as-live) -->
+  See CONTRIBUTING.md §"Plugins".
 - `substrate/` sits below the contract: it knows nodes and edges, not experts or trust
   tiers.<!-- (A0141, cites-as-live) -->
   An import of `contract/` into `substrate/` means the change belongs elsewhere.

@@ -52,7 +52,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from thalamus.arch.extractor import DependencyGraph
+from thalamus_arch.extractor import DependencyGraph
 
 
 @dataclass(frozen=True)

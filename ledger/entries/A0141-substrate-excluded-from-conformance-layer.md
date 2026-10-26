@@ -69,6 +69,13 @@ none
 - 2026-10-18T22:10:00-07:00 · corroborated · grade: measured · author: architect
   evidence: yaml: arch/model.yaml § "rules" =sha256:3f56ab3e75be92ff3235749ac9b8a263bb5242c1bee55f827d3f6354d19cfb7a
   note: the rules gained the plugin-console layer; the substrate rule is unchanged at [vocabulary, archive], so the assertion is unaffected
+- 2026-10-25T23:45:33-07:00 · contested · grade: measured · author: propagation
+  evidence: yaml: arch/model.yaml § "rules" =sha256:3f56ab3e75be92ff3235749ac9b8a263bb5242c1bee55f827d3f6354d19cfb7a
+  artifact: sha256:a424b4258c5c09b16055017277be1170fdd7a60e08efc5337ef21be88fdf29c5
+  note: propagated from a moved ground
+- 2026-10-25T23:47:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: yaml: arch/model.yaml § "rules" =sha256:a424b4258c5c09b16055017277be1170fdd7a60e08efc5337ef21be88fdf29c5
+  note: the rules gained the plugin-arch layer, which may depend on nothing; the substrate rule is unchanged at [vocabulary, archive], so the assertion is unaffected
 
 ## References
 

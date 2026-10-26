@@ -33,7 +33,7 @@ documents = [
     "packages/thalamus-console/src/thalamus_console/static/*.js",
     "packages/thalamus-console/src/thalamus_console/static/*.css",
     "packages/thalamus-console/src/thalamus_console/static/*.html",
-    "src/thalamus/pulse/static/*.html",
+    "packages/thalamus-measure/src/thalamus_measure/pulse/static/*.html",
     "docker-compose.yml",
     "docker/*.Dockerfile",
     ".github/workflows/*.yml",

@@ -1,6 +1,6 @@
 """The class-A reference channel: what it judges, and what it refuses to judge.
 
-Interfaces: thalamus.arch.references (census, reference_findings, render,
+Interfaces: thalamus_arch.references (census, reference_findings, render,
 ReferencePolicy, ReferenceExemption).
 
 Half of these are suppression tests, and that is the point. The channel's risk is not
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from thalamus.arch import references as refs
+from thalamus_arch import references as refs
 
 
 def _tree(root, files: dict[str, str]):

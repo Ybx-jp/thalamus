@@ -12,6 +12,7 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "thalamus-arch",
     "thalamus-console",
     "thalamus-ingest",
     "thalamus-measure",
@@ -2950,6 +2951,20 @@ wheels = [
 ]
 
 [[package]]
+name = "thalamus-arch"
+source = { editable = "packages/thalamus-arch" }
+dependencies = [
+    { name = "pluggy" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pluggy", specifier = ">=1.5" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
 name = "thalamus-console"
 source = { editable = "packages/thalamus-console" }
 dependencies = [
@@ -3027,6 +3042,7 @@ nli = [
 
 [package.dev-dependencies]
 plugins = [
+    { name = "thalamus-arch" },
     { name = "thalamus-console" },
     { name = "thalamus-ingest" },
     { name = "thalamus-measure" },
@@ -3058,6 +3074,7 @@ provides-extras = ["dev", "frames", "nli"]
 
 [package.metadata.requires-dev]
 plugins = [
+    { name = "thalamus-arch", editable = "packages/thalamus-arch" },
     { name = "thalamus-console", editable = "packages/thalamus-console" },
     { name = "thalamus-ingest", editable = "packages/thalamus-ingest" },
     { name = "thalamus-measure", editable = "packages/thalamus-measure" },

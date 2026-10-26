@@ -45,7 +45,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from thalamus.arch.extractor import (
+from thalamus_arch.extractor import (
     DEPTH_RUNTIME,
     KIND_ROUTE,
     DependencyEdge,
@@ -113,11 +113,8 @@ class RoutePolicy:
     # happened to find: a glob plus a "had literals" test makes a recall failure remove
     # a file from numerator and denominator at once, so the miss is invisible in the
     # number it moves. Naming the clients makes the element set a declaration.
-    clients: tuple[str, ...] = (
-        "packages/thalamus-console/src/thalamus_console/static/app.js",
-        "packages/thalamus-console/src/thalamus_console/static/sw.js",
-    )
-    servers: tuple[str, ...] = ("packages/thalamus-console/src/thalamus_console/server.py",)
+    clients: tuple[str, ...] = ()
+    servers: tuple[str, ...] = ()
     match: str = MATCH_EXACT_LITERAL
     prefix: str = "/api/"
 

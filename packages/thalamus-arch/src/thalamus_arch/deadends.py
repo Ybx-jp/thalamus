@@ -71,14 +71,14 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from thalamus.arch.extractor import (
+from thalamus_arch.extractor import (
     DependencyGraph,
     ExtractorPolicy,
     _collect_modules,
     _resolve,
 )
-from thalamus.arch.findings import DESIGN, UNDERSTANDING, Finding
-from thalamus.arch.metrics import fan_in
+from thalamus_arch.findings import DESIGN, UNDERSTANDING, Finding
+from thalamus_arch.metrics import fan_in
 
 # What a definition is, recorded because the three carry different risk. A method may be
 # reached by a base class the walk never reads; a module-level function may not.

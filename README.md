@@ -254,9 +254,9 @@ src/thalamus/
   eval/        trace tap, attribution, sync, cost: the live-serving half of the eval loop.
                The counterfactual harness (task battery, arms, oracle) is research
                instrumentation; it lives in the private thalamus-eval companion repo
-  arch/        the `architect` scope's instrument: a declared-policy import extractor
-               and the structural metrics computed over it, gated in CI
+  growth.py    what the memory store accumulates, and what nothing refers to: `thalamus growth`
 packages/      plugins, each its own distribution depending on the core alone
+  thalamus-arch/     the structural gate: a declared-policy import extractor, its metrics and the three arch gates. Depends on nothing of thalamus; `thalamus-arch`, or `thalamus arch` beside the core
   thalamus-console/  rooms and the console: tmux windows, `spawn`, `room`, `dispatch`, `ceremony`, `console`
   thalamus-ingest/   curated ingestion: `thalamus ingest`, `thalamus backfill-chunks`
   thalamus-measure/  the eval loop's reports and the dashboard: `eval report|uses|pins|withholding|gremlin|recipes|profile`, `thalamus pulse`
