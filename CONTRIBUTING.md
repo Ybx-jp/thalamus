@@ -484,16 +484,21 @@ core's development version (`thalamus-memory>=0.1.1.dev4`), so release the core,
 raise the floor to that release (`>=0.1.1`) in the change that sets the plugin's own
 version, then tag the plugin.
 
-Two things have to exist before a distribution's first publish, and nothing in the
-repository creates them:
+Each distribution publishes from a deployment environment of its own: `pypi` for the
+core, and `pypi-<package>` for a package (`pypi-thalamus-arch`). Its PyPI publisher names
+that environment, so PyPI refuses an upload of one project from another project's
+release run.<!-- (A0240, cites-as-live) -->
+GitHub creates the environment the first time the publish job names it.
 
-- **A pending publisher on PyPI, one per project.** At
-  <https://pypi.org/manage/account/publishing/>, add the project name (`thalamus-arch`,
-  `thalamus-console`, …), owner `Ybx-jp`, repository `thalamus`, workflow
-  `release.yml`, environment `pypi`. PyPI turns it into the project's own publisher on
-  its first successful upload. `thalamus-memory` already has one.
-- **A `pypi` environment in this repository** (Settings → Environments). The publish job
-  runs under it; it exists already, and every distribution shares it.
+One thing has to exist before a distribution's first publish, and nothing in the
+repository creates it: **a pending publisher on PyPI.** At
+<https://pypi.org/manage/account/publishing/>, add the project name, owner `Ybx-jp`,
+repository `thalamus`, workflow `release.yml`, and that distribution's environment —
+project `thalamus-arch` with environment `pypi-thalamus-arch`, and so on. PyPI turns it
+into the project's own publisher on its first successful upload. PyPI accepts only one
+pending publisher per repository, workflow and environment across all project names,
+which a shared environment would hit on the second package. `thalamus-memory` already
+has its publisher, on environment `pypi`.
 
 ## Grounding new design
 

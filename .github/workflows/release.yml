@@ -4,9 +4,10 @@ name: Release
 # the core, `thalamus-memory`, and `<package>-vX.Y.Z` the package under
 # `packages/<package>/` (`thalamus-arch-v0.1.0`). Each distribution has its own version
 # and is released on its own; nothing here publishes two at once (A0239, cites-as-live).
-# The `<component>-v`
-# tag prefix is release-please's monorepo convention; the core keeps its bare `v` tags,
-# under which `v0.1.0` was published.
+# The `<component>-v` tag prefix is release-please's monorepo convention; the core keeps
+# its bare `v` tags, under which `v0.1.0` was published. Each distribution publishes
+# from a deployment environment of its own, which its PyPI publisher names
+# (A0240, cites-as-live).
 #
 # What goes to PyPI is the wheel and sdist this job built and then installed into clean
 # environments outside the checkout. The core's run `thalamus init` and `init --check`
@@ -38,6 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       previous: ${{ steps.target.outputs.previous }}
+      environment: ${{ steps.target.outputs.environment }}
     steps:
       # Full history: `claims-ledger validate` checks append-only properties across it,
       # and the release notes start from the previous tag of the same distribution.
@@ -61,10 +63,18 @@ jobs:
           else
             package="${INPUT_PACKAGE:-thalamus-memory}"; version=""; pattern=""
           fi
+          # The deployment environment the publish job runs in, one per distribution.
+          # PyPI's publisher for each project names its environment, so an upload from
+          # one package's run is refused by every other project. One environment for
+          # all of them would also be refused at registration: PyPI holds a single
+          # pending publisher per repository, workflow and environment, across every
+          # project name. The core keeps `pypi`, which its publisher already names.
           if [ "$package" = thalamus-memory ]; then
             project=.
+            environment=pypi
           else
             project="packages/$package"
+            environment="pypi-$package"
           fi
           # The directory must hold the distribution the name says, so a tag cannot
           # publish a directory under a name it does not declare.
@@ -78,6 +88,7 @@ jobs:
             echo "package=$package"
             echo "version=$version"
             echo "previous=$previous"
+            echo "environment=$environment"
           } >> "$GITHUB_OUTPUT"
       # verify.yml also runs on the tag push; these are its graph-free gates, here so that
       # publication waits on them rather than racing them. They cover the whole
@@ -171,13 +182,15 @@ jobs:
     # ref, so without this condition a dispatch from any branch would publish.
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    environment: pypi
+    # `pypi` for the core, `pypi-<package>` for a package; GitHub creates an environment
+    # the first time a job names it.
+    environment: ${{ needs.build.outputs.environment }}
     # Trusted Publishing: PyPI mints a short-lived token for this job, so no long-lived
     # secret lives in the repository. Each distribution is its own PyPI project with its
     # own publisher: the first publish of each needs an account-level pending publisher
     # (https://pypi.org/manage/account/publishing/) naming that project, this repository,
-    # the workflow file `release.yml` and the environment `pypi`. CONTRIBUTING.md,
-    # "Releasing".
+    # the workflow file `release.yml` and that distribution's environment.
+    # CONTRIBUTING.md, "Releasing".
     permissions:
       id-token: write
     steps:

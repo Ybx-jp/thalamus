@@ -34,6 +34,10 @@ none
 
 ## Verdicts
 
+- 2026-10-26T00:40:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: yaml: .github/workflows/release.yml § "jobs" =sha256:895840c1bc18b62507fc669c993cc958e0b6051bee7a2dfb6b23d84ad368a7a9
+  note: jobs gained the per-distribution deployment environment, set by the target step and read by the publish job; the target step still maps a tag to one distribution, only that package is built and version-checked, and publish still uploads only that dist directory from a tag ref, so the assertion is unaffected
+
 ## References
 
 - .github/workflows/release.yml · standing · cites-as-live
