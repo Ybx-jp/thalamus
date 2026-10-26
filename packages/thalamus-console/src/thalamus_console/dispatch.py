@@ -86,11 +86,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from thalamus.console import panes as panes_mod
+from thalamus_console import panes as panes_mod
 from thalamus.harness import pin, quick
-from thalamus.console import readiness, rooms
-from thalamus.console.tmux import argv as tmux_argv
-from thalamus.console.tmux import literal_text_args
+from thalamus_console import readiness, rooms
+from thalamus_console.tmux import argv as tmux_argv
+from thalamus_console.tmux import literal_text_args
 
 GUARDS_DIR = Path.home() / ".thalamus" / "guards"
 PINS_FILE = Path.home() / ".thalamus" / "pins" / "pins.jsonl"

@@ -532,7 +532,7 @@ With `--frames`, the desktop surface can also render the pane inside a panel dra
 in a background image — `frame` toggles (F12), `▸` cycles (F9). Off by default, and
 when it is off neither the controls nor the key bindings exist; no artwork ships
 with it. The file `--frames` points at names each image and the panel rectangle to
-draw the pane inside; `frames()` in `console/server.py` is both the parser and the
+draw the pane inside; `frames()` in `thalamus_console/server.py` is both the parser and the
 statement of the format.
 
 ### Install it to your home screen
@@ -650,7 +650,7 @@ config mistake and not a state.
 ### Merging is not deploying
 
 The unit runs `.venv/bin/thalamus` out of `%h/code/thalamus`, and that venv is an
-editable install: the console serves `src/thalamus/console/` **from the shared
+editable install: the console serves `packages/thalamus-console/src/thalamus_console/` **from the shared
 checkout's working tree**, whatever branch it happens to be sitting on. Merging a PR
 to `master` on GitHub changes nothing the phone can see. Two things have to move for
 a merge to reach the phone, and they cover different halves. The checkout updates `static/` — `app.js`, `style.css` and
@@ -669,6 +669,14 @@ git -C ~/code/thalamus pull --ff-only
 systemctl --user restart thalamus-console                  # Linux
 launchctl kickstart -k gui/$(id -u)/com.thalamus.console   # macOS
 ```
+
+**Deploy does not sync the environment.** The console itself is the `thalamus-console`
+plugin, installed into `.venv` by `uv sync`, and so is every other plugin. A merge that
+changes `uv.lock` or adds a package under `packages/` needs
+`uv sync --directory ~/code/thalamus --inexact` before the restart (`--inexact` keeps
+the dev extras a plain `uv sync` would remove); restarted without it, the unit runs the
+new core against the old environment, and a command that moved into a plugin the
+environment does not hold yet is not there — `thalamus console` included.<!-- (A0235, cites-as-live) -->
 
 Deploy refuses rather than improvises. Uncommitted changes to tracked files, a
 detached HEAD, a branch with no upstream, and a history that will not fast-forward
@@ -789,7 +797,7 @@ console runs under a bare `python3` with nothing else installed:
 
 ```bash
 tmux -L thalamus new -d -s thalamus -n main
-python3 -m thalamus.console.server      # or: python3 src/thalamus/console/server.py
+cd packages/thalamus-console/src && python3 -m thalamus_console.server
 ```
 
 You get panes, input, keys, the composer and the whole client — and shells, which
@@ -806,7 +814,7 @@ keeps that true.
 
 ## How it works
 
-`src/thalamus/console/` — `server.py`, `transcript.py` and `distill.py` plus
+`packages/thalamus-console/src/thalamus_console/` — `server.py`, `transcript.py` and `distill.py` plus
 `static/`. Stdlib Python and a dependency-free client.
 
 - **Stdlib `http.server`, not FastAPI** like thalamus-measure's pulse. One of its jobs
@@ -888,7 +896,7 @@ keeps that true.
   session's own start, epoch seconds, converted at the boundary from the ledger's
   ISO stamp). Absent where the ledger has no value, never inferred from the cwd.
 - **Whether a session is stopped waiting on a human is served, not computed by the
-  client.** `console/dispatch.py` owns what the state means and the harness's
+  client.** `thalamus_console/dispatch.py` owns what the state means and the harness's
   session descriptor owns the value; the console joins them to a window and reduces
   them to `observed`, `blocked`, `blocked_since`, `activity` and `activity_since`.
   **`observed` is the field to branch on.** Session descriptors are partitioned by

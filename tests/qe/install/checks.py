@@ -387,7 +387,7 @@ def _shell_assets() -> list[str]:
     sw.js:12-20 declares `const SHELL = [...]` with entries relative to the worker, so
     `./` is the app root and the rest take a leading slash to become server paths.
     """
-    sw = REPO / "src" / "thalamus" / "console" / "static" / "sw.js"
+    sw = REPO / "packages" / "thalamus-console" / "src" / "thalamus_console" / "static" / "sw.js"
     try:
         text = sw.read_text()
     except OSError:

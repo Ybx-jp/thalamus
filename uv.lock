@@ -12,6 +12,7 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "thalamus-console",
     "thalamus-ingest",
     "thalamus-measure",
     "thalamus-memory",
@@ -2949,6 +2950,16 @@ wheels = [
 ]
 
 [[package]]
+name = "thalamus-console"
+source = { editable = "packages/thalamus-console" }
+dependencies = [
+    { name = "thalamus-memory" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "thalamus-memory", editable = "." }]
+
+[[package]]
 name = "thalamus-ingest"
 source = { editable = "packages/thalamus-ingest" }
 dependencies = [
@@ -3016,6 +3027,7 @@ nli = [
 
 [package.dev-dependencies]
 plugins = [
+    { name = "thalamus-console" },
     { name = "thalamus-ingest" },
     { name = "thalamus-measure" },
     { name = "thalamus-reflex" },
@@ -3046,6 +3058,7 @@ provides-extras = ["dev", "frames", "nli"]
 
 [package.metadata.requires-dev]
 plugins = [
+    { name = "thalamus-console", editable = "packages/thalamus-console" },
     { name = "thalamus-ingest", editable = "packages/thalamus-ingest" },
     { name = "thalamus-measure", editable = "packages/thalamus-measure" },
     { name = "thalamus-reflex", editable = "packages/thalamus-reflex" },

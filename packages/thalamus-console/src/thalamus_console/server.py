@@ -49,10 +49,10 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 # Imported at module scope, unlike this module's other Thalamus imports: these two
 # names are re-exported below, and `panes` reaches nothing but the standard library.
-from thalamus.console import panes
-from thalamus.console.tmux import argv as tmux_argv
-from thalamus.console.tmux import literal_text_args
-from thalamus.console.tmux import socket_name as tmux_socket
+from thalamus_console import panes
+from thalamus_console.tmux import argv as tmux_argv
+from thalamus_console.tmux import literal_text_args
+from thalamus_console.tmux import socket_name as tmux_socket
 
 STATIC_DIR = Path(__file__).with_name("static")
 DEFAULT_PORT = 8378
@@ -108,7 +108,7 @@ _dispatch_cache: object = _PIN_UNSET
 
 
 def dispatch_module():
-    """`thalamus.console.dispatch`, or None when the package is absent.
+    """`thalamus_console.dispatch`, or None when the package is absent.
 
     Deferred for the same reason as the expert layer. Kept as its own accessor rather
     than reached through `pin_module()` because the console is a *thin client* over
@@ -119,7 +119,7 @@ def dispatch_module():
     global _dispatch_cache
     if _dispatch_cache is _PIN_UNSET:
         try:
-            from thalamus.console import dispatch
+            from thalamus_console import dispatch
         except Exception:  # noqa: BLE001 — any import failure means "not available"
             _dispatch_cache = None
         else:
@@ -132,11 +132,11 @@ _rooms_cache: object = _PIN_UNSET
 
 
 def windows_module():
-    """`thalamus.console.windows` — spawn and roster — or None when the package is absent."""
+    """`thalamus_console.windows` — spawn and roster — or None when the package is absent."""
     global _windows_cache
     if _windows_cache is _PIN_UNSET:
         try:
-            from thalamus.console import windows
+            from thalamus_console import windows
         except Exception:  # noqa: BLE001 — any import failure means "not available"
             _windows_cache = None
         else:
@@ -145,11 +145,11 @@ def windows_module():
 
 
 def rooms_module():
-    """`thalamus.console.rooms` — making and listing rooms — or None when absent."""
+    """`thalamus_console.rooms` — making and listing rooms — or None when absent."""
     global _rooms_cache
     if _rooms_cache is _PIN_UNSET:
         try:
-            from thalamus.console import rooms
+            from thalamus_console import rooms
         except Exception:  # noqa: BLE001 — any import failure means "not available"
             _rooms_cache = None
         else:
@@ -1878,6 +1878,10 @@ def deploy(cfg: Config) -> dict:
     no upstream, or a history that will not fast-forward all stop here carrying
     git's own message — nothing is stashed, discarded or merged, and the only move
     made is the one `git pull --ff-only` would have made.
+
+    It does not sync the virtual environment: a merge that changes `uv.lock` or adds
+    a workspace package needs `uv sync` before the restart, or the restarted unit runs
+    the new code against the old environment (A0235, cites-as-live).
     """
     root = checkout_root()
     if root is None:
@@ -2200,7 +2204,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/extractor-policy":
             return self._send(200, {"passes": extractor_policy_view()})
         if path == "/api/cursor-sweep":
-            from thalamus.console import sweep
+            from thalamus_console import sweep
             return self._send(200, sweep.status())
         if path == "/api/spawn-options":
             rooms = rooms_module()
@@ -2435,7 +2439,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/cursor-sweep":
             if not has_experts():
                 return self._send(503, {"error": "the expert layer is not importable"})
-            from thalamus.console import sweep
+            from thalamus_console import sweep
             started, message = sweep.start()
             # 409 rather than 500: a sweep already running is the request being refused
             # on state, not the server failing, and the phone shows the sentence either
@@ -2591,7 +2595,7 @@ def serve(cfg: Config, host: str = "127.0.0.1", port: int = DEFAULT_PORT) -> Non
 
 
 def main(argv: list[str] | None = None) -> None:
-    """`python3 -m thalamus.console.server`, and the file run directly.
+    """`python3 -m thalamus_console.server`, and the file run directly.
 
     The bridge is documented to run under a bare `python3` with nothing installed,
     and that is only true if there is something to run: without an entry point the
@@ -2604,7 +2608,7 @@ def main(argv: list[str] | None = None) -> None:
     `Config.__post_init__` fall back to the checkout-less defaults.
     """
     ap = argparse.ArgumentParser(
-        prog="python3 -m thalamus.console.server",
+        prog="python3 -m thalamus_console.server",
         description="The console's tmux bridge, without the expert layer.",
     )
     ap.add_argument("--host", default="127.0.0.1",

@@ -38,6 +38,16 @@ if "$work/core/bin/thalamus" pulse --help >/dev/null 2>&1; then
   echo "core alone answers \`thalamus pulse\`, which belongs to thalamus-measure" >&2
   exit 1
 fi
+for cmd in console spawn room dispatch ceremony; do
+  if "$work/core/bin/thalamus" "$cmd" --help >/dev/null 2>&1; then
+    echo "core alone answers \`thalamus $cmd\`, which belongs to thalamus-console" >&2
+    exit 1
+  fi
+done
+if "$work/core/bin/thalamus" pin --help | grep -q -- --room; then
+  echo "core alone offers \`pin --room\`, which belongs to thalamus-console" >&2
+  exit 1
+fi
 # The SessionEnd hooks run `eval sync --write` after every distillation, so the core has
 # to answer it with no plugin installed.
 "$work/core/bin/thalamus" eval sync --help >/dev/null
@@ -99,3 +109,17 @@ from thalamus_measure.pulse.web import STATIC_DIR
 assert (STATIC_DIR / "index.html").is_file(), STATIC_DIR
 EOF
 echo "ok  thalamus eval report|uses|pins|withholding|gremlin|recipes|profile, thalamus pulse and its page"
+
+# The console plugin's commands, the options it adds to core's, and the client it serves,
+# which ships in the wheel beside the server that reads it.
+for cmd in console spawn room dispatch ceremony; do
+  "$work/thalamus_console/bin/thalamus" "$cmd" --help >/dev/null
+done
+"$work/thalamus_console/bin/thalamus" pin --help | grep -q -- --room
+"$work/thalamus_console/bin/thalamus" eval cost --help | grep -q -- --by-occasion
+"$work/thalamus_console/bin/python" -I - <<'EOF'
+from thalamus_console.server import STATIC_DIR
+for name in ("index.html", "app.js", "sw.js", "style.css"):
+    assert (STATIC_DIR / name).is_file(), STATIC_DIR / name
+EOF
+echo "ok  thalamus console|spawn|room|dispatch|ceremony, pin --room, eval cost --by-occasion, and its client"

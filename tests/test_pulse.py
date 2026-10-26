@@ -27,7 +27,7 @@ from thalamus_measure.pulse.metrics import (
     report_snapshot,
 )
 from thalamus_measure.pins import VerdictRow
-from thalamus.contract.paths import PACKAGE_DIR
+import thalamus_console
 from thalamus.eval.traces import TraceEvent
 from thalamus_measure.pulse.web import create_pulse_app
 
@@ -428,7 +428,7 @@ def test_build_reports_how_far_the_checkout_moved_since_boot(tmp_path):
     assert metrics._build_dict(metrics.record_build(nowhere))["behind"] is None
 
 
-_CONSOLE = PACKAGE_DIR / "console" / "static"
+_CONSOLE = Path(thalamus_console.__file__).parent / "static"
 _PULSE = Path(metrics.__file__).parent / "static"
 
 

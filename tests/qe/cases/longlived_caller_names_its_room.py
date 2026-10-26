@@ -34,7 +34,7 @@ from pathlib import Path
 from ..model import Case, FailureClass, Finding, Substrate, Tier
 
 # Callers that outlive the session whose environment they would otherwise adopt.
-LONG_LIVED = (("src/thalamus/console/server.py", "the console server"),)
+LONG_LIVED = (("packages/thalamus-console/src/thalamus_console/server.py", "the console server"),)
 
 _CALL = re.compile(r"dispatch\.dispatch\s*\(", re.S)
 
@@ -58,7 +58,7 @@ def _call_args(source: str, start: int) -> str:
 
 
 def run() -> Finding | None:
-    from thalamus.console import dispatch
+    from thalamus_console import dispatch
     from thalamus.harness import pin  # noqa: PLC0415
 
     faults: list[str] = []
@@ -145,7 +145,7 @@ def run() -> Finding | None:
             "life and refuses every other one"
         ),
         witness="; ".join(faults),
-        site="src/thalamus/console/server.py::/api/dispatch",
+        site="packages/thalamus-console/src/thalamus_console/server.py::/api/dispatch",
     )
 
 

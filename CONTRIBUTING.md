@@ -79,7 +79,7 @@ assume — the span is a command away:
 python -c "from claims_ledger import open_ledger
 from claims_ledger.schema import section_span, read_document
 k = open_ledger().config
-body, _ = read_document('src/thalamus/console/static/sw.js')
+body, _ = read_document('packages/thalamus-console/src/thalamus_console/static/sw.js')
 s, e = section_span(body, k, 'js', 'fetch')
 print(body[s:e])"
 ```
@@ -229,7 +229,8 @@ reports numbers for a tree that no longer exists.
 ### The console's JavaScript is tested
 
 `tests/js/*.test.mjs` run under node, driven by `tests/test_console_js.py` as part of
-the same pytest run. They lift functions out of `src/thalamus/console/static/app.js`
+the same pytest run. They lift functions out of
+`packages/thalamus-console/src/thalamus_console/static/app.js`
 **by name**, so renaming one breaks extraction loudly. That is the intended failure,
 not a flake — update the test alongside the rename.
 
@@ -242,7 +243,6 @@ src/thalamus/
   substrate/   storage kernel — schema, Gremlin writer, Gremlin reader, query span tap.
                Below the contract: knows nodes and edges, not experts or tiers
   contract/    the federation boundary — ontology, expert manifests, conformance
-  console/     the optional browser control plane: tmux windows, rooms, dispatch
   archive/     immutable content-addressed store for retained evidence
   harness/     MCP server, hooks, skills, transcript bootstrap
   plugins.py   the extension points a plugin package registers through
@@ -252,6 +252,7 @@ src/thalamus/
   arch/        the `architect` scope's instrument — a declared-policy import extractor
                and the structural metrics computed over it, behind the three arch gates
 packages/      plugins — each its own distribution, depending on the core alone
+  thalamus-console/  rooms and the console: tmux windows, `spawn`, `room`, `dispatch`, `ceremony`, `console`
   thalamus-ingest/   curated ingestion: `thalamus ingest`, `thalamus backfill-chunks`
   thalamus-measure/  the eval loop's reports and the dashboard: `eval report|uses|pins|withholding|gremlin|recipes|profile`, `thalamus pulse`
   thalamus-reflex/   the memory reflex: its two hooks, `thalamus reflex`, `eval reflex|vocabulary`
@@ -283,8 +284,10 @@ imports every module the plugin ships.
 
 A plugin registers through hooks in `src/thalamus/plugins.py`, declared under the
 `thalamus` entry-point group: `register_commands` for subcommands, top-level or under
-the core's `eval`, and `register_hooks` for hook scripts, which `thalamus init` wires
-beside the core's. A hook script sits under its package's `hooks/<harness>/` and
+the core's `eval`, and for options on a core command the core offers (`pin`, `eval
+cost`); `claim_command` to run that command itself when its options ask for it;
+`capability_rows` for rows in `contract check --capabilities`; and `register_hooks`
+for hook scripts, which `thalamus init` wires beside the core's. A hook script sits under its package's `hooks/<harness>/` and
 sources the core's `resolve-scope.sh` through the path `init` records in
 `~/.thalamus/hook-library`. A plugin's tests live in `tests/` beside the core's, so
 they run under the same isolation fixtures. A new extension point (MCP tools, skills)

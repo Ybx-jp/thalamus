@@ -108,7 +108,7 @@ fi
 #    placing a *new* session in a room this one is not in.
 #    `thalamus` must be *invoked*, not merely named: the verb follows the binary with
 #    only flags between, which is the shape of a command and not the shape of a path.
-#    `src/thalamus/console/dispatch.py` names both words and invokes nothing.
+#    `packages/thalamus-console/src/thalamus_console/dispatch.py` names both words and invokes nothing.
 #
 #    Measured across three sessions on 2026-08-15, the previous form — `thalamus`,
 #    then any text without a shell separator, then a verb — produced 8 false positives

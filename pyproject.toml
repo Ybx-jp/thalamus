@@ -95,6 +95,7 @@ build-backend = "hatchling.build"
 members = ["packages/*"]
 
 [tool.uv.sources]
+thalamus-console = { workspace = true }
 thalamus-ingest = { workspace = true }
 thalamus-measure = { workspace = true }
 thalamus-reflex = { workspace = true }
@@ -103,7 +104,7 @@ thalamus-reflex = { workspace = true }
 # and the gates see them. A dependency group rather than an extra because a group is
 # not published: the core's metadata on PyPI names no plugin.
 [dependency-groups]
-plugins = ["thalamus-ingest", "thalamus-measure", "thalamus-reflex"]
+plugins = ["thalamus-console", "thalamus-ingest", "thalamus-measure", "thalamus-reflex"]
 
 [tool.uv]
 default-groups = ["plugins"]

@@ -30,9 +30,9 @@ documents = [
     # The plugins under `packages/`, on the same terms as the core's source and hooks.
     "packages/*/src/**/*.py",
     "packages/*/src/*/hooks/*/*.sh",
-    "src/thalamus/console/static/*.js",
-    "src/thalamus/console/static/*.css",
-    "src/thalamus/console/static/*.html",
+    "packages/thalamus-console/src/thalamus_console/static/*.js",
+    "packages/thalamus-console/src/thalamus_console/static/*.css",
+    "packages/thalamus-console/src/thalamus_console/static/*.html",
     "src/thalamus/pulse/static/*.html",
     "docker-compose.yml",
     "docker/*.Dockerfile",

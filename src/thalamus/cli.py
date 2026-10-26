@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import re
 import sys
 import time
@@ -19,7 +18,6 @@ import yaml
 from thalamus import __version__, plugins
 from thalamus.substrate.schema import CloseDisposition, SessionGraph, ThreadClose
 from thalamus.archive import archive_dir
-from thalamus.console.server import DEFAULT_PORT as CONSOLE_PORT
 from thalamus.contract.conformance import (
     ContractViolation,
     check_session,
@@ -39,13 +37,7 @@ from thalamus.harness import (
 from thalamus.harness import closes as closes_mod
 from thalamus.harness import quick as quick_mod
 from thalamus.harness.bootstrap import bootstrap_project
-from thalamus.console.ceremonies import (
-    CEREMONY_KINDS,
-    COMPARATOR_ARMS,
-    RESOLUTION_OUTCOMES,
-)
 from thalamus.harness import pin
-from thalamus.console.windows import ROSTER_SESSION
 from thalamus.harness.pin import resolve_forked_from, resolve_room
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot, snapshot_quietly
 from thalamus.substrate.writer import (
@@ -53,12 +45,6 @@ from thalamus.substrate.writer import (
     GraphUnavailable,
     close_connection,
     connect,
-)
-
-ROOM_FLAG_HELP = (
-    "Launch into this room — a private config dir (~/.thalamus/rooms/<room>/) that "
-    "partitions peer discovery, so members see only each other. Created on first "
-    "use. Default: $THALAMUS_ROOM, else no room."
 )
 
 ARCH_REPO_HELP = (
@@ -580,12 +566,6 @@ def _main():
     eval_cost_parser.add_argument(
         "--traces", type=Path, default=None, help="Trace tap directory (default: ~/.thalamus/traces)"
     )
-    eval_cost_parser.add_argument(
-        "--by-occasion", action="store_true", dest="by_occasion",
-        help="Attribute room members' burn to the ceremony occasion it happened "
-             "inside, with each room's out-of-occasion burn beside it",
-    )
-
     eval_conditioning_parser = eval_sub.add_parser(
         "conditioning",
         help="Per-firing behavioral join: did each injected reminder change behavior?",
@@ -676,24 +656,7 @@ def _main():
         "pin", help="Launch a session pinned to an expert scope"
     )
     pin_parser.add_argument("scope", help="Expert scope (a config/experts manifest, or `main`)")
-    pin_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
     pin_parser.add_argument(
-        "--harness", choices=agents.LAUNCHABLE, default="claude", help="Which CLI to pin (default: claude). The charter rides `--agent` on claude and `--profile` on codex; `cursor` has no carrier for one, so its pin routes and is bounded without it — see contract/pinning.py for what `pinned` covers on each. codex and cursor both take the scope as an argv `env` prefix as well, which is what survives `respawn-window` (on codex `--profile` restores the charter but tells the hooks nothing). Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
-    )
-
-    spawn_parser = subparsers.add_parser(
-        "spawn", help="Open one on-demand pinned tmux window (a chosen scope + directory)"
-    )
-    spawn_parser.add_argument("scope", help="Expert scope (a config/experts manifest, or `main`)")
-    spawn_parser.add_argument(
-        "--dir", type=Path, default=None,
-        help="Working directory for the session (default: the thalamus repo)"
-    )
-    spawn_parser.add_argument(
-        "--session", default="thalamus", help="tmux session to open the window in"
-    )
-    spawn_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
-    spawn_parser.add_argument(
         "--harness", choices=agents.LAUNCHABLE, default="claude", help="Which CLI to pin (default: claude). The charter rides `--agent` on claude and `--profile` on codex; `cursor` has no carrier for one, so its pin routes and is bounded without it — see contract/pinning.py for what `pinned` covers on each. codex and cursor both take the scope as an argv `env` prefix as well, which is what survives `respawn-window` (on codex `--profile` restores the charter but tells the hooks nothing). Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
     )
 
@@ -745,18 +708,6 @@ def _main():
     quick_delta.add_argument(
         "--parent", required=True, help="Session id the fork was resumed from"
     )
-
-    room_parser = subparsers.add_parser(
-        "room", help="Rooms: the collaborations sessions are launched into"
-    )
-    room_sub = room_parser.add_subparsers(dest="room_command")
-    room_sub.add_parser("list", help="Every room that has a config dir")
-    room_show = room_sub.add_parser("show", help="What one room's config dir holds")
-    room_show.add_argument("room", help="Room name")
-    room_create = room_sub.add_parser(
-        "create", help="Provision a room's config dir without launching anything"
-    )
-    room_create.add_argument("room", help="Room name (lowercase letters, digits, hyphens)")
 
     # Thread closing. `propose` writes a ledger row and nothing to the graph; `approve`
     # writes the row and then the edge. The split is the whole mechanism: an agent may
@@ -838,283 +789,12 @@ def _main():
     )
     thread_audit.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
-    # Ceremony ledger — the room lifecycle's capture layer. Every verb here writes a
-    # row that cannot be reconstructed after the fact, which is why they exist
-    # before any of the lifecycle they record.
-    ceremony_parser = subparsers.add_parser(
-        "ceremony", help="The ceremony ledger: occasions, skips, deliverables, assignments"
-    )
-    ceremony_sub = ceremony_parser.add_subparsers(dest="ceremony_command")
-
-    ceremony_start = ceremony_sub.add_parser(
-        "start", help="Open an occasion — written at start so an abort still leaves a row"
-    )
-    ceremony_start.add_argument("room", help="Room the ceremony is held in")
-    ceremony_start.add_argument("kind", choices=CEREMONY_KINDS, help="Which ceremony")
-    ceremony_start.add_argument(
-        "--scope", action="append", default=[], dest="scopes",
-        help="A participating scope; repeat for each member",
-    )
-    ceremony_start.add_argument(
-        "--deliverable", action="append", default=[], dest="deliverables",
-        help="A deliverable id this occasion concerns; repeat as needed",
-    )
-    ceremony_start.add_argument(
-        "--arm", default="",
-        help="The arm this occasion realizes. Must match a prior assignment — the "
-             "audit reports a disagreement rather than resolving it",
-    )
-    ceremony_start.add_argument("--prereg", default="", help="Pre-registration id")
-
-    ceremony_end = ceremony_sub.add_parser("end", help="Close an occasion (appends, never mutates)")
-    ceremony_end.add_argument("occasion", help="Occasion id, e.g. alpha:review:1")
-    ceremony_end.add_argument(
-        "--outcome", default="", help="How it ended — never how well it went"
-    )
-
-    ceremony_skip = ceremony_sub.add_parser(
-        "skip", help="Record a ceremony that did NOT happen — the ablation is only "
-                     "readable if a skip writes"
-    )
-    ceremony_skip.add_argument("room", help="Room the ceremony was due in")
-    ceremony_skip.add_argument("kind", choices=CEREMONY_KINDS, help="Which ceremony")
-    ceremony_skip.add_argument("--reason", default="", help="Free text; the row is the datum")
-
-    ceremony_mint = ceremony_sub.add_parser(
-        "mint", help="Mint a deliverable's permanent id, carried across every revision"
-    )
-    ceremony_mint.add_argument("room", help="Room the deliverable belongs to")
-    ceremony_mint.add_argument("title", help="What it is; the id is derived once and then fixed")
-    ceremony_mint.add_argument("--owner", default="", help="Owning scope")
-    ceremony_mint.add_argument("--occasion", default="", help="Occasion that minted it")
-
-    ceremony_revise = ceremony_sub.add_parser(
-        "revise", help="Attach a revision to an existing deliverable id"
-    )
-    ceremony_revise.add_argument("deliverable", help="Deliverable id")
-    ceremony_revise.add_argument(
-        "--artifact", default="", help="What names this revision — a path, commit, or vertex id"
-    )
-    ceremony_revise.add_argument("--occasion", default="", help="Occasion that produced it")
-    ceremony_revise.add_argument("--author", default="", help="Authoring scope")
-
-    ceremony_assign = ceremony_sub.add_parser(
-        "assign",
-        help="Deal deliverables to arms from a seed, BEFORE the ceremony runs — "
-             "unrecorded in advance, the reference distribution does not exist",
-    )
-    ceremony_assign.add_argument("room", help="Room; also the block permutation is restricted to")
-    ceremony_assign.add_argument("kind", choices=CEREMONY_KINDS, help="Which ceremony")
-    ceremony_assign.add_argument(
-        "--unit", action="append", default=[], dest="units", required=True,
-        help="A deliverable id to assign; repeat for each",
-    )
-    ceremony_assign.add_argument(
-        "--arm", action="append", default=[], dest="arms", required=True,
-        help="An arm name; repeat. Pair each with a --count in the same order",
-    )
-    ceremony_assign.add_argument(
-        "--count", action="append", type=int, default=[], dest="counts", required=True,
-        help="How many units that arm takes; must sum to the unit count",
-    )
-    ceremony_assign.add_argument(
-        "--seed", type=int, required=True, help="The seed the deal is replayable from"
-    )
-    ceremony_assign.add_argument("--prereg", default="", help="Pre-registration id")
-
-    # Items 5-7 — the forecast, its resolution, and the unit the room is read against.
-    ceremony_commit = ceremony_sub.add_parser(
-        "commit",
-        help="Record a forecast about a deliverable — what will be true, and by when",
-    )
-    ceremony_commit.add_argument("room", help="Room making the commitment")
-    ceremony_commit.add_argument("deliverable", help="Deliverable id the forecast is about")
-    ceremony_commit.add_argument("text", help="What is being committed to")
-    ceremony_commit.add_argument("--owner", default="", help="Owning scope")
-    ceremony_commit.add_argument(
-        "--artifact", default="", dest="predicted",
-        help="What should exist if this came true — a path, a commit, a vertex id",
-    )
-    ceremony_commit.add_argument(
-        "--resolve-by", default="", dest="resolve_by",
-        help="The horizon tooling resolves this at (YYYY-MM-DD)",
-    )
-    ceremony_commit.add_argument("--occasion", default="", help="Occasion that committed it")
-
-    ceremony_resolve = ceremony_sub.add_parser(
-        "resolve",
-        help="Record what became of a commitment. Run by tooling — a resolver who sat "
-             "in the room is a finding, not a shortcut",
-    )
-    ceremony_resolve.add_argument("deliverable", help="Deliverable id being resolved")
-    ceremony_resolve.add_argument(
-        "outcome", choices=RESOLUTION_OUTCOMES, help="How the forecast came out"
-    )
-    ceremony_resolve.add_argument(
-        "--resolver", required=True, help="What did the checking (a tool, a job)"
-    )
-    ceremony_resolve.add_argument(
-        "--evidence", required=True,
-        help="What it checked — a path, a commit, a vertex id",
-    )
-    ceremony_resolve.add_argument("--room", default="", help="Room, when not derivable")
-    ceremony_resolve.add_argument("--occasion", default="", help="Occasion that resolved it")
-
-    ceremony_comparator = ceremony_sub.add_parser(
-        "comparator",
-        help="Name the out-of-room unit this room is read against, while it still "
-             "counts — one chosen after the outcomes are visible has absorbed them",
-    )
-    ceremony_comparator.add_argument("room", help="Room being compared")
-    ceremony_comparator.add_argument(
-        "arm", choices=COMPARATOR_ARMS, help="Which out-of-room arm"
-    )
-    ceremony_comparator.add_argument(
-        "reference", help="The unit itself — a session id, a ticket id"
-    )
-    ceremony_comparator.add_argument(
-        "--basis", default="", help="Why it is comparable"
-    )
-
-    ceremony_sub.add_parser(
-        "outstanding", help="Commitments with no resolution yet, oldest first"
-    )
-
-    ceremony_ack = ceremony_sub.add_parser(
-        "ack",
-        help="Accept a permanent finding so the audit's exit code stops reporting it. "
-             "The ledger is untouched and the finding is still printed",
-    )
-    ceremony_ack.add_argument(
-        "finding", help="Exact `<category>:<item>` key as `audit` prints it"
-    )
-    ceremony_ack.add_argument(
-        "--reason", required=True, help="Why this one is permanent and understood"
-    )
-
-    # Dispatch — delivery mechanics. A separate verb rather than a loop over
-    # send-keys because `waiting` must be refused, not handled carefully.
-    dispatch_parser = subparsers.add_parser(
-        "dispatch", help="Deliver a message to live room members, refusing on `waiting`"
-    )
-    dispatch_parser.add_argument("room", help="Room whose members are addressed")
-    dispatch_parser.add_argument(
-        "message", nargs="?", default="",
-        help="What to send. Omit when building an announcement with --task",
-    )
-    dispatch_parser.add_argument(
-        "--to", action="append", default=[], dest="scopes",
-        help="Restrict to this scope; repeat. Default: every live member",
-    )
-    dispatch_parser.add_argument(
-        "--sender", default="",
-        help="Who is dispatching (default: this process's scope). Inside a room this "
-             "may only name the session's own scope — the sender is established by "
-             "the process there, not asserted",
-    )
-    dispatch_parser.add_argument(
-        "--operator", action="store_true",
-        help="Dispatch into a room this session is not in. Refused by default: a "
-             "member reaching another room is the one direction a room's config root "
-             "does not bound",
-    )
-    dispatch_parser.add_argument(
-        "--partial", action="store_true",
-        help="Deliver to the reachable members anyway, recording who missed it. "
-             "Without this, one undeliverable target refuses the whole fan-out, "
-             "because a partial announcement makes silence ambiguous between a "
-             "decline and never having been asked",
-    )
-    dispatch_parser.add_argument(
-        "--dry-run", action="store_true",
-        help="Pre-flight only: report what would land, send nothing, write no rows",
-    )
-    dispatch_parser.add_argument(
-        "--no-submit", action="store_true",
-        help="Type the text without the following Enter",
-    )
-    announce = dispatch_parser.add_argument_group(
-        "Contract Net announcement", "All four slots are mandatory together"
-    )
-    announce.add_argument("--task", default="", help="Task abstraction")
-    announce.add_argument("--eligibility", default="", help="Who this is for")
-    announce.add_argument("--bid", default="", help="What a bid must contain")
-    announce.add_argument("--expires", default="", help="Expiration; silence past it is a timeout")
-
-    ceremony_sub.add_parser("show", help="The ledger room by room, with the audit under it")
-    ceremony_audit = ceremony_sub.add_parser(
-        "audit", help="Read the ledger against its own obligations; exits 1 on any "
-                      "finding that has not been acknowledged"
-    )
-    ceremony_audit.add_argument(
-        "--strict", action="store_true",
-        help="Ignore acknowledgements entirely — exits 1 on every finding the ledger "
-             "holds, which is what the ledger actually says",
-    )
-
-    # Console command — the operator surface onto the tmux roster, drivable from a phone
-    console_parser = subparsers.add_parser(
-        "console",
-        help="Serve the console: drive the pinned tmux roster from a browser",
-    )
-    console_parser.add_argument(
-        "--host", default="127.0.0.1",
-        help="Bind address (default: localhost — the console has no auth of its own)"
-    )
-    console_parser.add_argument(
-        "--port", type=int, default=CONSOLE_PORT, help=f"Port (default: {CONSOLE_PORT})"
-    )
-    console_parser.add_argument(
-        "--session", default=ROSTER_SESSION,
-        help=f"tmux session to drive (default: {ROSTER_SESSION})"
-    )
-    console_parser.add_argument(
-        "--project-root", type=Path, default=None,
-        help="The checkout roster sync runs against (default: the one this CLI is in)"
-    )
-    console_parser.add_argument(
-        "--dir", type=Path, action="append", default=[], metavar="PATH",
-        help="Offer this directory in the spawn picker, starred (repeatable; "
-             "default: the project root)"
-    )
-    console_parser.add_argument(
-        "--scan", type=Path, action="append", default=[], metavar="ROOT",
-        help="Offer every git repo one level under ROOT in the spawn picker "
-             "(repeatable; default: the project root's parent)"
-    )
-    console_parser.add_argument(
-        "--service", action="append", default=[], metavar="UNIT",
-        help="A unit the admin sheet may restart — a systemd `--user` unit on Linux, "
-             "a launchd label on macOS (repeatable; "
-             "default: none, which hides the section)"
-    )
-    console_parser.add_argument(
-        "--frames", type=Path, default=None, metavar="PATH",
-        help="Frame-theme definitions for the desktop client, e.g. "
-             "$WEZTERM_CONFIG_DIR/frames.lua (default: none — no frame themes)"
-    )
-    # A console reached at the host the browser addressed needs none of these: the
-    # request's own `Host` is the comparison. This is for a reverse proxy that
-    # rewrites `Host` to the upstream (nginx does unless told
-    # `proxy_set_header Host $host`), which makes the browser's `Origin` unmatchable
-    # against anything the request still carries.
-    console_parser.add_argument(
-        "--allow-origin", action="append", default=[], metavar="ORIGIN",
-        dest="allow_origin",
-        help="Also accept writes from this origin, e.g. https://console.example.com "
-             "(repeatable; default: none — only the origin the request was addressed "
-             "to is accepted)"
-    )
-    console_parser.add_argument(
-        "--fetch-interval", type=float, default=10.0, metavar="MINUTES",
-        help="How often to fetch the checkout's remote so the console knows whether "
-             "it is behind (default: 10; 0 disables, and the count then only reflects "
-             "the last fetch somebody ran)"
-    )
-
     # Plugins add theirs after core's, so a name core already uses is refused as that
     # plugin's failure rather than shadowing the core command.
-    plugins.loaded().register_commands(subparsers, groups={"eval": eval_sub})
+    plugins.loaded().register_commands(
+        subparsers, groups={"eval": eval_sub},
+        commands={"pin": pin_parser, "eval cost": eval_cost_parser},
+    )
 
     args = parser.parse_args()
     # Long-running commands (bootstrap, extract) are routinely piped to a log; without
@@ -1169,22 +849,12 @@ def _main():
         _cmd_rescope(args)
     elif args.command == "pin":
         _cmd_pin(args)
-    elif args.command == "spawn":
-        _cmd_spawn(args)
     elif args.command == "quick":
         _cmd_quick(args, quick_parser)
-    elif args.command == "room":
-        _cmd_room(args, parser)
     elif args.command == "preset":
         _cmd_preset(args, preset_parser)
     elif args.command == "thread":
         _cmd_thread(args, thread_parser)
-    elif args.command == "ceremony":
-        _cmd_ceremony(args, parser)
-    elif args.command == "dispatch":
-        _cmd_dispatch(args)
-    elif args.command == "console":
-        _cmd_console(args)
     elif args.command == "arch":
         _cmd_arch(args, arch_parser)
     else:
@@ -2542,7 +2212,6 @@ def _report_capabilities():
     from thalamus.contract.boundaries import check_boundaries
     from thalamus.contract.pinning import check_pinning
     from thalamus.contract.probes import check_capabilities
-    from thalamus.console.room_capabilities import check_rooms
 
     # Two kinds of declaration, one report. A flag row says what a CLI accepts; a
     # boundary row says what actually binds on a harness — and the second is the one
@@ -2553,11 +2222,9 @@ def _report_capabilities():
              for row, outcome, detail in check_boundaries()]
     rows += [(f"{row.label} [{row.state.value}]", outcome, detail)
              for row, outcome, detail in check_pinning()]
-    # A third subject: what a dispatcher can establish about a member before writing to
-    # it. Kept out of the pinning rows because a pinned session and an addressable room
-    # member are different claims, and the record that carried both reported one wrongly.
-    rows += [(f"{row.label} [{row.state.value}]", outcome, detail)
-             for row, outcome, detail in check_rooms()]
+    # Then each plugin's own subjects — the console's is what a dispatcher can establish
+    # about a room member before writing to it.
+    rows += plugins.loaded().capability_rows()
 
     drift = [r for r in rows if r[1] == "drift"]
     malformed = [r for r in rows if r[1] == "malformed"]
@@ -3202,11 +2869,7 @@ def _cmd_eval(args, eval_parser):
             date.fromisoformat(args.since) if args.since else date.today() - timedelta(days=14)
         )
         project_dir = (args.project_dir or Path.cwd()).resolve()
-        if args.by_occasion:
-            from thalamus.console.occasion_cost import occasion_burn
-
-            print(occasion_burn(since).render())
-        else:
+        if not plugins.loaded().claim_command("eval cost", args):
             print(cost_report(project_dir, since, traces_base=args.traces).render())
     elif getattr(args, "eval_command", None) == "conditioning":
         from thalamus.eval.conditioning import conditioning_report
@@ -3382,30 +3045,12 @@ def _cmd_pin(args):
     project_dir = default_project_dir()
 
     try:
-        # A room, or a surrounding tmux to open a window in, is the console's to
-        # handle; otherwise this terminal becomes the pinned session.
-        if args.room or os.environ.get("TMUX"):
-            from thalamus.console.windows import launch
-            launch(args.scope, project_dir, room=args.room, harness=args.harness)
-        else:
+        # A plugin may open the session elsewhere — the console, in a room or a tmux
+        # window; otherwise this terminal becomes the pinned session.
+        if not plugins.loaded().claim_command("pin", args):
             pin.launch(args.scope, project_dir, harness=args.harness)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         print(f"Pin failed: {e}", file=sys.stderr)
-        sys.exit(1)
-
-
-def _cmd_spawn(args):
-    import subprocess
-
-    from thalamus.contract.paths import default_project_dir
-    from thalamus.console.windows import spawn
-
-    cwd = args.dir if args.dir is not None else default_project_dir()
-    try:
-        spawn(args.scope, cwd, session=args.session, room=args.room,
-              harness=args.harness)
-    except (FileNotFoundError, ValueError, RuntimeError, subprocess.CalledProcessError) as e:
-        print(f"Spawn failed: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -3515,63 +3160,6 @@ def _cmd_quick(args, parser):
     print(f"— {result.close_report}")
     if not result.accepted:
         sys.exit(1)
-
-
-def _cmd_room(args, parser):
-    from thalamus.console import rooms
-    from thalamus.harness import pin
-
-    if args.room_command == "create":
-        try:
-            config = rooms.ensure_room(args.room)
-        except (ValueError, RuntimeError) as e:
-            print(f"Room failed: {e}", file=sys.stderr)
-            sys.exit(1)
-        print(f"Room `{args.room}` ready at {config}")
-        return
-
-    if args.room_command == "show":
-        config = pin.room_config_dir(args.room)
-        if not config.is_dir():
-            print(f"No room `{args.room}` — `thalamus room create {args.room}` makes one.",
-                  file=sys.stderr)
-            sys.exit(1)
-        print(f"Room `{args.room}` — {config}")
-        sessions = sorted((config / "sessions").glob("*.json")) \
-            if (config / "sessions").is_dir() else []
-        print(f"  live members: {len(sessions)}")
-        transcripts_dir = config / "projects"
-        count = len(list(transcripts_dir.glob("*/*.jsonl"))) if transcripts_dir.is_dir() else 0
-        print(f"  transcripts:  {count} (distilled from here, not ~/.claude/projects)")
-        host = rooms.host_config_dir()
-        for name in rooms.ROOM_LINKED:
-            link = config / name
-            if link.is_symlink():
-                state = "→ " + str(link.readlink())
-            elif not (host / name).exists():
-                # Nothing to borrow. Reported plainly rather than as a fault: an
-                # operator with no `commands/` should not be told a room is broken.
-                state = f"— none at {host / name}"
-            else:
-                state = "MISSING" if not link.exists() else "not a link (stale copy)"
-            print(f"  {name:22} {state}")
-        copied = config / rooms.ROOM_COPIED
-        print(f"  {rooms.ROOM_COPIED:22} {'copy' if copied.is_file() else 'MISSING'}")
-        return
-
-    if args.room_command == "list":
-        names = rooms.rooms()
-        if not names:
-            print("No rooms. `thalamus spawn <scope> --room <name>` opens one.")
-            return
-        for name in names:
-            config = pin.room_config_dir(name)
-            live = len(list((config / "sessions").glob("*.json"))) \
-                if (config / "sessions").is_dir() else 0
-            print(f"{name:20} {live} live member(s)   {config}")
-        return
-
-    parser.parse_args(["room", "--help"])
 
 
 def _print_codex_projection() -> None:
@@ -3817,259 +3405,6 @@ def _agent_closes(graph) -> list[dict]:
         .by(__.coalesce(__.values("approval_ref"), __.constant("")))
         .to_list()
     ]
-
-
-def _cmd_ceremony(args, parser):
-    from thalamus.console import ceremonies
-
-    try:
-        if args.ceremony_command == "start":
-            row = ceremonies.start(
-                args.room,
-                args.kind,
-                participant_scopes=args.scopes,
-                deliverable_ids=args.deliverables,
-                arm=args.arm,
-                prereg_id=args.prereg,
-            )
-            # The id is printed alone on the last line so a caller can capture it
-            # without parsing: every later row about this occasion is keyed on it,
-            # including the session record item 8 puts it on.
-            print(f"Occasion open — {row['ceremony_kind']} in `{row['room']}`, "
-                  f"{len(row['participant_scopes'])} participant(s)")
-            print(row["occasion_id"])
-            return
-
-        if args.ceremony_command == "end":
-            row = ceremonies.end(args.occasion, outcome=args.outcome)
-            print(f"Occasion {row['occasion_id']} closed at {row['ts_end']}")
-            return
-
-        if args.ceremony_command == "skip":
-            row = ceremonies.skip(args.room, args.kind, reason=args.reason)
-            print(f"Non-occurrence recorded — {row['occasion_id']}")
-            return
-
-        if args.ceremony_command == "mint":
-            row = ceremonies.mint_deliverable(
-                args.room, args.title, owner_scope=args.owner, occasion=args.occasion
-            )
-            print(f"Deliverable minted — {row['title']}")
-            print(row["deliverable_id"])
-            return
-
-        if args.ceremony_command == "revise":
-            row = ceremonies.record_revision(
-                args.deliverable,
-                artifact=args.artifact,
-                occasion=args.occasion,
-                author_scope=args.author,
-            )
-            print(f"Revision recorded on {row['deliverable_id']}")
-            return
-
-        if args.ceremony_command == "assign":
-            row = ceremonies.record_assignment(
-                args.room,
-                args.kind,
-                args.units,
-                args.arms,
-                args.counts,
-                args.seed,
-                prereg_id=args.prereg,
-            )
-            print(f"Assignment written for `{row['room']}` {row['ceremony_kind']} — "
-                  f"seed {row['assignment_seed']}, procedure {row['procedure']}, "
-                  f"{row['space']} possible assignment(s)")
-            for unit, arm in sorted(row["assignment"].items()):
-                print(f"  {unit:32} {arm}")
-            if row["space"] > 0:
-                # The floor is a property of the design and knowable now, which is the
-                # only time it is still free to change.
-                print(f"  smallest attainable p from this block alone: {1 / row['space']:.3f}")
-            return
-
-        if args.ceremony_command == "commit":
-            row = ceremonies.commit(
-                args.room,
-                args.deliverable,
-                args.text,
-                owner_scope=args.owner,
-                predicted_artifact=args.predicted,
-                resolve_by=args.resolve_by,
-                occasion=args.occasion,
-            )
-            print(f"Commitment recorded on {row['deliverable_id']}")
-            if not row["predicted_artifact"] or not row["resolve_by"]:
-                # Not refused: a forecast the room cannot yet make concrete is still
-                # better recorded than dropped. But an unresolvable one is a sentence
-                # about intent, and tooling cannot resolve what was never predicted.
-                print("  warning: no predicted artifact or no horizon — nothing can "
-                      "resolve this later", file=sys.stderr)
-            return
-
-        if args.ceremony_command == "resolve":
-            row = ceremonies.resolve(
-                args.deliverable,
-                args.outcome,
-                resolver=args.resolver,
-                evidence=args.evidence,
-                room=args.room,
-                occasion=args.occasion,
-            )
-            print(f"{row['deliverable_id']} resolved {row['outcome']} "
-                  f"by `{row['resolver']}` ({row['evidence']})")
-            return
-
-        if args.ceremony_command == "ack":
-            row = ceremonies.acknowledge(args.finding, reason=args.reason)
-            print(f"Acknowledged {row['finding']} — {row['reason']}")
-            print("The ledger is unchanged; `ceremony audit --strict` still fails on it.")
-            return
-
-        if args.ceremony_command == "comparator":
-            row = ceremonies.record_comparator(
-                args.room, args.arm, args.reference, basis=args.basis
-            )
-            print(f"Comparator for `{row['room']}` — {row['arm']} arm, {row['reference']}")
-            return
-    except ValueError as e:
-        print(f"Ceremony failed: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    if args.ceremony_command == "show":
-        print(ceremonies.render())
-        return
-
-    if args.ceremony_command == "outstanding":
-        rows = ceremonies.outstanding()
-        if not rows:
-            print("No commitment is awaiting resolution.")
-            return
-        print(f"{len(rows)} commitment(s) awaiting resolution:")
-        for row in rows:
-            horizon = row.get("resolve_by") or "no horizon"
-            print(f"  {row['deliverable_id']:32} by {horizon:12} "
-                  f"{row.get('commitment_text', '')}")
-        return
-
-    if args.ceremony_command == "audit":
-        report = ceremonies.audit()
-        seen = {} if args.strict else ceremonies.load_acknowledged()
-        print(report.note(seen))
-        # The exit code reads acknowledgements; `clean()` never does. An acknowledged
-        # finding is one the operator has read and accepted as permanent, not one the
-        # ledger has stopped holding — `--strict` shows the undischarged truth.
-        if report.unacknowledged(seen):
-            sys.exit(1)
-        return
-
-    parser.parse_args(["ceremony", "--help"])
-
-
-def _cmd_dispatch(args):
-    from thalamus.console import dispatch as dispatch_mod
-
-    # Deliberately NOT defaulted to `resolve_pin()` here. `dispatch.authenticate`
-    # establishes the sender from the calling process and refuses a member that names
-    # another scope — and it can only tell an assertion from a default if the empty
-    # case reaches it. Resolving a default at this layer made every caller look like
-    # one that had asserted.
-    slots = (args.task, args.eligibility, args.bid, args.expires)
-    sender = args.sender
-
-    try:
-        sender, _ = dispatch_mod.authenticate(args.room, sender,
-                                              operator=args.operator)
-        if any(slots):
-            if args.message:
-                print(
-                    "Pass a message or the four announcement slots, not both — a "
-                    "message beside a formatted announcement is a second, unstructured "
-                    "channel the eligibility slot cannot be read from.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            text = dispatch_mod.announcement(*slots, sender=sender)
-        else:
-            text = args.message
-
-        result = dispatch_mod.dispatch(
-            args.room,
-            text,
-            sender=sender,
-            operator=args.operator,
-            scopes=args.scopes,
-            partial=args.partial,
-            dry_run=args.dry_run,
-            submit=not args.no_submit,
-        )
-    except dispatch_mod.DispatchRefused as e:
-        print(f"Dispatch refused: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    print(result.note())
-    # A fan-out that reached nobody is not a successful no-op: the caller asked for
-    # delivery and got none, and a zero exit would report the opposite.
-    if not args.dry_run and not result.performed:
-        sys.exit(1)
-
-
-
-
-def _cmd_console(args):
-    import shutil
-    import subprocess
-
-    from thalamus.console.server import FAVORITES_STORE, Config, PortInUse, serve
-    from thalamus.console import tmux
-    from thalamus.contract.paths import default_project_dir
-
-    if not shutil.which("tmux"):
-        print("The console needs tmux — it drives the pinned roster's windows.",
-              file=sys.stderr)
-        sys.exit(1)
-
-    cfg = Config(
-        session=args.session,
-        project_root=args.project_root or default_project_dir(),
-        favorites=args.dir,
-        scan_roots=args.scan,
-        # Named here rather than defaulted inside Config: this is a path on this
-        # operator's box, and it is `thalamus console` that knows it is serving that
-        # box (A0151, cites-as-live).
-        favorites_store=FAVORITES_STORE,
-        services=args.service,
-        frames_file=args.frames,
-        fetch_interval_s=max(0.0, args.fetch_interval) * 60,
-        allowed_origins=args.allow_origin,
-    )
-    if subprocess.run(tmux.argv("has-session", "-t", cfg.session),
-                      capture_output=True).returncode != 0:
-        # Only a missing session is created. An existing one is bridged as it stands:
-        # `--session` may name any tmux session, and the console adds nothing to one
-        # it did not create until the operator asks (roster sync, ＋).
-        from thalamus.console.windows import WindowDied, ensure_anchor
-
-        try:
-            ensure_anchor(Path(cfg.project_root), session=cfg.session)
-        except (ValueError, RuntimeError, subprocess.CalledProcessError) as e:
-            # Serve anyway: the console showing an empty roster and a working spawn
-            # button is a better answer than a refusal the operator reads on a phone.
-            print(f"! could not open `main` in tmux session `{cfg.session}`: {e}",
-                  file=sys.stderr)
-            # A window whose command never execs prints nothing, so there is no
-            # epitaph to quote and the cause is almost always the binary.
-            if isinstance(e, WindowDied):
-                print(f"Check that `{agents.cli_for('claude').binary} --version` works "
-                      "on this process's PATH.", file=sys.stderr)
-    try:
-        serve(cfg, host=args.host, port=args.port)
-    except PortInUse as e:
-        print(str(e), file=sys.stderr)
-        sys.exit(1)
-
-
 
 
 def _load_file(path: Path) -> dict:
