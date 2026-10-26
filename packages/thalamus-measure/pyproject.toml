@@ -20,7 +20,7 @@ dependencies = [
     # The floor is the first core that no longer defines these commands itself. Against
     # an older core, registering them collides with core's own, and the plugin is
     # refused.
-    "thalamus-memory>=0.1.1.dev2",
+    "thalamus-memory>=0.1.1",
     # Imported here directly, so declared here, at core's own floor.
     "gremlinpython>=3.7,<3.8",
     # pulse's server. Nothing in core imports either.

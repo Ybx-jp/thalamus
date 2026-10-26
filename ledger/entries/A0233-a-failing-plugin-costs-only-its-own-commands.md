@@ -52,5 +52,6 @@ none
 
 ## References
 
+- README.md · standing · cites-as-live
 - docs/cli.md · standing · cites-as-live
 - src/thalamus/plugins.py · standing · cites-as-live

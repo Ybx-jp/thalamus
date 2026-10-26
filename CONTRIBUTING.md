@@ -479,10 +479,11 @@ A manual run of the workflow from a branch builds and proves the distribution it
 
 To cut a release, set `__version__` in the distribution's `__init__.py`, merge it, then
 tag that commit on `master` and push the tag. **The core goes first** when a plugin
-needs a core newer than the one on PyPI: in the workspace a plugin's floor names the
-core's development version (`thalamus-memory>=0.1.1.dev4`), so release the core, then
-raise the floor to that release (`>=0.1.1`) in the change that sets the plugin's own
-version, then tag the plugin.
+needs a core newer than the one on PyPI. While that work is unreleased, the plugin's
+floor names the core's development version (`thalamus-memory>=0.1.2.dev0`); release the
+core, then raise the floor to that release (`>=0.1.2`), then tag the plugin. A plugin
+whose floor is still a development version fails its proof, because PyPI has no such
+core.
 
 Each distribution publishes from a deployment environment of its own: `pypi` for the
 core, and `pypi-<package>` for a package (`pypi-thalamus-arch`). Its PyPI publisher names

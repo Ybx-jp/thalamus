@@ -19,7 +19,7 @@ classifiers = [
 dependencies = [
     # The floor is the first core with the `register_hooks` extension point; an older
     # core loads the commands and never wires the hook scripts.
-    "thalamus-memory>=0.1.1.dev1",
+    "thalamus-memory>=0.1.1",
     # Imported here directly, so declared here, at core's own floors.
     "gremlinpython>=3.7,<3.8",
     "fastmcp>=3.4.0",

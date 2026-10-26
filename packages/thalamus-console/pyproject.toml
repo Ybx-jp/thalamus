@@ -23,7 +23,7 @@ dependencies = [
     # the console's commands collides with core's own and the plugin is refused.
     # Everything else is the standard library: tmux is the one other prerequisite, and
     # it is a binary, not a Python dependency.
-    "thalamus-memory>=0.1.1.dev3",
+    "thalamus-memory>=0.1.1",
 ]
 
 [project.urls]
