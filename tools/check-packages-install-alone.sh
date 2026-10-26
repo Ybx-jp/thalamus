@@ -6,7 +6,8 @@
 # environment, so a plugin that imports something its own pyproject.toml does not
 # declare passes the whole suite and every arch gate, and fails only when a user
 # installs it alone. Here the core goes in by itself, then each plugin goes in with the
-# core and nothing else, so an undeclared import is an ImportError.
+# core and nothing else, so an undeclared import is an ImportError. thalamus-arch, which
+# does not depend on the core, also goes in by itself.
 #
 # Usage: tools/check-packages-install-alone.sh <dist-dir>   (from `uv build --all-packages`)
 set -euo pipefail
@@ -38,9 +39,9 @@ if "$work/core/bin/thalamus" pulse --help >/dev/null 2>&1; then
   echo "core alone answers \`thalamus pulse\`, which belongs to thalamus-measure" >&2
   exit 1
 fi
-for cmd in console spawn room dispatch ceremony; do
+for cmd in arch console spawn room dispatch ceremony; do
   if "$work/core/bin/thalamus" "$cmd" --help >/dev/null 2>&1; then
-    echo "core alone answers \`thalamus $cmd\`, which belongs to thalamus-console" >&2
+    echo "core alone answers \`thalamus $cmd\`, which belongs to a plugin" >&2
     exit 1
   fi
 done
@@ -51,6 +52,7 @@ fi
 # The SessionEnd hooks run `eval sync --write` after every distillation, so the core has
 # to answer it with no plugin installed.
 "$work/core/bin/thalamus" eval sync --help >/dev/null
+"$work/core/bin/thalamus" growth --help >/dev/null
 echo "ok  thalamus-memory alone"
 
 # Each plugin with the core and its own declared dependencies, nothing more.
@@ -123,3 +125,22 @@ for name in ("index.html", "app.js", "sw.js", "style.css"):
     assert (STATIC_DIR / name).is_file(), STATIC_DIR / name
 EOF
 echo "ok  thalamus console|spawn|room|dispatch|ceremony, pin --room, eval cost --by-occasion, and its client"
+
+# The arch tool with nothing of thalamus: every module it ships imports, no `thalamus`
+# came in with it, and its own command answers. Beside the core, in the loop's
+# environment, it answers as `thalamus arch` too.
+arch_wheel=$(ls "$dist"/thalamus_arch-*.whl)
+uv venv -q "$work/arch_alone"
+uv pip install -q --python "$work/arch_alone/bin/python" "$arch_wheel"
+"$work/arch_alone/bin/python" -I - <<'EOF'
+import importlib, importlib.util, pkgutil
+import thalamus_arch
+for module in pkgutil.walk_packages(thalamus_arch.__path__, "thalamus_arch."):
+    importlib.import_module(module.name)
+assert importlib.util.find_spec("thalamus") is None, "thalamus came in with thalamus-arch"
+EOF
+for cmd in scan show diff rules dead refs; do
+  "$work/arch_alone/bin/thalamus-arch" "$cmd" --help >/dev/null
+  "$work/thalamus_arch/bin/thalamus" arch "$cmd" --help >/dev/null
+done
+echo "ok  thalamus-arch alone, and thalamus arch scan|show|diff|rules|dead|refs beside the core"

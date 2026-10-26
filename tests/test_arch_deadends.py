@@ -1,4 +1,4 @@
-"""Interfaces: thalamus.arch.deadends
+"""Interfaces: thalamus_arch.deadends
 Infrastructure: none — every unit fixture is a tree written into tmp_path. The last
        four cases read this checkout, because the census's precision is a claim about a
        real tree and a fixture cannot make it.
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.arch.deadends import (
+from thalamus_arch.deadends import (
     RULE_DECLARED,
     RULE_DECORATOR,
     RULE_DUNDER,
@@ -27,9 +27,10 @@ from thalamus.arch.deadends import (
     scan,
     test_only_symbols,
 )
-from thalamus.arch.extractor import ExtractorPolicy, scan_repo
-from thalamus.arch.findings import DESIGN, UNDERSTANDING
-from thalamus.arch.model import REPO_ROOT
+from thalamus_arch.extractor import ExtractorPolicy, scan_repo
+from thalamus_arch.findings import DESIGN, UNDERSTANDING
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _tree(root: Path, files: dict[str, str]) -> Path:
@@ -877,7 +878,7 @@ def test_every_declared_exemption_still_matches_a_definition():
     """
     import yaml
 
-    from thalamus.arch import model as arch_model
+    from thalamus_arch import model as arch_model
 
     document = yaml.safe_load((REPO_ROOT / arch_model.MODEL_PATH).read_text(encoding="utf-8"))
     policy = DeadEndPolicy.from_block(document.get("deadends") or {})

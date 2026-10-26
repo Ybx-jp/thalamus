@@ -8,7 +8,7 @@ group, and that module implements hooks from `Spec` with the `hookimpl` marker:
 
 The machinery is pluggy's, which is what pytest, `llm` and Datasette load their
 plugins with; `llm`'s `register_commands(cli)` is the shape `register_commands` copies.
-A plugin depends on `thalamus-memory` and never on another plugin.
+A plugin depends on `thalamus-memory` at most, and never on another plugin.
 
 A plugin that fails to load costs only its own surfaces. Every hook script and the
 SessionEnd distillation run through the same `thalamus` entry point, so one broken

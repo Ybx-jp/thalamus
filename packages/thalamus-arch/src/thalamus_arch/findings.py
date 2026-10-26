@@ -23,10 +23,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from thalamus.arch.extractor import DependencyGraph
-from thalamus.arch.metrics import Metrics
-from thalamus.arch.model import ArchModel
-from thalamus.arch.routes import RouteGraph
+from thalamus_arch.extractor import DependencyGraph
+from thalamus_arch.metrics import Metrics
+from thalamus_arch.model import ArchModel
+from thalamus_arch.routes import RouteGraph
 
 # Why a finding was raised, which decides who it is addressed to. A design finding is
 # about the code and is the architect's to answer; an understanding finding is about the

@@ -40,7 +40,7 @@ def index_dir() -> Path:
     Derived from `archive_dir()` rather than given its own override, because an index
     of content hashes is worthless against a different archive: point the archive
     somewhere else and the index that belongs to it follows. Kept outside because
-    `arch.growth` walks the archive root and counts everything unreferenced by a Source
+    `growth.py` walks the archive root and counts everything unreferenced by a Source
     as stray retained bytes, which an index file is not.
     """
     return archive_dir().parent / "index"

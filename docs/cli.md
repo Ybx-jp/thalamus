@@ -47,10 +47,12 @@ is about to measure was actually installed there.
 
 The core distribution, `thalamus-memory`, is memory itself: distillation, recall, the MCP
 server, experts and consultations. Further commands come from plugin packages, each
-installed on its own and depending on the core and nothing else:
+installed on its own and depending on the core and nothing else — except
+`thalamus-arch`, which depends on nothing of thalamus and has a command of its own:
 
 | Package | Adds |
 |---|---|
+| `thalamus-arch` | `arch`, the structural gate ([Repository analysis](#repository-analysis)); installed without the core, the same subcommands are the `thalamus-arch` command |
 | `thalamus-console` | rooms and the console: `spawn`, `room`, `dispatch`, `ceremony`, `console`; `--room` on `pin`, and inside tmux `pin` opens a window; `--by-occasion` on `eval cost`; the room-member rows of `contract check --capabilities` |
 | `thalamus-ingest` | `ingest`, `backfill-chunks` |
 | `thalamus-measure` | the eval loop's reports: `eval report`, `eval uses`, `eval pins`, `eval withholding`, `eval gremlin`, `eval recipes`, `eval profile`; and the `pulse` dashboard |
@@ -580,6 +582,9 @@ evidence than an ablation and stronger than the lexical overlap `eval report` sc
 
 ## Repository analysis
 
+From the `thalamus-arch` plugin. Installed without thalamus, the same subcommands are
+`thalamus-arch scan`, `thalamus-arch rules` and so on.
+
 ```bash
 thalamus arch scan                 # measure the tree; --write updates the model file
 thalamus arch scan --check         # exit 1 if the committed model is stale
@@ -590,7 +595,6 @@ thalamus arch rules --gate         # exit nonzero on an edge the model does not 
 thalamus arch dead                 # definitions nothing outside tests/ refers to
 thalamus arch refs                 # names a comment points at that the tree no longer holds
 thalamus arch refs --limits        # what the recognizer did not consume, and what it declined to judge
-thalamus arch growth               # unreferenced stock first, then rate
 ```
 
 `refs` reports and never gates: it has no `--gate` flag, because its precision has
@@ -601,9 +605,13 @@ suppression can be audited — and backticked dotted names and bare `.json`/`.ya
 names are counted but never judged, since their referents are as often a graph
 property or another program's file as they are ours.
 
-All seven measure this checkout by default, from any working directory — the model
-they read (`arch/model.yaml`) belongs to a repository, not to wherever you are
-standing. `--repo <path>` points them at another tree.
+All six measure the git repository holding the working directory, from its top — the
+model they read (`arch/model.yaml`) belongs to a repository, not to whichever of its
+directories you are standing in.<!-- (A0237, cites-as-live) -->
+`--repo <path>` points them at another tree.
+
+`thalamus growth` is the core's: what the memory store accumulates, with the
+unreferenced stock reported before the rate. It reads the graph and writes nothing.
 
 ### The gates
 

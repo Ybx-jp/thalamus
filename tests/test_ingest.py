@@ -1370,7 +1370,7 @@ def test_the_index_is_last_writer_wins_and_survives_a_corrupt_row(tmp_path):
 
 def test_the_index_lives_beside_the_archive_not_inside_it(tmp_path, monkeypatch):
     """
-    `arch.growth` walks the archive root and counts everything unreferenced by a Source
+    `growth.py` walks the archive root and counts everything unreferenced by a Source
     as stray retained bytes. An index file there would be counted as evidence for a
     write that failed, which it is not.
     """

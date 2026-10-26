@@ -1,4 +1,4 @@
-"""Interfaces: thalamus.arch.extractor, thalamus.arch.metrics
+"""Interfaces: thalamus_arch.extractor, thalamus_arch.metrics
 Infrastructure: none — the fixture tree is written per test into tmp_path
 Scope: resolution forms, the depth split, the policy digest, and the metrics computed
        over them. The hand-counted acceptance test lives in `tests/qe/cases/arch_extractor.py`;
@@ -10,7 +10,7 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
-from thalamus.arch.extractor import (
+from thalamus_arch.extractor import (
     DEPTH_DEFERRED,
     DEPTH_MODULE,
     KIND_FROM,
@@ -19,7 +19,7 @@ from thalamus.arch.extractor import (
     ExtractorPolicy,
     scan_repo,
 )
-from thalamus.arch.metrics import cycles, measure, propagation_cost
+from thalamus_arch.metrics import cycles, measure, propagation_cost
 
 
 def _tree(root: Path, files: dict[str, str]) -> Path:

@@ -1,4 +1,4 @@
-"""Interfaces: thalamus.arch.model, thalamus.arch.findings
+"""Interfaces: thalamus_arch.model, thalamus_arch.findings
 Infrastructure: none — model files are written into tmp_path; no graph connection
 Scope: the authored/derived split and what may overwrite what, rule checking against a
        measured graph, scan identity, and the findings a scan emits.
@@ -8,10 +8,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from thalamus.arch import findings as arch_findings
-from thalamus.arch import model as arch_model
-from thalamus.arch.extractor import ExtractorPolicy, scan_repo
-from thalamus.arch.metrics import measure
+from thalamus_arch import findings as arch_findings
+from thalamus_arch import model as arch_model
+from thalamus_arch.extractor import ExtractorPolicy, scan_repo
+from thalamus_arch.metrics import measure
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _repo(tmp_path: Path) -> Path:
@@ -81,10 +83,10 @@ def test_a_missing_model_file_is_an_empty_model_not_an_error(tmp_path):
 def test_the_model_is_anchored_to_the_repo_and_not_to_the_cwd(tmp_path, monkeypatch,
                                                               capsys):
     """
-    Scenario: `thalamus arch show` run from somewhere that is not the repo root
+    Scenario: `thalamus-arch show` run from a subdirectory of a checkout
 
     Verifications:
-    - the checkout's own model is read, layers and all
+    - the checkout's own model is read, layers and all, from its top
     - `--repo` still points the instrument at another tree
 
     Resolving `arch/model.yaml` against the working directory made `arch` a command
@@ -93,19 +95,19 @@ def test_the_model_is_anchored_to_the_repo_and_not_to_the_cwd(tmp_path, monkeypa
     """
     from types import SimpleNamespace
 
-    from thalamus import cli
+    from thalamus_arch import cli
 
-    committed = arch_model.load(arch_model.REPO_ROOT / arch_model.MODEL_PATH)
+    committed = arch_model.load(REPO_ROOT / arch_model.MODEL_PATH)
     assert committed.layers, "the checkout ships a model with layers declared"
 
-    monkeypatch.chdir(tmp_path)
-    cli._cmd_arch(SimpleNamespace(arch_command="show", repo=None), None)
+    monkeypatch.chdir(REPO_ROOT / "docs")
+    cli.run(SimpleNamespace(arch_command="show", repo=None), None)
     anchored = capsys.readouterr().out
 
     assert f"root_commit  {committed.root_commit}" in anchored
     assert f"layers       {len(committed.layers)}" in anchored
 
-    cli._cmd_arch(SimpleNamespace(arch_command="show", repo=str(tmp_path)), None)
+    cli.run(SimpleNamespace(arch_command="show", repo=str(tmp_path)), None)
     overridden = capsys.readouterr().out
 
     assert "layers       0" in overridden, "--repo still points it elsewhere"
@@ -126,7 +128,7 @@ def test_the_scan_key_still_matches_every_scan_already_taken():
     import yaml
 
     document = yaml.safe_load(
-        (arch_model.REPO_ROOT / arch_model.MODEL_PATH).read_text(encoding="utf-8")
+        (REPO_ROOT / arch_model.MODEL_PATH).read_text(encoding="utf-8")
     )
     recorded = document["extractor"]["digest"]
     committed = ExtractorPolicy.from_block(document["extractor"])

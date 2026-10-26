@@ -55,7 +55,7 @@ import tokenize
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from thalamus.arch.findings import DESIGN, UNDERSTANDING, Finding
+from thalamus_arch.findings import DESIGN, UNDERSTANDING, Finding
 
 # Surfaces read, and how prose is lifted out of each. A `.py` file's prose is its
 # comment tokens and its docstrings — never a runtime string, because an argparse help
@@ -174,9 +174,10 @@ class ReferencePolicy:
     enabled: bool = False
     roots: tuple[str, ...] = ("src",)
     exclude: tuple[str, ...] = _EXCLUDE
-    # Resolution roots tried in order for a package-relative path. `src/thalamus` is
-    # here because that is what a bare `eval/rankers.py` means inside this package.
-    search_roots: tuple[str, ...] = (".", "src", "src/thalamus")
+    # Resolution roots tried in order for a package-relative path. A repository whose
+    # comments write `eval/rankers.py` for `src/<package>/eval/rankers.py` adds
+    # `src/<package>` in its model file.
+    search_roots: tuple[str, ...] = (".", "src")
     exemptions: tuple[ReferenceExemption, ...] = ()
 
     def block(self) -> dict[str, object]:

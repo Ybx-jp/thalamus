@@ -1,4 +1,4 @@
-"""Interfaces: thalamus.arch.growth
+"""Interfaces: thalamus.growth
 Infrastructure: none — directories are built in tmp_path; the graph is a stub
 Scope: the robust rate estimator, the series reconstructed from `ingested_at`, and the
        stock audit's accounting (hardlinks, blocks, unreferenced blobs).
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.arch import growth
+from thalamus import growth
 
 
 class _Values:

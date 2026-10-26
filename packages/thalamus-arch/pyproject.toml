@@ -1,0 +1,49 @@
+[project]
+name = "thalamus-arch"
+dynamic = ["version"]
+description = "Measure a Python repository's import graph against the layers it declares, and gate on the difference"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Jackson Porter" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+]
+# No thalamus: the tool measures any repository and reads no memory. pluggy is for
+# `plugin.py`, which registers `thalamus arch` when thalamus is installed beside it.
+dependencies = [
+    "pyyaml>=6.0",
+    "pluggy>=1.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/Ybx-jp/thalamus"
+Repository = "https://github.com/Ybx-jp/thalamus"
+Issues = "https://github.com/Ybx-jp/thalamus/issues"
+
+[project.scripts]
+thalamus-arch = "thalamus_arch.cli:main"
+
+[project.entry-points.thalamus]
+arch = "thalamus_arch.plugin"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/thalamus_arch/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/thalamus_arch"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/README.md"]

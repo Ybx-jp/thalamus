@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "Ground truth for the class-A reference recognizer (src/thalamus/arch/references.py),",
+    "Ground truth for the class-A reference recognizer (packages/thalamus-arch/src/thalamus_arch/references.py),",
     "written independently of tests/test_arch_references.py per issue #127 part 1 - the",
     "author's own unit coverage is not the oracle that proves it correct.",
     "",
