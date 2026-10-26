@@ -28,5 +28,5 @@ through the `thalamus` entry-point group.
 
 It is not on PyPI yet. From a checkout of the repository, `uv sync` installs it into the
 development environment, and `pip install ./packages/thalamus-arch` installs it into any
-other. The repository's own [`arch/model.yaml`](../../arch/model.yaml) is a worked
+other. The repository's own [`arch/model.yaml`](https://github.com/Ybx-jp/thalamus/blob/master/arch/model.yaml) is a worked
 example of every block.
