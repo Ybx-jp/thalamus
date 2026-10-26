@@ -63,8 +63,8 @@ EXPECTED_PROPAGATION = 48.0
 
 
 def run() -> Finding | None:
-    from thalamus.arch.extractor import ExtractorPolicy, scan_repo  # noqa: PLC0415
-    from thalamus.arch.metrics import measure  # noqa: PLC0415
+    from thalamus_arch.extractor import ExtractorPolicy, scan_repo  # noqa: PLC0415
+    from thalamus_arch.metrics import measure  # noqa: PLC0415
 
     graph = scan_repo(FIXTURE, ExtractorPolicy(roots=("src",)))
     observed = tuple(edge.as_row() for edge in graph.edges)
@@ -79,7 +79,7 @@ def run() -> Finding | None:
                 f"{len(missing)} missing, {len(extra)} unexpected."
             ),
             witness=f"missing: {missing}; unexpected: {extra}",
-            site="src/thalamus/arch/extractor.py:scan_repo",
+            site="packages/thalamus-arch/src/thalamus_arch/extractor.py:scan_repo",
         )
 
     if len(graph.modules) != EXPECTED_MODULES:
@@ -87,7 +87,7 @@ def run() -> Finding | None:
             failure_class=FailureClass.INVARIANT_FALSIFIED,
             summary="The extractor did not collect the fixture's five modules.",
             witness=f"expected {EXPECTED_MODULES}, collected {len(graph.modules)}: {graph.modules}",
-            site="src/thalamus/arch/extractor.py:_collect_modules",
+            site="packages/thalamus-arch/src/thalamus_arch/extractor.py:_collect_modules",
         )
 
     for (depth, resolve), (edges, in_cycles) in EXPECTED_READINGS.items():
@@ -105,7 +105,7 @@ def run() -> Finding | None:
                     f"counted={metrics.dependencies} expected={edges}; "
                     f"in_cycles={metrics.modules_in_cycles} expected={in_cycles}"
                 ),
-                site="src/thalamus/arch/extractor.py:ExtractorPolicy.counts_edge",
+                site="packages/thalamus-arch/src/thalamus_arch/extractor.py:ExtractorPolicy.counts_edge",
             )
 
     propagation = round(measure(scan_repo(FIXTURE, ExtractorPolicy(roots=("src",)))).propagation_cost * 100, 2)
@@ -117,7 +117,7 @@ def run() -> Finding | None:
                 f"{EXPECTED_PROPAGATION}%."
             ),
             witness=f"observed {propagation}%, expected {EXPECTED_PROPAGATION}% (12 of 25 cells)",
-            site="src/thalamus/arch/metrics.py:propagation_cost",
+            site="packages/thalamus-arch/src/thalamus_arch/metrics.py:propagation_cost",
         )
 
     return None
