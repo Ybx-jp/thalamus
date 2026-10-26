@@ -446,29 +446,59 @@ branches that both append to the same entry have no merge resolution that passes
 
 ## Releasing
 
-The core is published to PyPI as `thalamus-memory`; the import name and the CLI stay
-`thalamus`. A tag `vX.Y.Z` is the only thing that publishes.
+Every distribution in the workspace is its own PyPI project with its own version, and is
+released on its own. The core is published as `thalamus-memory`; the import name and the
+CLI stay `thalamus`. A tag is the only thing that publishes, and one tag publishes one
+distribution:<!-- (A0239, cites-as-live) -->
+
+| Tag | Publishes |
+|---|---|
+| `vX.Y.Z` | `thalamus-memory`, the core |
+| `<package>-vX.Y.Z`, e.g. `thalamus-arch-v0.1.0` | the package under `packages/<package>/` |
+
 `.github/workflows/release.yml` then:
 
-1. runs the graph-free gates;
-2. builds the wheel and the sdist, and checks them with `twine check --strict`;
-3. checks that the tag matches `thalamus --version`;
-4. installs each artifact into a clean environment outside the checkout and runs
-   `thalamus init` and `thalamus init --check` there against a fresh HOME;
-5. publishes through Trusted Publishing, and creates the GitHub Release.
+1. runs the graph-free gates over the whole workspace;
+2. builds that distribution's wheel and sdist, and checks them with `twine check
+   --strict`;
+3. checks that the tag matches the version in the wheel's metadata;
+4. installs each artifact into a clean environment outside the checkout and proves it
+   there:
+   - the core runs `thalamus init` and `thalamus init --check` against a fresh HOME;
+   - `thalamus-arch` installs with no thalamus, and runs `rules --gate` and `dead --gate`
+     over this repository;
+   - any other plugin resolves `thalamus-memory` from PyPI, not from the workspace,
+     imports every module it ships, and loads in `thalamus --help` with nothing on
+     stderr. A plugin whose `thalamus-memory` floor no published core meets fails here
+     rather than reaching the index uninstallable;
+5. publishes through Trusted Publishing, and creates the GitHub Release, with notes
+   starting from that distribution's previous tag.
 
-To cut a release, set `__version__` in `src/thalamus/__init__.py`, merge it, then tag
-that commit on `master` and push the tag.
+A manual run of the workflow from a branch builds and proves the distribution its
+`package` input names (default `thalamus-memory`) and publishes nothing.
 
-Two things have to exist before the first publish, and nothing in the repository
-creates them:
+To cut a release, set `__version__` in the distribution's `__init__.py`, merge it, then
+tag that commit on `master` and push the tag. **The core goes first** when a plugin
+needs a core newer than the one on PyPI: in the workspace a plugin's floor names the
+core's development version (`thalamus-memory>=0.1.1.dev4`), so release the core, then
+raise the floor to that release (`>=0.1.1`) in the change that sets the plugin's own
+version, then tag the plugin.
 
-- **A pending publisher on PyPI.** At <https://pypi.org/manage/account/publishing/>,
-  add project `thalamus-memory`, owner `Ybx-jp`, repository `thalamus`, workflow
-  `release.yml`, environment `pypi`. PyPI turns it into the project's own publisher on
-  the first successful upload.
-- **A `pypi` environment in this repository** (Settings → Environments). The publish job
-  runs under it.
+Each distribution publishes from a deployment environment of its own: `pypi` for the
+core, and `pypi-<package>` for a package (`pypi-thalamus-arch`). Its PyPI publisher names
+that environment, so PyPI refuses an upload of one project from another project's
+release run.<!-- (A0240, cites-as-live) -->
+GitHub creates the environment the first time the publish job names it.
+
+One thing has to exist before a distribution's first publish, and nothing in the
+repository creates it: **a pending publisher on PyPI.** At
+<https://pypi.org/manage/account/publishing/>, add the project name, owner `Ybx-jp`,
+repository `thalamus`, workflow `release.yml`, and that distribution's environment —
+project `thalamus-arch` with environment `pypi-thalamus-arch`, and so on. PyPI turns it
+into the project's own publisher on its first successful upload. PyPI accepts only one
+pending publisher per repository, workflow and environment across all project names,
+which a shared environment would hit on the second package. `thalamus-memory` already
+has its publisher, on environment `pypi`.
 
 ## Grounding new design
 

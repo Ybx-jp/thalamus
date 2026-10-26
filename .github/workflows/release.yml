@@ -1,20 +1,35 @@
 name: Release
 
-# A tag is the only thing that publishes `thalamus-memory` to PyPI. Both artifacts that go
-# there, the wheel and the sdist, are the ones this job built and then installed into
-# clean environments outside the checkout, where each runs `thalamus init` and
-# `thalamus init --check` against a HOME of its own. A distribution that cannot install
-# its own harness never reaches the index.
+# A tag is the only thing that publishes, and a tag publishes one distribution: `vX.Y.Z`
+# the core, `thalamus-memory`, and `<package>-vX.Y.Z` the package under
+# `packages/<package>/` (`thalamus-arch-v0.1.0`). Each distribution has its own version
+# and is released on its own; nothing here publishes two at once (A0239, cites-as-live).
+# The `<component>-v` tag prefix is release-please's monorepo convention; the core keeps
+# its bare `v` tags, under which `v0.1.0` was published. Each distribution publishes
+# from a deployment environment of its own, which its PyPI publisher names
+# (A0240, cites-as-live).
+#
+# What goes to PyPI is the wheel and sdist this job built and then installed into clean
+# environments outside the checkout. The core's run `thalamus init` and `init --check`
+# against a HOME of their own. A plugin's resolve the core from PyPI rather than from
+# this workspace, so a plugin whose `thalamus-memory` floor no published core meets is
+# refused here instead of published uninstallable. thalamus-arch installs alone and
+# runs its gates over this repository.
 #
 # Copied from claims-ledger's release workflow (Ybx-jp/claims-ledger), the pattern this
 # operator already publishes with: Trusted Publishing, every action pinned to a commit,
 # and the publish job gated on a tag ref.
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*", "thalamus-*-v*"]
   # A dispatch builds and proves; it publishes only when it is dispatched from a tag ref,
-  # which is what the `publish` job's own condition says.
+  # which is what the `publish` job's own condition says. From a branch, `package` names
+  # what to build; from a tag, the tag does and `package` is ignored.
   workflow_dispatch:
+    inputs:
+      package:
+        description: "Distribution to build and prove from a branch: thalamus-memory, or a directory name under packages/"
+        default: thalamus-memory
 
 permissions:
   contents: read
@@ -22,14 +37,62 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      previous: ${{ steps.target.outputs.previous }}
+      environment: ${{ steps.target.outputs.environment }}
     steps:
-      # Full history: `claims-ledger validate` checks append-only properties across it.
+      # Full history: `claims-ledger validate` checks append-only properties across it,
+      # and the release notes start from the previous tag of the same distribution.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      - name: Which distribution this ref releases
+        id: target
+        env:
+          INPUT_PACKAGE: ${{ inputs.package }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            ref="$GITHUB_REF_NAME"
+            case "$ref" in
+              v*) package=thalamus-memory; version="${ref#v}"; pattern='v*' ;;
+              thalamus-memory-v*) echo "the core is tagged v${ref##*-v}, not $ref" >&2; exit 1 ;;
+              thalamus-*-v*) package="${ref%-v*}"; version="${ref##*-v}"; pattern="$package-v*" ;;
+              *) echo "tag $ref names no distribution" >&2; exit 1 ;;
+            esac
+          else
+            package="${INPUT_PACKAGE:-thalamus-memory}"; version=""; pattern=""
+          fi
+          # The deployment environment the publish job runs in, one per distribution.
+          # PyPI's publisher for each project names its environment, so an upload from
+          # one package's run is refused by every other project. One environment for
+          # all of them would also be refused at registration: PyPI holds a single
+          # pending publisher per repository, workflow and environment, across every
+          # project name. The core keeps `pypi`, which its publisher already names.
+          if [ "$package" = thalamus-memory ]; then
+            project=.
+            environment=pypi
+          else
+            project="packages/$package"
+            environment="pypi-$package"
+          fi
+          # The directory must hold the distribution the name says, so a tag cannot
+          # publish a directory under a name it does not declare.
+          declared=$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["project"]["name"])' "$project/pyproject.toml")
+          test "$declared" = "$package" || { echo "$project declares $declared, not $package" >&2; exit 1; }
+          previous=""
+          if [ -n "$pattern" ]; then
+            previous=$(git tag --list "$pattern" --sort=-v:refname | grep -vx "$GITHUB_REF_NAME" | head -n1 || true)
+          fi
+          {
+            echo "package=$package"
+            echo "version=$version"
+            echo "previous=$previous"
+            echo "environment=$environment"
+          } >> "$GITHUB_OUTPUT"
       # verify.yml also runs on the tag push; these are its graph-free gates, here so that
-      # publication waits on them rather than racing them.
+      # publication waits on them rather than racing them. They cover the whole
+      # workspace whichever distribution is released, because one lockfile builds them.
       - name: The gates, before anything is built
         run: |
           uv sync --extra dev
@@ -40,25 +103,26 @@ jobs:
           uv run thalamus arch scan --check
           uv run thalamus arch dead --gate
           uv run claims-ledger check
-      - run: uv build
+      - run: uv build --package "${{ steps.target.outputs.package }}" --out-dir dist
       - run: uv tool run twine check --strict dist/*
-      - name: The tag and the package agree on the version
-        # A tag over a different `__version__` would publish a release nobody can name.
-        # Skipped for a manual run, which has no tag.
+      - name: The tag and the distribution agree on the version
+        # A tag over a different version would publish a release nobody can name. Read
+        # off the wheel's own metadata, which every package single-sources from its
+        # `__version__`. Skipped for a manual run from a branch, which has no tag.
         if: startsWith(github.ref, 'refs/tags/')
+        env:
+          TAG_VERSION: ${{ steps.target.outputs.version }}
         run: |
-          uv venv /tmp/clean
-          uv pip install --python /tmp/clean/bin/python dist/*.whl
-          version=$(/tmp/clean/bin/thalamus --version | awk '{print $2}')
-          tag="${GITHUB_REF_NAME#v}"
-          test "$version" = "$tag" || { echo "tag $tag, package $version"; exit 1; }
-      - name: Each distribution installs its harness from elsewhere
+          version=$(unzip -p dist/*.whl '*.dist-info/METADATA' | awk '/^Version:/ {print $2; exit}')
+          test "$version" = "$TAG_VERSION" || { echo "tag $TAG_VERSION, package $version"; exit 1; }
+      - name: The core installs its harness from elsewhere
         # The wheel and the sdist, each in its own environment, from a directory that is
         # not the checkout and with a HOME of its own: `init` must find the hook scripts
         # and skills it shipped, record its interpreter and seed the example experts, and
         # `init --check` must then pass. Claude Code, codex and Cursor are not on the
         # runner, so their registrations report blocked rather than failed, and the graph
         # is not up, which is advisory.
+        if: steps.target.outputs.package == 'thalamus-memory'
         run: |
           for kind in whl tar.gz; do
             env_dir="/tmp/prove-$kind"
@@ -69,6 +133,41 @@ jobs:
             HOME="$home" "$env_dir/bin/thalamus" init --yes --harness claude
             HOME="$home" "$env_dir/bin/thalamus" init --check --harness claude
             test -f "$home/.thalamus/config/experts/literature.yaml"
+            cd "$GITHUB_WORKSPACE"
+          done
+      - name: The arch tool installs alone and gates this repository
+        # No thalamus in the environment, and the published tool's verdict on this
+        # repository has to be the one the workspace's own gates just reached.
+        if: steps.target.outputs.package == 'thalamus-arch'
+        run: |
+          for kind in whl tar.gz; do
+            env_dir="/tmp/prove-$kind"
+            uv venv "$env_dir"
+            uv pip install --python "$env_dir/bin/python" "$GITHUB_WORKSPACE"/dist/*.$kind
+            "$env_dir/bin/python" -I -c 'import importlib.util as u; assert u.find_spec("thalamus") is None'
+            "$env_dir/bin/thalamus-arch" rules --gate --repo "$GITHUB_WORKSPACE"
+            "$env_dir/bin/thalamus-arch" dead --gate --repo "$GITHUB_WORKSPACE"
+          done
+      - name: The plugin installs against the core on PyPI
+        # The core comes from the index, not from this workspace: what a user's
+        # `pip install` would resolve. Every module the plugin ships must import, and
+        # `thalamus --help` must load it without reporting a plugin failure.
+        if: steps.target.outputs.package != 'thalamus-memory' && steps.target.outputs.package != 'thalamus-arch'
+        env:
+          PACKAGE: ${{ steps.target.outputs.package }}
+        run: |
+          module="${PACKAGE//-/_}"
+          for kind in whl tar.gz; do
+            env_dir="/tmp/prove-$kind"
+            uv venv "$env_dir"
+            uv pip install --python "$env_dir/bin/python" "$GITHUB_WORKSPACE"/dist/*.$kind
+            cd /tmp
+            "$env_dir/bin/python" -I -c 'import importlib, pkgutil, sys
+          package = importlib.import_module(sys.argv[1])
+          for found in pkgutil.walk_packages(package.__path__, package.__name__ + "."):
+              importlib.import_module(found.name)' "$module"
+            "$env_dir/bin/thalamus" --help >/dev/null 2>/tmp/plugin.err
+            if [ -s /tmp/plugin.err ]; then cat /tmp/plugin.err >&2; exit 1; fi
             cd "$GITHUB_WORKSPACE"
           done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
@@ -83,12 +182,15 @@ jobs:
     # ref, so without this condition a dispatch from any branch would publish.
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    environment: pypi
+    # `pypi` for the core, `pypi-<package>` for a package; GitHub creates an environment
+    # the first time a job names it.
+    environment: ${{ needs.build.outputs.environment }}
     # Trusted Publishing: PyPI mints a short-lived token for this job, so no long-lived
-    # secret lives in the repository. The first publish needs an account-level pending
-    # publisher (https://pypi.org/manage/account/publishing/) naming this repository, the
-    # workflow file `release.yml` and the environment `pypi`, and the `pypi` environment
-    # must exist in this repository's settings. CONTRIBUTING.md, "Releasing".
+    # secret lives in the repository. Each distribution is its own PyPI project with its
+    # own publisher: the first publish of each needs an account-level pending publisher
+    # (https://pypi.org/manage/account/publishing/) naming that project, this repository,
+    # the workflow file `release.yml` and that distribution's environment.
+    # CONTRIBUTING.md, "Releasing".
     permissions:
       id-token: write
     steps:
@@ -99,7 +201,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
 
   github_release:
-    needs: publish
+    needs: [build, publish]
     # Same gate as `publish`, and after it: a Release names a tag that reached PyPI.
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
@@ -112,8 +214,13 @@ jobs:
           name: dist
           path: dist/
       - name: Create the GitHub Release
+        # Notes start from the previous tag of the same distribution, so a plugin's
+        # Release does not list the core's changes since some other package's tag.
         env:
           GH_TOKEN: ${{ github.token }}
+          PREVIOUS: ${{ needs.build.outputs.previous }}
         run: |
+          start=()
+          if [ -n "$PREVIOUS" ]; then start=(--notes-start-tag "$PREVIOUS"); fi
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" --generate-notes dist/*
+            --title "$GITHUB_REF_NAME" --generate-notes "${start[@]}" dist/*

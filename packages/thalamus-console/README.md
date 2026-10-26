@@ -23,4 +23,4 @@ thalamus, and registers through the `thalamus` entry-point group.
 
 It is not on PyPI yet. From a checkout of the repository, `uv sync` installs it into the
 development environment, and `pip install . ./packages/thalamus-console` installs it with
-the core into any other. See [docs/console.md](../../docs/console.md) for running it.
+the core into any other. See [docs/console.md](https://github.com/Ybx-jp/thalamus/blob/master/docs/console.md) for running it.
