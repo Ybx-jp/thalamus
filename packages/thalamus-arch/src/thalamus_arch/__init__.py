@@ -21,4 +21,4 @@ edge list — the observation — and the derived numbers beside it are a render
 the current code computes from those edges.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
