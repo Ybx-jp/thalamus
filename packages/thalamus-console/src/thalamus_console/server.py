@@ -1757,7 +1757,10 @@ def _git(cwd: Path | str, *args: str) -> str | None:
     return r.stdout.strip() if r and r.returncode == 0 else None
 
 
-def checkout_root() -> Path | None:
+SOURCE_PATH = "packages/thalamus-console/src/thalamus_console/server.py"
+
+
+def checkout_root(here: Path | None = None) -> Path | None:
     """The git checkout this module is being imported from, if it is in one.
 
     Deliberately derived from `__file__` rather than from `Config.project_root`:
@@ -1765,9 +1768,19 @@ def checkout_root() -> Path | None:
     else entirely, while the question here is which tree produced the code now
     answering the request. None under a wheel install — there is no tree to be
     behind, and the running code is the only code there is.
+
+    The toplevel must hold this file at `SOURCE_PATH`. A wheel installed into a
+    virtualenv inside some other repository — a user's project with `.venv`
+    gitignored — sits in that repository's work tree, and git names it as the
+    toplevel; taken at its word, deploy would pull and sync the user's project
+    (A0241, cites-as-live).
     """
-    top = _git(Path(__file__).resolve().parent, "rev-parse", "--show-toplevel")
-    return Path(top) if top else None
+    here = (here or Path(__file__)).resolve()
+    top = _git(here.parent, "rev-parse", "--show-toplevel")
+    if not top:
+        return None
+    root = Path(top)
+    return root if (root / SOURCE_PATH).resolve() == here else None
 
 
 def loaded_code_mtime() -> float:
