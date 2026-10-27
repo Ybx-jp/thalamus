@@ -60,6 +60,7 @@ CASE_MODULES = (
     "qe.cases.tool_write_freedom",
     "qe.cases.emptiness_predicate",
     "qe.cases.console_send_oversize_text",
+    "qe.cases.console_checkout_root_enclosing_repo",
     "qe.cases.arch_extractor",
     "qe.cases.arch_route_channel",
     "qe.cases.expectation_additions",
