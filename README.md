@@ -96,8 +96,7 @@ commands.<!-- (A0233, cites-as-live) -->
 | `thalamus-arch` | a structural gate for any Python repository: its import graph against the layers it declares. `thalamus-arch`, or `thalamus arch` beside the core | nothing of thalamus |
 
 A clone installs all of them. From PyPI, install the core and add the packages you want
-to the same environment; a package that is not on PyPI yet installs from a clone with
-`pip install ./packages/<package>`.
+to the same environment.
 [CONTRIBUTING.md](CONTRIBUTING.md#releasing) says how each one is released.
 
 ## Quick start
