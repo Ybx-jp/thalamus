@@ -81,6 +81,13 @@
       "witness_contains": "T1 read marked.py + curl: got block, expected pass; N1 python3 marked.py; ls: got pass, expected block; N2 python3 marked.py&& ls: got pass, expected block",
       "triaged_at_rev": "9c1a7f3",
       "note": "Issue #344. claude-code graph-guard.sh checks 'a .py token names a marker-bearing file' and 'an interpreter or network client is invoked' independently. A command that only reads a marker-bearing file and also runs an unrelated curl is blocked (T1); a script name with an attached separator (marked.py; / marked.py&&) does not match *.py, so the file is never read and the run passes (N1, N2). Controls asserted in the case: read+ls passes, clean file+curl passes, python3 marked.py blocks, main passes. A fix that reads a .py file only when it is an interpreter's script argument and strips shell separators from tokens makes the three verdicts correct and this entry goes stale."
+    },
+    {
+      "case": "console-checkout-root-requires-its-own-source",
+      "failure_class": "boundary-leak",
+      "witness_contains": "site-packages/thalamus_console/server.py -> checkout_root()='",
+      "triaged_at_rev": "7936e03",
+      "note": "Issue #378. checkout_root() returns git's toplevel for the directory of its own __file__, so a console installed from a wheel into a gitignored .venv inside another repository reports that repository as its checkout; deploy fast-forwards it, build_info reports its commit and the fetch loop fetches in it. The pin is a non-None checkout_root() naming the enclosing scratch repository for a module under .venv/lib/python3.12/site-packages; a fix that accepts the toplevel only when it holds this module at packages/thalamus-console/src/thalamus_console/server.py returns None there and this entry goes stale."
     }
   ]
 }
