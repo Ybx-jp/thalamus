@@ -1965,7 +1965,7 @@ def deploy(cfg: Config) -> dict:
         return {"ok": False, "output": sync.get("output", ""),
                 "moved": after != before, "from": before, "to": after,
                 "error": f"the checkout is at {after}, but {sync['error']}; the unit "
-                         "was not restarted. Run `uv sync --inexact` in "
+                         "was not restarted. Run `uv sync --inexact --frozen` in "
                          f"{root} and deploy again"}
 
     info = build_info(force=True)

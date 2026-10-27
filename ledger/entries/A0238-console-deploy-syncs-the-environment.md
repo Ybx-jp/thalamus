@@ -36,6 +36,15 @@ none
 
 ## Verdicts
 
+- 2026-10-27T10:14:31-07:00 · contested · grade: argued · author: propagation
+  evidence: code: packages/thalamus-console/src/thalamus_console/server.py § "deploy" =sha256:00e8aed02e2d2a80f226e1e5c4961267f4ad914868a6889263ea368e0294f037
+  artifact: sha256:eaae9f21a5e0baafcf044e69b99aa2a1a54373efc724d38ce696220bab27a9cc
+  note: propagated from a moved ground
+
+- 2026-10-27T10:15:00-07:00 · corroborated · grade: argued · author: main
+  evidence: code: packages/thalamus-console/src/thalamus_console/server.py § "deploy" =sha256:eaae9f21a5e0baafcf044e69b99aa2a1a54373efc724d38ce696220bab27a9cc
+  note: the failed-sync error's hint now reads `uv sync --inexact --frozen`, matching the command deploy runs; the sync, its ordering and the withheld restart are unchanged
+
 ## References
 
 - docs/console.md · standing · cites-as-live
