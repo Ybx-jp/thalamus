@@ -21,6 +21,6 @@ Installing it adds:
 It needs tmux on the PATH. It depends on `thalamus-memory` and nothing else from
 thalamus, and registers through the `thalamus` entry-point group.
 
-It is not on PyPI yet. From a checkout of the repository, `uv sync` installs it into the
-development environment, and `pip install . ./packages/thalamus-console` installs it with
-the core into any other. See [docs/console.md](https://github.com/Ybx-jp/thalamus/blob/master/docs/console.md) for running it.
+`pip install thalamus-console` installs it with the core it needs, or `uv tool install
+thalamus-memory --with thalamus-console`. In a checkout of the repository, `uv sync`
+installs it into the development environment. See [docs/console.md](https://github.com/Ybx-jp/thalamus/blob/master/docs/console.md) for running it.

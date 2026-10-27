@@ -16,9 +16,9 @@ Installing it adds two commands to `thalamus`:
 It depends on `thalamus-memory` and nothing else from thalamus, and registers its
 commands through the `thalamus` entry-point group.
 
-It is not on PyPI yet. From a checkout of the repository, `uv sync` installs it into the
-development environment, and `pip install . ./packages/thalamus-ingest` installs it with
-the core into any other.
+`pip install thalamus-ingest` installs it with the core it needs, or `uv tool install
+thalamus-memory --with thalamus-ingest`. In a checkout of the repository, `uv sync`
+installs it into the development environment.
 
 ```bash
 thalamus ingest https://arxiv.org/html/2601.00821 --scope literature --check
