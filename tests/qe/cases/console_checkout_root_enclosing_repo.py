@@ -137,5 +137,5 @@ CASE = Case(
             "no checkout, not that repository",
     run=run,
     issue=378,
-    fixed=False,
+    fixed=True,
 )
