@@ -6,4 +6,4 @@ tmux is the control plane: `windows.py` owns the roster's window mechanics and c
 the sense the word carries for a hosted service: the surface an operator drives it from.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
