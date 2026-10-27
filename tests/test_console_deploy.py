@@ -430,3 +430,36 @@ def test_deploy_leaves_an_environment_it_is_not_running_from(
     out = server.deploy(Config(project_root=checkout, services=[]))
     assert out["ok"] is True and out["synced"] is False
     assert not log.exists()
+
+
+def test_checkout_root_is_the_tree_this_module_came_from():
+    root = server.checkout_root()
+    assert root is not None
+    assert (root / server.SOURCE_PATH).resolve() == Path(server.__file__).resolve()
+
+
+def test_checkout_root_ignores_a_repository_the_install_merely_sits_in(tmp_path: Path):
+    """A wheel installed into a gitignored `.venv` inside a user's own project is in
+    that project's work tree, and git names it as the toplevel. Deploy must refuse
+    there rather than fast-forward and sync the user's project (#378)."""
+    project = tmp_path / "project"
+    project.mkdir()
+    git(project, "init", "--quiet")
+    (project / ".gitignore").write_text(".venv\n")
+    installed = (project / ".venv" / "lib" / "python3.12" / "site-packages"
+                 / "thalamus_console" / "server.py")
+    installed.parent.mkdir(parents=True)
+    installed.write_text("")
+    assert git(installed.parent, "rev-parse", "--show-toplevel") == str(project)
+    assert server.checkout_root(installed) is None
+
+
+def test_checkout_root_accepts_a_repository_holding_the_module_at_its_path(
+        tmp_path: Path):
+    repo = tmp_path / "thalamus"
+    repo.mkdir()
+    git(repo, "init", "--quiet")
+    module = repo / server.SOURCE_PATH
+    module.parent.mkdir(parents=True)
+    module.write_text("")
+    assert server.checkout_root(module) == repo.resolve()
