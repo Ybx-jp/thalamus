@@ -34,7 +34,9 @@ none
 
 ## Verdicts
 
+- 2026-10-25T23:59:00-07:00 · superseded · grade: argued · author: main
+  evidence: entry: A0238-console-deploy-syncs-the-environment · supersedes
+  note: deploy now runs uv sync --inexact --frozen after every fast-forward and withholds the restart when the sync fails (#369); the scope and cohort are unchanged
+
 ## References
 
-- docs/console.md · standing · cites-as-live
-- packages/thalamus-console/src/thalamus_console/server.py · standing · cites-as-live

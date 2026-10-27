@@ -15,6 +15,7 @@ the checkout untouched. The restart half is systemd's and is verified live.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import time
@@ -338,3 +339,94 @@ def test_the_bar_and_the_sheet_read_the_same_build(checkout: Path):
 
     assert build["sha"] == git(checkout, "rev-parse", "--short", "HEAD")
     assert admin["build"] == build
+
+
+@pytest.fixture()
+def fake_uv(tmp_path: Path, checkout: Path, monkeypatch: pytest.MonkeyPatch):
+    """A `uv` on PATH that records its argv and cwd, and a console running out of the
+    checkout's own `.venv` — the condition under which deploy syncs at all.
+
+    Returns a setter for the exit status and the log the stub writes to.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "uv.log"
+    status = tmp_path / "uv.status"
+    status.write_text("0")
+    stub = bin_dir / "uv"
+    stub.write_text(
+        "#!/bin/sh\n"
+        f'echo "$PWD $*" >> "{log}"\n'
+        'echo "resolution failed: no wheel for frob" >&2\n'
+        f'exit "$(cat "{status}")"\n')
+    stub.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    (checkout / ".venv").mkdir()
+    monkeypatch.setattr(server, "running_prefix", lambda: checkout / ".venv")
+    return status, log
+
+
+def test_deploy_syncs_the_environment_before_naming_a_restart(
+        tmp_path, checkout: Path, fake_uv, monkeypatch: pytest.MonkeyPatch):
+    """A merge that adds a workspace package reaches the restarted unit only through
+    a sync: restarted without one, the unit runs the new core against the old
+    environment, and a command that moved into the new package is not there."""
+    _, log = fake_uv
+    monkeypatch.setattr(server, "self_unit", lambda: "thalamus-console.service")
+
+    push_from_elsewhere(tmp_path, checkout, "merged upstream")
+    out = server.deploy(Config(project_root=checkout,
+                               services=["thalamus-console.service"]))
+    assert out["ok"] is True and out["synced"] is True
+    assert out["restarting"] == "thalamus-console.service"
+    assert log.read_text().split() == [str(checkout), "sync", "--inexact", "--frozen"]
+
+
+def test_deploy_syncs_even_when_nothing_moved(checkout: Path, fake_uv):
+    """A checkout pulled by hand without a sync is the state today's crash-loop came
+    from; the next deploy has to repair it, not skip it for having nothing to pull."""
+    _, log = fake_uv
+    out = server.deploy(Config(project_root=checkout, services=[]))
+    assert out["ok"] is True and out["moved"] is False and out["synced"] is True
+    assert "sync" in log.read_text()
+
+
+def test_a_failed_sync_withholds_the_restart(tmp_path, checkout: Path, fake_uv,
+                                             monkeypatch: pytest.MonkeyPatch):
+    """Restarting into a half-synced environment is the failure the sync is there to
+    prevent, so a sync that fails leaves the running unit up and says why."""
+    status, _ = fake_uv
+    status.write_text("2")
+    monkeypatch.setattr(server, "self_unit", lambda: "thalamus-console.service")
+
+    sha = push_from_elsewhere(tmp_path, checkout, "merged upstream")
+    out = server.deploy(Config(project_root=checkout,
+                               services=["thalamus-console.service"]))
+    assert out["ok"] is False and not out.get("restarting")
+    assert out["moved"] is True and out["to"] == sha
+    assert "uv sync" in out["error"] and "not restarted" in out["error"]
+    assert "no wheel for frob" in out["output"]
+
+
+def test_a_missing_uv_withholds_the_restart(tmp_path, checkout: Path, fake_uv,
+                                            monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(server.shutil, "which", lambda name: None)
+    monkeypatch.setattr(server, "self_unit", lambda: "thalamus-console.service")
+
+    push_from_elsewhere(tmp_path, checkout, "merged upstream")
+    out = server.deploy(Config(project_root=checkout,
+                               services=["thalamus-console.service"]))
+    assert out["ok"] is False and not out.get("restarting")
+    assert "PATH" in out["error"]
+
+
+def test_deploy_leaves_an_environment_it_is_not_running_from(
+        tmp_path, checkout: Path, fake_uv, monkeypatch: pytest.MonkeyPatch):
+    """A console installed outside the checkout is not the checkout's to rewrite."""
+    _, log = fake_uv
+    monkeypatch.setattr(server, "running_prefix", lambda: tmp_path / "elsewhere")
+
+    push_from_elsewhere(tmp_path, checkout, "merged upstream")
+    out = server.deploy(Config(project_root=checkout, services=[]))
+    assert out["ok"] is True and out["synced"] is False
+    assert not log.exists()

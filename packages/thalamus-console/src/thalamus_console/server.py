@@ -36,6 +36,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -1864,13 +1865,59 @@ def _last_fetch(root: Path) -> float | None:
         return None
 
 
-def deploy(cfg: Config) -> dict:
-    """Fast-forward the checkout this code is served from, and say what to reload.
+UV_SYNC_TIMEOUT_S = 300
+UV_SYNC_OUTPUT_CHARS = 2000
 
-    The two halves of a deploy have to move together: the pull is what updates
-    `static/`, and the restart is what updates the Python. Doing either alone is the
+
+def running_prefix() -> Path:
+    """The environment this process was started from."""
+    return Path(sys.prefix)
+
+
+def sync_environment(root: Path) -> dict:
+    """`uv sync --inexact --frozen` the checkout's `.venv`, when that is what is running.
+
+    `synced` is True after a sync that succeeded, False when this process does not
+    run out of `<root>/.venv` — a console installed anywhere else is not this
+    checkout's to rewrite — and absent alongside `error` when the sync could not run
+    or failed. `--frozen` installs exactly what the pulled lockfile says without
+    re-resolving it; `--inexact` keeps the dev extras the shared checkout's `.venv`
+    carries, which a plain `uv sync` would remove.
+    """
+    env = root / ".venv"
+    try:
+        ours = running_prefix().resolve() == env.resolve()
+    except OSError:
+        ours = False
+    if not ours:
+        return {"synced": False}
+    uv = shutil.which("uv")
+    if uv is None:
+        return {"error": "`uv` is not on this console's PATH, so the environment "
+                         "could not be synced"}
+    try:
+        r = subprocess.run((uv, "sync", "--inexact", "--frozen"), cwd=str(root),
+                           capture_output=True, text=True, timeout=UV_SYNC_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        return {"error": f"`uv sync` did not finish within {UV_SYNC_TIMEOUT_S}s"}
+    except (OSError, subprocess.SubprocessError) as e:
+        return {"error": f"`uv sync` could not be run: {e}"}
+    if r.returncode != 0:
+        detail = (r.stderr or r.stdout).strip()[-UV_SYNC_OUTPUT_CHARS:]
+        return {"error": f"`uv sync` exited {r.returncode}", "output": detail}
+    return {"synced": True}
+
+
+def deploy(cfg: Config) -> dict:
+    """Fast-forward the checkout this code is served from, sync its environment, and
+    say what to reload.
+
+    The three moves of a deploy have to go together: the pull is what updates
+    `static/`, the sync is what installs a dependency or workspace package the merge
+    added, and the restart is what updates the Python. Doing any one alone is the
     state where the phone shows a client and a server built against different
-    commits. This does the pull and names the unit in `restarting`; the caller
+    commits — or a unit that restarts into an environment missing its own command.
+    This does the pull and the sync and names the unit in `restarting`; the caller
     performs the restart, because it is the caller that has a response to deliver
     first and the restart kills the process that would deliver it.
 
@@ -1879,9 +1926,12 @@ def deploy(cfg: Config) -> dict:
     git's own message — nothing is stashed, discarded or merged, and the only move
     made is the one `git pull --ff-only` would have made.
 
-    It does not sync the virtual environment: a merge that changes `uv.lock` or adds
-    a workspace package needs `uv sync` before the restart, or the restarted unit runs
-    the new code against the old environment (A0235, cites-as-live).
+    The sync runs after every fast-forward, moved or not, so a checkout pulled by
+    hand without one is repaired by the next deploy; a sync of an environment
+    already current is a no-op. A sync that fails stops the restart — restarting
+    into a half-synced environment is the failure the sync exists to prevent — and
+    the result says the checkout has moved and the unit was left running
+    (A0238, cites-as-live).
     """
     root = checkout_root()
     if root is None:
@@ -1910,6 +1960,14 @@ def deploy(cfg: Config) -> dict:
                 "error": f"`{branch}` will not fast-forward onto {upstream}"}
     after = _git(root, "rev-parse", "--short", "HEAD")
 
+    sync = sync_environment(root)
+    if "error" in sync:
+        return {"ok": False, "output": sync.get("output", ""),
+                "moved": after != before, "from": before, "to": after,
+                "error": f"the checkout is at {after}, but {sync['error']}; the unit "
+                         "was not restarted. Run `uv sync --inexact --frozen` in "
+                         f"{root} and deploy again"}
+
     info = build_info(force=True)
     unit = self_unit()
     moved = after != before
@@ -1922,7 +1980,8 @@ def deploy(cfg: Config) -> dict:
     if (moved or info.get("process_stale")) and unit and unit in cfg.services:
         restarting = unit
     return {"ok": True, "moved": moved, "from": before, "to": after, "branch": branch,
-            "upstream": upstream, "unit": unit, "restarting": restarting}
+            "upstream": upstream, "unit": unit, "restarting": restarting,
+            "synced": sync["synced"]}
 
 
 def _fetch_loop(interval_s: float) -> None:

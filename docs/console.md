@@ -661,22 +661,31 @@ matter how current the tree is. A client built against a server field the runnin
 process does not return renders as *nothing happened*.
 
 Both moves are one action. **INFRA → Build → deploy** fast-forwards the checkout onto
-its upstream and restarts the unit hosting the console, then the page reloads onto
-what it now serves. By hand it is the same two commands:
+its upstream, syncs the environment, and restarts the unit hosting the console, then
+the page reloads onto what it now serves. By hand it is the same three commands:
 
 ```bash
 git -C ~/code/thalamus pull --ff-only
+uv sync --directory ~/code/thalamus --inexact --frozen
 systemctl --user restart thalamus-console                  # Linux
 launchctl kickstart -k gui/$(id -u)/com.thalamus.console   # macOS
 ```
 
-**Deploy does not sync the environment.** The console itself is the `thalamus-console`
-plugin, installed into `.venv` by `uv sync`, and so is every other plugin. A merge that
-changes `uv.lock` or adds a package under `packages/` needs
-`uv sync --directory ~/code/thalamus --inexact` before the restart (`--inexact` keeps
-the dev extras a plain `uv sync` would remove); restarted without it, the unit runs the
-new core against the old environment, and a command that moved into a plugin the
-environment does not hold yet is not there — `thalamus console` included.<!-- (A0235, cites-as-live) -->
+**The sync is what makes a new package reachable.** The console itself is the
+`thalamus-console` plugin, installed into `.venv` by `uv sync`, and so is every other
+plugin. Restarted without a sync after a merge that changes `uv.lock` or adds a package
+under `packages/`, the unit runs the new core against the old environment, and a
+command that moved into a plugin the environment does not hold yet is not there —
+`thalamus console` included, so the unit fails at start. Deploy runs
+`uv sync --inexact --frozen` after every fast-forward, including one that moved
+nothing, so a checkout pulled by hand without a sync is repaired by the next deploy.
+`--frozen` installs what the pulled lockfile says without re-resolving it; `--inexact`
+keeps the dev extras a plain `uv sync` would remove. `uv` is looked up on the unit's
+PATH — one more reason to pin it (below). A sync that fails, or a `uv` that is not on
+PATH, stops the deploy before the restart: the checkout has moved, the unit is left
+running, and the INFRA log carries `uv`'s error. The sync runs only when the console
+runs out of the checkout's own `.venv`; a console installed anywhere else is not the
+checkout's to rewrite.<!-- (A0238, cites-as-live) -->
 
 Deploy refuses rather than improvises. Uncommitted changes to tracked files, a
 detached HEAD, a branch with no upstream, and a history that will not fast-forward
