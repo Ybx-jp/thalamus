@@ -49,6 +49,10 @@ none
   evidence: yaml: .github/workflows/verify.yml § "jobs" =sha256:646eac5213f25259290147b36e7f70c68d787a0e428ef515dcfa8630d814ce3f
   note: ruff and ty now also take `packages`, and a second job, installs-alone, builds every workspace package and installs each into a clean environment; the verify job still runs lint, types, tests, the three arch gates, claims-ledger check and contract check as its steps, so the assertion holds
 
+- 2026-11-04T17:29:19-08:00 · corroborated · grade: measured · author: main
+  evidence: yaml: .github/workflows/verify.yml § "jobs" =sha256:36d593c62c1fb09da44d8ec692ccd669a1551188bf6215665b5cb530bcfbf6b8
+  note: a separate plugin-floors job was added to the workflow; the job that runs the lint, type-check, test, structure, claims-ledger and contract-check steps is unchanged, so the assertion is unaffected
+
 ## References
 
 - CLAUDE.md · standing · cites-as-live

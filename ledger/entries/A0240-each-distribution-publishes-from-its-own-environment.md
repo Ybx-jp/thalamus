@@ -34,6 +34,10 @@ none
 
 ## Verdicts
 
+- 2026-11-04T17:29:19-08:00 · corroborated · grade: argued · author: main
+  evidence: yaml: .github/workflows/release.yml § "jobs" =sha256:ccb009b24d9eef4548a1d50f13860e798d9988e2a4081cbc18bbfa85bf97b3ef
+  note: the build job gained a step that proves a plugin at its declared core floor; the publish job and its environment selection are unchanged, so the assertion is unaffected
+
 ## References
 
 - .github/workflows/release.yml · standing · cites-as-live
