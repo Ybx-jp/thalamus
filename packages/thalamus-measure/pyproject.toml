@@ -17,10 +17,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    # The floor is the first core that no longer defines these commands itself. Against
-    # an older core, registering them collides with core's own, and the plugin is
-    # refused.
-    "thalamus-memory>=0.1.1",
+    # The floor is the first core with `substrate.query.sourced` and `LANGUAGE`, which
+    # `profile.py` imports; 0.1.1 has neither. It names the development version until
+    # that core is released, then the release (CONTRIBUTING.md §"Releasing").
+    "thalamus-memory>=0.1.2.dev0",
     # Imported here directly, so declared here, at core's own floor.
     "gremlinpython>=3.7,<3.8",
     # pulse's server. Nothing in core imports either.
