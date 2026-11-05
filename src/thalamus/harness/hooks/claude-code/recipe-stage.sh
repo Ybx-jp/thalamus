@@ -59,7 +59,7 @@ esac
 # Did it actually answer? An empty or error-shaped response is not a validation.
 [ -n "${response//[[:space:]]/}" ] || exit 0
 grep -qiE \
-  'Traceback|GremlinServerError|^error:|is a master-plane instrument|No results|returned nothing' \
+  'Traceback|GremlinServerError|^error:|Rejected: |Query (failed|not run): |No results|returned nothing' \
   <<< "$response" \
   && exit 0
 

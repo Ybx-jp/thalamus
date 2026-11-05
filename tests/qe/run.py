@@ -91,6 +91,8 @@ CASE_MODULES = (
     "qe.cases.arch_refs_ground_truth",
     "qe.cases.mcp_tool_arg_sweep",
     "qe.cases.query_guard_evasion",
+    "qe.cases.query_names_its_language",
+    "qe.cases.query_render_nonstring_keys",
     "qe.cases.console_teardown_kills_reused_window",
     "qe.cases.install_cell_ceiling",
     "qe.cases.case_logic_erosion",

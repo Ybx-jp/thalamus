@@ -15,20 +15,21 @@ Most doomed queries are one dialect written on the other surface.
 | Terminal step | **None — the server iterates** | **Required — nothing runs without one** |
 | Keyword clashes | none | underscore-suffixed: `as_`, `in_`, `not_`, … |
 | Guard | lexical guard in `substrate/query.py` rejects mutation *and* python dialect | `gremlin-guard.sh` blocks inline traversals with no terminal step; `graph-guard.sh` blocks the connection itself outside `main` |
-| Who may use it | `main` only — an expert pin gets a refusal | `main` only — see Rule 0 |
+| Who may use it | every pin — outside `main`, on a source confined to what the scope may read | `main` only — see Rule 0 |
 
 For `memory_query` strategy (when to use it at all, cost discipline), see the
 `recall-strategy` skill. This skill is the *authoring* reference, and its rules
 below are gremlin-python's.
 
-## Rule 0 — both surfaces are `main`'s; a pin reads through the confined tools
+## Rule 0 — gremlin-python is `main`'s; a pin reads through the confined tools
 
 `connect()` hands back a source over the whole graph, so a traversal sees `main`'s
 episodic memory and every expert's.<!-- (A0148, cites-as-live) -->
 Confinement is a property of the MCP surface rather than of the client: `memory_recall`
 filters Sessions and session-contained Claims to the caller's scope, and `memory_query`
-refuses an expert pin outright because a free-form traversal cannot be
-confined.<!-- (A0149, cites-as-live) -->
+runs an expert pin's traversal on a source confined to the scope's own nodes, the
+global ones and the other experts' knowledge
+subgraphs.<!-- (A0242, cites-as-live) -->
 
 So outside `main` this skill's code is not the surface to use, and `graph-guard.sh`
 blocks a command that carries a graph-client marker — on its own line, or in a `.py`
