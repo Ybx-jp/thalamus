@@ -13,7 +13,8 @@ name: Release
 # environments outside the checkout. The core's run `thalamus init` and `init --check`
 # against a HOME of their own. A plugin's resolve the core from PyPI rather than from
 # this workspace, so a plugin whose `thalamus-memory` floor no published core meets is
-# refused here instead of published uninstallable. thalamus-arch installs alone and
+# refused here instead of published uninstallable, and then again with the core pinned
+# to the floor itself. thalamus-arch installs alone and
 # runs its gates over this repository.
 #
 # Copied from claims-ledger's release workflow (Ybx-jp/claims-ledger), the pattern this
@@ -170,6 +171,13 @@ jobs:
             if [ -s /tmp/plugin.err ]; then cat /tmp/plugin.err >&2; exit 1; fi
             cd "$GITHUB_WORKSPACE"
           done
+      - name: The plugin works at the core floor it declares
+        # The step above gets the newest core on PyPI. A user who already has the core at
+        # the floor keeps it, so the same proof runs again with the core pinned to the
+        # floor itself, and a floor naming a pre-release fails: the core it waits on has
+        # to be released first (A0244, cites-as-live).
+        if: steps.target.outputs.package != 'thalamus-memory' && steps.target.outputs.package != 'thalamus-arch'
+        run: tools/check-plugin-floors.sh --release dist/*.whl dist/*.tar.gz
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           name: dist

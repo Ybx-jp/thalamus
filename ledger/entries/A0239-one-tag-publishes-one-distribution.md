@@ -38,6 +38,10 @@ none
   evidence: yaml: .github/workflows/release.yml § "jobs" =sha256:895840c1bc18b62507fc669c993cc958e0b6051bee7a2dfb6b23d84ad368a7a9
   note: jobs gained the per-distribution deployment environment, set by the target step and read by the publish job; the target step still maps a tag to one distribution, only that package is built and version-checked, and publish still uploads only that dist directory from a tag ref, so the assertion is unaffected
 
+- 2026-11-04T17:29:19-08:00 · corroborated · grade: argued · author: main
+  evidence: yaml: .github/workflows/release.yml § "jobs" =sha256:ccb009b24d9eef4548a1d50f13860e798d9988e2a4081cbc18bbfa85bf97b3ef
+  note: the build job gained a step that proves a plugin at its declared core floor; the tag parsing and the one-distribution build are unchanged, so the assertion is unaffected
+
 ## References
 
 - .github/workflows/release.yml · standing · cites-as-live

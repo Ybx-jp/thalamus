@@ -114,3 +114,17 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv build --all-packages -o dist
       - run: tools/check-packages-install-alone.sh dist
+
+  # The check above pairs each plugin with this checkout's core, which always has what
+  # the plugin imports. A user who already has the core at the plugin's declared floor
+  # keeps it, so here each plugin installs beside `thalamus-memory==<its floor>` from
+  # PyPI and must import every module it ships. A floor that names a pre-release is a
+  # plugin waiting on an unreleased core: reported, not failed, until the floor names a
+  # release (A0244, cites-as-live).
+  plugin-floors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --all-packages -o dist
+      - run: tools/check-plugin-floors.sh dist/*.whl dist/*.tar.gz

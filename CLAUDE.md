@@ -281,7 +281,11 @@ the thing in ordinary words, and cut what he did not ask about.
 - **A plugin under `packages/` depends on the core and on nothing else**, and the core
   imports no plugin; `arch rules --gate` holds both directions, and CI's `installs-alone`
   job (`tools/check-packages-install-alone.sh`) catches an import a plugin did not
-  declare. Commands, and options on a core command, arrive through `register_commands`
+  declare. **A plugin that starts importing a core name PyPI's core lacks raises its
+  `thalamus-memory` floor in the same change** — core `__version__` to the next `.dev0`,
+  the floor to it — and CI's `plugin-floors` job fails the change that
+  forgets.<!-- (A0244, cites-as-live) -->
+  Commands, and options on a core command, arrive through `register_commands`
   in `src/thalamus/plugins.py`, a core command a plugin runs itself through
   `claim_command`, capability rows through `capability_rows`, and hook scripts through
   `register_hooks`; add a new extension point with the first plugin that needs it.

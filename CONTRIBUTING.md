@@ -282,6 +282,18 @@ environment satisfies it; `tools/check-packages-install-alone.sh`, run as CI's
 `installs-alone` job, installs the core alone and each plugin with only the core, and
 imports every module the plugin ships.
 
+That pairing uses this checkout's core, which always has what a plugin imports. What it
+cannot see is a plugin importing a core name newer than the `thalamus-memory` floor it
+declares: a user who already has the core at that floor keeps it, and the import fails
+on their machine. `tools/check-plugin-floors.sh`, run as CI's `plugin-floors` job on
+every push and pull request, installs each plugin beside `thalamus-memory==<its floor>`
+from PyPI and imports every module again. A floor that names a pre-release is reported
+as waiting on the core rather than failed; the release workflow runs the same check
+with `--release`, where it fails.<!-- (A0244, cites-as-live) -->
+**When a plugin starts importing something the core on PyPI does not have, raise its
+floor in the same change** — to the core's development version, as §"Releasing"
+describes.
+
 `thalamus-arch` is the one package that depends on nothing of thalamus: its rule names
 no layer at all, and `installs-alone` also installs it by itself and checks that no
 `thalamus` came with it.<!-- (A0236, cites-as-live) --> It is a tool for any Python repository, with its own
@@ -470,7 +482,9 @@ distribution:<!-- (A0239, cites-as-live) -->
    - any other plugin resolves `thalamus-memory` from PyPI, not from the workspace,
      imports every module it ships, and loads in `thalamus --help` with nothing on
      stderr. A plugin whose `thalamus-memory` floor no published core meets fails here
-     rather than reaching the index uninstallable;
+     rather than reaching the index uninstallable. It then does the same again with the
+     core pinned to the floor itself, so a floor below what the plugin imports fails too,
+     and so does a floor that still names a pre-release;
 5. publishes through Trusted Publishing, and creates the GitHub Release, with notes
    starting from that distribution's previous tag.
 
