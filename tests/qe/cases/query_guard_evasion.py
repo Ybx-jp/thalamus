@@ -11,20 +11,18 @@ question `substrate/query.py`'s own docstring invites by naming its guard's
 mechanism explicitly: "denying these step names (as called tokens) is denying
 the write path... against a whitespace-stripped lowercase view."
 
-Layered by design, and only one layer is testable here. The module's docstring
-names three: (1) the server's `GremlinLangScriptEngine` parser, which rejects
-closures and arbitrary code — "measured: `sideEffect{...}` fails with a token
-recognition error" — and that measurement is why bare closure forms
-(`sideEffect{...}`, `.by{...}`) are not asserted against below: their rejection is
-already documented as layer 1's job, not this function's, and asserting either
-way here would encode a decision the guard's author did not make. (2) is
-`validate_query` itself — a pure function over a string, hence hermetic, and the
-one this case targets. (3) is the pin gate (`SCOPE == MAIN_SCOPE`), also pure and
-also covered below. Layer 1 needs a live `GremlinLangScriptEngine`, which is the
-seam issue #60 would provide a redirect for; until then a bypass found here is
-reported as a bypass of *this* layer, which is real regardless of whether layer 1
-would also catch the same string — defense in depth means each layer holds on its
-own, and `validate_query`'s docstring claims exactly that for itself.
+Layered by design. The module's docstring names four layers: (1) every submission
+names `language: gremlin-lang`, (2) the traversal source is the server's — the
+caller's leading `g` becomes `g.withStrategies(ReadOnlyStrategy[, SubgraphStrategy])`,
+(3) `validate_query` keeps layer 2 standing, and (4) caps. Layer 1 once rested on a
+claim that the server's parser rejects closures ("measured: `sideEffect{...}` fails");
+that was false for this surface, because the request named no language and Gremlin
+Server evaluated the text as Groovy (#382). So no layer is assumed to catch what
+another misses: this case holds `validate_query` to rejecting closures, `;`, a second
+traversal root and the three source steps (`withStrategies(`, `withoutStrategies(`,
+`withComputer(`) on its own, and drives the pin gate with a recording stand-in for the
+server connection to check that what is submitted carries the confinement built from
+the pin. Everything here is hermetic: no server is contacted.
 
 **Generated half.** `_STEP_TEMPLATES` holds one realistic gremlin-lang traversal
 per entry in `validate_query`'s own `_DENIED_STEPS`, and a coverage check below
@@ -146,6 +144,37 @@ _HAND_CORPUS: tuple[tuple[str, str, bool], ...] = (
      "g.V().as('a').select('a').drop()", True),
     ("wrapped-in-anonymous: coalesce(__.addV(...), __.identity())",
      "g.V().coalesce(__.addV('x'), __.identity())", True),
+    # Closures, a statement separator, a second root and the source steps: the
+    # server evaluated all of them as Groovy before the request named gremlin-lang
+    # (#382), and a second withStrategies replaces the source the server builds.
+    # None may reach the server from the caller.
+    ("closure: map{...}", "g.inject(1).map{ it.get() + 1 }", True),
+    ("closure: sideEffect{...}", "g.V().sideEffect{ it.get() }", True),
+    ("closure: by{...}", "g.V().order().by{ it.id() }", True),
+    ("closure: lone braces", "g.V().has('a', {})", True),
+    ("statement separator: second statement", "g.inject(1); 6 * 7", True),
+    ("statement separator: trailing", "g.V().count();", True),
+    ("second root: after a space", "g.V().count() g.V()", True),
+    ("second root: inside a child traversal", "g.V().where(g.V())", True),
+    ("second root: as an argument", "g.inject(g.V())", True),
+    ("source step: withStrategies", "g.withStrategies(ReadOnlyStrategy).V()", True),
+    ("source step: second SubgraphStrategy",
+     "g.V().withStrategies(new SubgraphStrategy(vertices: __.identity()))", True),
+    ("source step: case variation WITHSTRATEGIES", "g.V().WITHSTRATEGIES(x)", True),
+    ("source step: whitespace before paren", "g.V().withStrategies (x)", True),
+    ("source step: withoutStrategies", "g.withoutStrategies(ReadOnlyStrategy).V()", True),
+    ("source step: withComputer", "g.withComputer().V()", True),
+    # Controls for the above: each must stay ACCEPTED, or the closure / `;` / `g`
+    # rejections are indistinguishable from "rejects anything containing a g".
+    ("control: 'g', ';' and braces inside a string literal",
+     "g.V().has('title', 'g; {x} g')", False),
+    ("control: g as an alias label", "g.V().as('g').select('g')", False),
+    ("control: g inside longer identifiers",
+     "g.V().has('agent', 'x').out('GOVERNS').group().by(label)", False),
+    ("control: groupCount / gt step names",
+     "g.V().groupCount().by('kind').unfold().where(__.select(values).is(P.gt(1)))",
+     False),
+    ("control: map literal uses brackets", "g.inject([a:1]).select('a')", False),
     # Controls — must stay ACCEPTED, or every REJECTED assertion above is
     # unfalsifiable (see guard_failopen.py's own note on this, tests/qe/README.md).
     ("control: inject() alone is not a mutation", "g.inject(1,2,3)", False),
@@ -252,40 +281,112 @@ def run() -> Finding | None:
             site="src/thalamus/substrate/query.py::validate_query",
         )
 
-    # The scope gate — pure and hermetic, same as validate_query. GRAPH_URL is
-    # pinned dead so the outcome does not depend on whether this box happens to
-    # have a graph on :8182; only the gate's own branch is under test.
+    # The pin gate — hermetic: the connection `run_query` opens is replaced by a
+    # recorder, so nothing is contacted and the outcome does not depend on what is
+    # on :8182. What is under test is what a pin causes to be submitted.
     original_url = mcp_server.GRAPH_URL
     original_scope = mcp_server.SCOPE
+    original_conn = query_mod.Client
     scope_gate_failures: list[str] = []
+
+    class _Recorder:
+        submitted: list[tuple[str, dict]] = []
+
+        def __init__(self, *_a, **_k):
+            pass
+
+        def submit(self, text, request_options=None):
+            _Recorder.submitted.append((text, dict(request_options or {})))
+
+            class _RS:
+                def all(self):
+                    class _F:
+                        def result(self):
+                            return [1]
+
+                    return _F()
+
+            return _RS()
+
+        def close(self):
+            pass
+
     try:
         mcp_server.GRAPH_URL = "ws://localhost:9/gremlin"
+        query_mod.Client = _Recorder
         benign = "g.V().hasLabel('Thread').valueMap('title')"
 
-        mcp_server.SCOPE = "some-other-expert"
-        refused = mcp_server.memory_query(benign)
-        if "master-plane instrument" not in refused:
+        pin = "some-other-expert"
+        mcp_server.SCOPE = pin
+        _Recorder.submitted = []
+        pinned_out = mcp_server.memory_query(benign)
+        if "master-plane instrument" in pinned_out or len(_Recorder.submitted) != 1:
             scope_gate_failures.append(
-                f"SCOPE='some-other-expert' did not refuse a traversal: {refused!r}"
+                f"SCOPE={pin!r} was refused or did not reach the server once: "
+                f"{pinned_out!r}, submitted={len(_Recorder.submitted)}"
             )
+        else:
+            text, opts = _Recorder.submitted[0]
+            knowledge = mcp_server.knowledge_scopes()
+            if opts.get("language") != "gremlin-lang":
+                scope_gate_failures.append(f"pinned call named language {opts.get('language')!r}")
+            if not text.startswith("g.withStrategies(ReadOnlyStrategy, new SubgraphStrategy("):
+                scope_gate_failures.append(f"pinned call carries no confining source: {text!r}")
+            if text != query_mod.traversal_source((pin, knowledge)) + benign[1:]:
+                scope_gate_failures.append(
+                    f"pinned call's source is not the one built from the pin and the "
+                    f"knowledge scopes {knowledge}: {text!r}"
+                )
+            if f"has('scope', '{pin}')" not in text:
+                scope_gate_failures.append(f"pinned call's source does not name {pin!r}")
+            for other in knowledge:
+                if other != pin and f"'{other}'" not in text:
+                    scope_gate_failures.append(
+                        f"pinned call's source omits knowledge scope {other!r}"
+                    )
 
         mcp_server.SCOPE = MAIN_SCOPE
-        allowed = mcp_server.memory_query(benign)
-        if "master-plane instrument" in allowed:
+        _Recorder.submitted = []
+        main_out = mcp_server.memory_query(benign)
+        if "master-plane instrument" in main_out or len(_Recorder.submitted) != 1:
             scope_gate_failures.append(
-                f"SCOPE=MAIN_SCOPE still refused a benign traversal: {allowed!r}"
+                f"SCOPE=MAIN_SCOPE was refused or did not reach the server once: {main_out!r}"
+            )
+        else:
+            text, opts = _Recorder.submitted[0]
+            if opts.get("language") != "gremlin-lang":
+                scope_gate_failures.append(f"main call named language {opts.get('language')!r}")
+            if "SubgraphStrategy" in text or not text.startswith(
+                "g.withStrategies(ReadOnlyStrategy)"
+            ):
+                scope_gate_failures.append(
+                    f"main call must be read-only and unconfined: {text!r}"
+                )
+
+        # A pinned caller cannot lift its own confinement: the attempt is refused
+        # before anything is submitted.
+        mcp_server.SCOPE = pin
+        _Recorder.submitted = []
+        lifted = mcp_server.memory_query(
+            "g.V().withStrategies(new SubgraphStrategy(vertices: __.identity())).count()"
+        )
+        if _Recorder.submitted or not lifted.startswith("Rejected:"):
+            scope_gate_failures.append(
+                f"a pinned call replacing the source reached the server: {lifted!r}"
             )
     finally:
         mcp_server.GRAPH_URL = original_url
         mcp_server.SCOPE = original_scope
+        query_mod.Client = original_conn
 
     if scope_gate_failures:
         return Finding(
             failure_class=FailureClass.BOUNDARY_LEAK,
             summary=(
-                "memory_query's scope gate does not behave as documented: a "
-                "non-main pin must be refused and the main pin must not be, and "
-                "one of the two did not hold"
+                "memory_query's pin confinement does not behave as documented: a "
+                "non-main pin must reach the server only on a source confined to "
+                "what its scope may read, the main pin on an unconfined read-only "
+                "one, and one of the two did not hold"
             ),
             witness="; ".join(scope_gate_failures),
             site="src/thalamus/harness/mcp_server.py::memory_query",
