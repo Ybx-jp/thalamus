@@ -50,7 +50,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from thalamus.substrate.query import validate_query
+from thalamus.substrate.query import LANGUAGE, sourced, validate_query
 from thalamus.substrate.spans import SpanRow, load_rows
 
 # Repeats for a step profile. Deterministic input against a warm in-memory graph, so
@@ -283,7 +283,8 @@ def profile_query(
     """Run one read-only traversal under TinkerPop's `profile()` and report its steps.
 
     The read-only floor is `substrate.query.validate_query` — the same guard the
-    `memory_query` surface enforces, so nothing profileable here is unrunnable there.
+    `memory_query` surface enforces, so nothing profileable here is unrunnable there —
+    and the traversal runs on the same read-only source, parsed as gremlin-lang.
     Deliberately submits its own client rather than going through `run_query`: that
     renderer clips values at 400 characters, which would truncate the metrics map.
 
@@ -301,13 +302,16 @@ def profile_query(
         return profile
     if not text.endswith(".profile()"):
         text = f"{text}.profile()"
+    # The same source and engine `run_query` submits to, so a profile measures the
+    # traversal memory_query would run rather than a Groovy evaluation of the text.
+    text = sourced(text)
 
     client = Client(url, "g")
     try:
         rows = None
         for run in range(warmup + max(1, repeat)):
             started = time.perf_counter()
-            rows = client.submit(text).all().result()
+            rows = client.submit(text, request_options={"language": LANGUAGE}).all().result()
             elapsed = (time.perf_counter() - started) * 1000.0
             if run >= warmup:
                 profile.wall_ms.append(elapsed)

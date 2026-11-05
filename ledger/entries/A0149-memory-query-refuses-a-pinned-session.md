@@ -43,8 +43,8 @@ none
   evidence: code: src/thalamus/harness/mcp_server.py § "memory_query" =sha256:2efd48e89d4df4d442710611f4c3c4360c279b7716ca05a2f34d275db5a0e275
   note: the citation marker inside this section now names the entry by id alone, under the `citation-slug` rule `claims-ledger.toml` sets for source files. The assertion is unaffected.
 
-## References
+- 2026-11-04T16:19:27-08:00 · superseded · grade: argued · author: main
+  evidence: entry: A0242-memory-query-confines-a-pinned-session-to-its-readable-subgraph · supersedes
+  note: memory_query no longer refuses a pinned session; it runs that session's traversal on a source confined by SubgraphStrategy to what the scope may read, which is the operator's decision of 2026-11-04
 
-- src/thalamus/harness/skills/gremlin-python/SKILL.md · standing · cites-as-live
-- src/thalamus/harness/mcp_server.py · standing · cites-as-live
-- src/thalamus/harness/hooks/claude-code/graph-guard.sh · standing · cites-as-live
+## References

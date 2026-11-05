@@ -3,10 +3,9 @@
 #
 # Scope confinement on reads is a property of the MCP surface and not of the graph
 # connection. `reader.recall` filters Sessions and session-contained Claims to the
-# caller's own scope (substrate/reader.py:677, :692), and `memory_query` refuses an
-# expert pin outright, on the stated rationale that a free-form traversal cannot be
-# scope-confined (harness/mcp_server.py:402)
-# (A0149, cites-as-live).
+# caller's own scope, and `memory_query` runs an expert pin's traversal on a source
+# confined to what that scope may read (substrate/query.py `traversal_source`)
+# (A0242, cites-as-live).
 # `substrate.writer.connect()` hands back a source over the whole graph
 # (A0148, cites-as-live),
 # and `Bash` is not in `EXPERT_CAPABILITY_DEFAULT.deny_tools`
@@ -203,10 +202,12 @@ What to use instead, all of them confined to \`${scope}\`:
   - \`mcp__thalamus__memory_exchanges\` / \`memory_consultations\` — the consultation
     record.
 
-A free-form traversal is a master-plane instrument, and \`memory_query\` refuses this
-pin for the same reason this guard does. A question that genuinely needs one is a
-consultation: mint \`consult_request\` to the scope that owns it, or ask the operator
-to run the traversal from a \`main\` session.
+  - \`mcp__thalamus__memory_query\` — a free-form read-only Gremlin traversal, run
+    on a source confined to what \`${scope}\` may read.
+
+A question about another scope's own sessions is a consultation: mint
+\`consult_request\` to the scope that owns it, or ask the operator to run the
+traversal from a \`main\` session.
 
 If this boundary is wrong, it is an operator decision and an edit to the guard — say so
 rather than routing around it.

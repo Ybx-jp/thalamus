@@ -1170,7 +1170,8 @@ def test_a_query_that_failed_is_not_a_validated_recipe(tmp_path):
     """
     for response in (
         "Traceback (most recent call last): GremlinServerError",
-        "memory_query is a master-plane instrument and this session is pinned to `x`",
+        "Rejected: a second traversal root (`g`) after the first.",
+        "Query not run: the confinement for this pin could not be built (bad scope)",
         "No results",
         "",
         "   ",

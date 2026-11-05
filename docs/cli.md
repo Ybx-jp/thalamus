@@ -734,7 +734,7 @@ box to one expert.
 | `memory_session_claims` | `session`, `kinds`, `limit` | A session's decisions, problems and solutions |
 | `memory_source_chunks` | `node`, `limit` | The verbatim passages behind a knowledge claim, or either side of a passage |
 | `memory_resolve` | `node` | One node in full by its vertex id; nothing for an id the scope may not read |
-| `memory_query` | `query` | One read-only Gremlin traversal (main scope only) |
+| `memory_query` | `query` | One read-only Gremlin traversal; outside `main`, confined to what the scope may read<!-- (A0242, cites-as-live) --> |
 | `memory_consultations` | `limit` | This expert's own answered consultations |
 | `memory_exchanges` | `query`, `limit`, `read_ticket` | Consultations this scope asked or answered, by topic |
 | `consult_request` | `expert`, `question` | Mint a consultation ticket — this *is* opening the exchange record |
