@@ -76,7 +76,8 @@ The scripts reach the core's shell library through `~/.thalamus/hook-library`, w
 In a checkout, `uv sync` installs every package under `packages/` into the development
 environment. Elsewhere, a plugin installs by name from PyPI into the core's environment
 (`pip install thalamus-measure`, or `uv tool install thalamus-memory --with
-thalamus-measure`). Every plugin needs `thalamus-memory` 0.1.1 or later.
+thalamus-measure`). `thalamus-measure` needs `thalamus-memory` 0.1.2 or later, and
+every other plugin 0.1.1 or later.
 
 ## Building memory
 
