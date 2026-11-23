@@ -35,6 +35,14 @@ none
 
 ## Verdicts
 
+- 2026-11-23T10:53:10-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/preflight.py § "hook_output" =sha256:1ea533bf964f5949c7b2ba7cf46eb7cc063b5ecaa56726d55ef53ae341af3014
+  artifact: sha256:869a66d845a89ed5ae7dfecbbafa4376f13cdabdd6bb198d540c91d53553e8e7
+  note: propagated from a moved ground
+- 2026-11-23T10:59:00-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/preflight.py § "hook_output" =sha256:869a66d845a89ed5ae7dfecbbafa4376f13cdabdd6bb198d540c91d53553e8e7
+  note: hook_output gained a session-start phase, a systemMessage beside the additionalContext, and a told set; an aborting report at the initial tool call still pairs continue false with a deny, and a reporting one still carries additionalContext, so the assertion is unaffected
+
 ## References
 
 - src/thalamus/harness/preflight.py · standing · cites-as-live

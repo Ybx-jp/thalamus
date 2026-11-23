@@ -323,12 +323,14 @@ thalamus thread promote <id> --scope <s>     # move one into your queue; its tie
 
 ## Preflight
 
-The `preflight.sh` hook runs this at each session's first tool call; run it by hand to
-see what it found:
+The `preflight.sh` hook runs this at each session's first tool call, and `session-start.sh`
+runs it at an attended session's start with `--phase session-start`, which skips the tool
+surface; run it by hand to see what it found:
 
 ```bash
 thalamus preflight --session-id <id> --session-type attended|autonomous \
-  [--transcript <path>] [--scope <s>] [--project-dir <dir>]
+  [--phase session-start|first-tool-call] [--transcript <path>] [--scope <s>] \
+  [--project-dir <dir>]
 ```
 
 It exits 1 when the preflight failed. A launcher shapes what an autonomous run is held

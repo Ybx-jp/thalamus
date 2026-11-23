@@ -36,7 +36,8 @@ none
 
 ## Verdicts
 
-## References
+- 2026-11-23T10:58:00-08:00 · superseded · grade: measured · author: main
+  evidence: entry: A0253-an-attended-preflight-tells-the-operator-at-session-start · supersedes
+  note: An attended session is now also preflighted at session start, on every check but the tool surface, and an attended report reaches the operator as a system message as well as the session as context, with the initial tool call leaving out what the session-start run reported. The checks, which outcomes fail, and the autonomous abort are unchanged.
 
-- docs/concepts.md · standing · cites-as-live
-- src/thalamus/harness/preflight.py · standing · cites-as-live
+## References

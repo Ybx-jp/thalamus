@@ -355,10 +355,13 @@ harness's own record of what connected; its scope's guards are wired and deny a 
 boundary forbids; the budget caps the hooks will enforce match the preset its job names;
 and its pin-ledger row distils it as the session type it runs as. An autonomous session
 that fails any of these, or one the check could not decide, is stopped at that call and
-at every later one; an attended session is told what is missing and carries
-on.<!-- (A0251, cites-as-live) -->
+at every later one. An attended session is also preflighted at session start, on
+everything but the tool surface, which the harness has not recorded yet; what is missing
+is shown on screen before you type, the first tool call adds only what that run did not
+report, and the session carries on.<!-- (A0253, cites-as-live) -->
 A wired hook whose script cannot run is reported too, and stops nothing.
-The result is recorded at `~/.thalamus/preflight/<session_id>.json`.
+The result is recorded at `~/.thalamus/preflight/<session_id>.json`, and the
+session-start run's beside it as `<session_id>.start.json`.
 
 ## Distillation — how memory gets written
 

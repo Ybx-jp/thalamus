@@ -764,9 +764,15 @@ def _main():
         "--project-dir", default="", help="The project whose settings files it loads"
     )
     preflight_parser.add_argument(
+        "--phase", default="first-tool-call", choices=["session-start", "first-tool-call"],
+        help="When it runs. At session-start the tool surface is not yet recorded and is "
+             "not checked; the first-tool-call run checks it and repeats nothing the "
+             "session-start run already reported",
+    )
+    preflight_parser.add_argument(
         "--hook", action="store_true",
-        help="Print the PreToolUse hook's JSON output and record the result, instead of "
-             "the report",
+        help="Print the hook's JSON output (SessionStart's or PreToolUse's, by --phase) "
+             "and record the result, instead of the report",
     )
 
     # Plugins add theirs after core's, so a name core already uses is refused as that
@@ -847,20 +853,23 @@ def _main():
 def _cmd_preflight(args):
     """Run the session preflight (harness/preflight.py) and record the result.
 
-    `--hook` is the PreToolUse hook's form: it prints only the hook's JSON and exits 0
-    whatever it found, because the decision is carried in that JSON. Without it, a
-    readable report, exiting 1 when the preflight failed.
+    `--hook` is the hooks' form: it prints only the hook's JSON and exits 0 whatever it
+    found, because the decision is carried in that JSON. Without it, a readable report,
+    exiting 1 when the preflight failed.
     """
     from thalamus.harness import preflight
 
+    phase = getattr(args, "phase", preflight.FIRST_TOOL_CALL)
     report = preflight.run(
         args.session_id, args.scope, SessionType(args.session_type),
         transcript=Path(args.transcript) if args.transcript else None,
-        project_dir=args.project_dir,
+        project_dir=args.project_dir, phase=phase,
     )
     preflight.record(report)
     if args.hook:
-        print(json.dumps(preflight.hook_output(report)))
+        told = (preflight.told_at_start(args.session_id)
+                if phase == preflight.FIRST_TOOL_CALL else set())
+        print(json.dumps(preflight.hook_output(report, told)))
         return
     for check in report.checks:
         mark = {True: "ok  ", False: "FAIL", None: "?   "}[check.ok]

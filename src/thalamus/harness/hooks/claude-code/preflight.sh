@@ -12,8 +12,11 @@
 #
 #   autonomous — the call is denied and the run stopped, and every later call in the
 #                session is denied the same way. Nobody is there to read a warning.
-#   attended   — the failures reach the session as context and the call proceeds.
-#                The operator is there and decides.
+#   attended   — the failures are shown to the operator on screen and reach the
+#                session as context, and the call proceeds. The operator is there and
+#                decides. session-start.sh has already run every check but the tool
+#                surface before the first prompt, so this run tells only what that one
+#                did not.
 #
 # The result is recorded either way at ~/.thalamus/preflight/<session_id>.json, and
 # that file is also this hook's state: once it exists the check is not repeated, and
