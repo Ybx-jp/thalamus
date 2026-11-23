@@ -593,3 +593,32 @@ def test_extract_reads_the_session_type_from_the_ledger_and_the_flag_overrides_i
     args.session_type = "attended"
     cli._cmd_extract(args)
     assert written["aaaa1111"].session_type is SessionType.ATTENDED
+
+
+def test_extract_exits_nonzero_when_a_session_write_fails(monkeypatch, tmp_path, capsys):
+    """
+    Scenario: one session's write is refused by the graph
+
+    Verifications:
+    - the summary counts it as failed
+    - the command exits 1, so session-end.sh and a job runner record the failure
+      rather than reading the run as a success
+    """
+    from thalamus.harness import pin
+
+    args = _extract_fakes(monkeypatch, tmp_path, ["aaaa1111"])
+    args.write = True
+    retained = tmp_path / ".thalamus" / "extractions" / "main-aaaa1111.txt"
+    retained.parent.mkdir(parents=True, exist_ok=True)
+    retained.write_text('```yaml\nsummary: "Ran the weekly review."\n```\n')
+    monkeypatch.setattr(pin, "ledger_facts", lambda sid: {})
+
+    def refuse(graph, session):
+        raise RuntimeError("Gremlin server 500: Expected an id that is convertible to Long")
+
+    monkeypatch.setattr(cli, "write_session_checked", refuse)
+    monkeypatch.setattr(cli, "_persist", lambda graph: None)
+    with pytest.raises(SystemExit) as exit_:
+        cli._cmd_extract(args)
+    assert exit_.value.code == 1
+    assert "0 extracted, 0 skipped, 1 failed" in capsys.readouterr().out

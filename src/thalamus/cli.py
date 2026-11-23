@@ -1726,6 +1726,11 @@ def _cmd_extract(args):
     )
     if not args.write:
         print("DRY RUN — nothing written to the graph. Re-run with --write to persist.")
+    # A session that failed is a failed run, whatever the others did: session-end.sh
+    # and a job runner learn of it from the status, and records it where the operator
+    # reads failures. Exiting 0 here left a refused write reported nowhere.
+    if failed:
+        sys.exit(1)
 
 
 def _session_has_claims(graph, session_vid: str) -> bool:
