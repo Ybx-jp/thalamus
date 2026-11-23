@@ -289,3 +289,103 @@ def test_an_attended_session_is_told_once_and_proceeds(tmp_path, config):
     first = json.loads(_hook(tmp_path, home, env).stdout)
     assert "PREFLIGHT" in first["hookSpecificOutput"]["additionalContext"]
     assert _hook(tmp_path, home, env).stdout.strip() == ""
+
+
+# ---------------------------------------------------------------------------
+# Session start: the attended operator hears before the first prompt
+
+
+def test_a_hook_script_wired_on_several_events_is_one_finding(tmp_path):
+    gone = str(tmp_path / "gone.sh")
+    settings = _settings(tmp_path / ".claude" / "settings.json", _wire(
+        ("PostToolUse", None, gone), ("PostToolUseFailure", None, gone)))
+    check = preflight.check_hooks_runnable(preflight.wired_hooks([settings]), {}, str(tmp_path))
+    assert check.detail.startswith("1 wired hook script(s) cannot run")
+    assert check.detail.count("gone.sh") == 1
+    assert "PostToolUse, PostToolUseFailure" in check.detail
+
+
+def test_the_session_start_run_leaves_the_tool_surface_to_the_first_tool_call(tmp_path, config):
+    env = {"THALAMUS_SETTING_SOURCES": "project"}
+    start = preflight.run("s1", "main", SessionType.ATTENDED, transcript=None,
+                          project_dir="", phase=preflight.SESSION_START,
+                          environ=env, base=config)
+    first = preflight.run("s1", "main", SessionType.ATTENDED, transcript=None,
+                          project_dir="", environ=env, base=config)
+    assert "tool surface" not in [c.name for c in start.checks]
+    assert [c.name for c in first.checks][0] == "tool surface"
+    out = tmp_path / "preflight"
+    assert preflight.record(start, out).name == "s1.start.json"
+    assert preflight.record(first, out).name == "s1.json"
+
+
+def test_an_attended_session_start_notice_is_shown_on_screen():
+    report = _report(SessionType.ATTENDED, False)
+    report.phase = preflight.SESSION_START
+    out = preflight.hook_output(report)
+    assert out["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+    assert "budget: detail" in out["systemMessage"]
+    assert "budget: detail" in out["hookSpecificOutput"]["additionalContext"]
+
+
+def test_an_autonomous_session_start_says_nothing_and_stops_nothing():
+    report = _report(SessionType.AUTONOMOUS, False)
+    report.phase = preflight.SESSION_START
+    assert preflight.hook_output(report) == {}
+
+
+def test_the_first_tool_call_repeats_nothing_session_start_told(tmp_path):
+    start = _report(SessionType.ATTENDED, False)
+    start.phase = preflight.SESSION_START
+    preflight.record(start, tmp_path)
+    told = preflight.told_at_start("s1", tmp_path)
+    assert told == {("budget", "detail")}
+    assert preflight.hook_output(_report(SessionType.ATTENDED, False), told) == {}
+    first = _report(SessionType.ATTENDED, False)
+    first.checks.append(preflight.Check("tool surface", False, "missing thalamus"))
+    out = preflight.hook_output(first, told)
+    assert "missing thalamus" in out["systemMessage"] and "budget" not in out["systemMessage"]
+    assert out["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
+
+
+def _session_start(tmp_path, home, env, session_id="s-start"):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    uv = bin_dir / "uv"
+    uv.write_text(f'#!/bin/bash\nshift 3\nshift\nexec "{sys.executable}" -m thalamus "$@"\n')
+    uv.chmod(0o755)
+    payload = {"session_id": session_id, "cwd": str(tmp_path),
+               "hook_event_name": "SessionStart", "source": "startup"}
+    return subprocess.run(
+        [str(HOOKS / "session-start.sh")], input=json.dumps(payload), capture_output=True,
+        text=True, timeout=120,
+        env={"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin", **env},
+    )
+
+
+def test_an_attended_operator_is_told_at_session_start_and_not_again(tmp_path, config):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    _settings(project / ".claude" / "settings.json",
+              _wire(("PostToolUse", None, str(tmp_path / "gone.sh"))))
+    env = {"CLAUDE_CODE_ENTRYPOINT": "cli", "THALAMUS_CONFIG_DIR": str(config),
+           "THALAMUS_SETTING_SOURCES": "project", "CLAUDE_PROJECT_DIR": str(project)}
+    out = json.loads(_session_start(tmp_path, home, env).stdout)
+    assert "gone.sh" in out["systemMessage"]
+    assert out["hookSpecificOutput"]["additionalContext"].startswith("PREFLIGHT")
+    assert (home / ".thalamus" / "preflight" / "s-start.start.json").is_file()
+    # The first tool call checks the tool surface, and tells only that.
+    _transcript(tmp_path / "none.jsonl", _delta(added=["Bash"]))
+    first = json.loads(_hook(tmp_path, home, env, session_id="s-start").stdout)
+    assert "tool surface" in first["systemMessage"] and "gone.sh" not in first["systemMessage"]
+
+
+def test_an_autonomous_session_start_runs_no_preflight(tmp_path, config):
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {"CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "THALAMUS_CONFIG_DIR": str(config),
+           "THALAMUS_SETTING_SOURCES": "project"}
+    out = json.loads(_session_start(tmp_path, home, env).stdout)
+    assert "systemMessage" not in out
+    assert not (home / ".thalamus" / "preflight").exists()

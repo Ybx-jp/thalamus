@@ -85,6 +85,7 @@ repo_name=""
 if [ -n "$repo_root" ]; then repo_name="$(basename "$repo_root")"; fi
 project="${THALAMUS_PROJECT:-$repo_name}"
 scope="$(thalamus_resolve_scope)"
+session_type="$(thalamus_resolve_session_type)"
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
 
 # The pin ledger: one line per (session, pin), append-only. session-end.sh reads
@@ -162,7 +163,7 @@ if [ -n "$session_id" ]; then
     --arg agent "${CLAUDE_CODE_AGENT:-}" \
     --arg room "$(thalamus_resolve_room)" \
     --arg forked_from "$(thalamus_resolve_forked_from)" \
-    --arg session_type "$(thalamus_resolve_session_type)" \
+    --arg session_type "$session_type" \
     --arg entrypoint "$entrypoint" \
     --arg tmux_pane "$pane" \
     --arg repo_root "$repo_root" \
@@ -246,9 +247,41 @@ if [ -n "$arming" ]; then
   context="${arming} ${context}"
 fi
 
-jq -n --arg ctx "$context" '{
+# The attended session's preflight, run here so the operator hears of a session that
+# is not armed the way its pin promises before typing the first prompt: a SessionStart
+# hook's `systemMessage` is shown on screen then (harness/preflight.py hook_output).
+# It runs after the pin row above is written, since the write-path check reads that
+# row. The tool surface is left to the first tool call, the earliest point the harness
+# has recorded it; an autonomous session is checked there alone, where a failure can
+# stop the run. Silent when the CLI cannot run: session-end.sh records that failure.
+operator_notice=""
+# (A0252, cites-as-live) (A0253, cites-as-live)
+if [ -n "$arming" ]; then
+  operator_notice="Thalamus: the \`${scope}\` pin's MCP servers did not arm in this process. Relaunch with \`thalamus pin ${scope}\`."
+fi
+if [ -n "$session_id" ] && [ "$session_type" = "attended" ] && thalamus_cli_argv; then
+  mkdir -p "$HOME/.thalamus/logs"
+  preflight_out=$("${THALAMUS_CLI[@]}" preflight --hook --phase session-start \
+    --session-id "$session_id" --scope "$scope" --session-type "$session_type" \
+    --project-dir "${CLAUDE_PROJECT_DIR:-$cwd}" 2>>"$HOME/.thalamus/logs/preflight.log" || true)
+  preflight_notice=$(printf '%s' "$preflight_out" | jq -r '.systemMessage // empty' 2>/dev/null || true)
+  preflight_context=$(printf '%s' "$preflight_out" \
+    | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null || true)
+  if [ -n "$preflight_notice" ]; then
+    operator_notice="${operator_notice:+$operator_notice
+}${preflight_notice}"
+    # After the arming warning, which is said first.
+    if [ -n "$arming" ]; then
+      context="${arming} ${preflight_context} ${context#"$arming "}"
+    else
+      context="${preflight_context} ${context}"
+    fi
+  fi
+fi
+
+jq -n --arg ctx "$context" --arg notice "$operator_notice" '{
   hookSpecificOutput: {
     hookEventName: "SessionStart",
     additionalContext: $ctx
   }
-}'
+} + (if $notice == "" then {} else {systemMessage: $notice} end)'

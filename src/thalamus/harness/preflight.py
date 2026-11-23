@@ -26,9 +26,13 @@ pin and a job promise:
 What a failure does depends on who is there to read it (#395, #396). An autonomous
 session's preflight **aborts**: the first tool call is denied and the run is stopped,
 since a warning with no operator to read it changes nothing. An attended session's
-preflight **reports**: the failures reach the session as context at its first tool
-call, and the operator decides. Either way the result is recorded, pass or fail, at
-`~/.thalamus/preflight/<session_id>.json` and one line in `preflight.jsonl` beside it.
+preflight **reports**, and reports before the operator has typed anything: it runs once
+at session start, with every check but the tool surface (whose record the harness has
+not written yet), and again at the first tool call, which adds the tool surface and
+tells only what the first run did not. Each report reaches the operator on screen and
+the session as context, and the operator decides. Every run is recorded, pass or fail,
+at `~/.thalamus/preflight/<session_id>.json` (`<session_id>.start.json` for the
+session-start run) and one line in `preflight.jsonl` beside them.
 
 Where the checks read files rather than the process — the settings files a hook is
 wired in — they read the files Claude Code loads by default, or those named by
@@ -67,6 +71,12 @@ HOOK_DIR = Path(__file__).resolve().parent / "hooks" / "claude-code"
 _ROLE_GUARD = "role-guard.sh"
 _BUDGET_HOOK = "budget.sh"
 
+# The two points a preflight runs at. The tool surface is checked only at the second:
+# at session start the harness has not yet written its record of it.
+SESSION_START = "session-start"
+FIRST_TOOL_CALL = "first-tool-call"
+_HOOK_EVENT = {SESSION_START: "SessionStart", FIRST_TOOL_CALL: "PreToolUse"}
+
 
 @dataclass
 class Check:
@@ -86,14 +96,15 @@ class Check:
 
 @dataclass
 class Report:
-    """The five checks' outcomes for one session. An autonomous session fails on any
-    check not shown to pass; an attended one only on a check that failed.
-    (A0251, cites-as-live)"""
+    """The checks' outcomes for one session at one phase. An autonomous session fails
+    on any check not shown to pass; an attended one only on a check that failed.
+    (A0253, cites-as-live)"""
 
     session_id: str
     scope: str
     session_type: str
     checks: list[Check] = field(default_factory=list)
+    phase: str = FIRST_TOOL_CALL
     ts: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     @property
@@ -291,17 +302,23 @@ def _executable(command: str, environ: Mapping[str, str], project_dir: str) -> s
 
 def check_hooks_runnable(wired: list[Wired], environ: Mapping[str, str],
                          project_dir: str) -> Check:
-    broken = []
+    """Each wired hook command whose script is not a runnable file, one entry per
+    script with the events it is wired on and the files that wire it."""
+    broken: dict[str, tuple[list[str], list[str]]] = {}
     for hook in wired:
         path = _executable(hook.command, environ, project_dir)
         if path is None:
             continue
         if not (os.path.isfile(path) and os.access(path, os.X_OK)):
-            broken.append(f"{hook.event} {path} (wired in {hook.source})")
+            events, sources = broken.setdefault(path, ([], []))
+            events.append(hook.event)
+            sources.append(str(hook.source))
     if broken:
-        unique = list(dict.fromkeys(broken))
+        entries = [f"{path} (on {', '.join(dict.fromkeys(events))}; wired in "
+                   f"{', '.join(dict.fromkeys(sources))})"
+                   for path, (events, sources) in broken.items()]
         return Check("hooks runnable", False,
-                     f"{len(unique)} wired hook(s) cannot run: " + "; ".join(unique),
+                     f"{len(entries)} wired hook script(s) cannot run: " + "; ".join(entries),
                      advisory=True)
     return Check("hooks runnable", True, f"{len(wired)} wired hook(s) resolve", advisory=True)
 
@@ -478,15 +495,20 @@ def check_write_path(session_id: str, session_type: SessionType,
 
 
 def run(session_id: str, scope: str, session_type: SessionType, *,
-        transcript: Path | None, project_dir: str,
+        transcript: Path | None, project_dir: str, phase: str = FIRST_TOOL_CALL,
         environ: Mapping[str, str] | None = None, base: Path | None = None,
         pins_file: Path | None = None) -> Report:
+    """The checks for one phase: all five at the first tool call, and at session start
+    all but the tool surface, which the harness has not recorded by then.
+    (A0253, cites-as-live)"""
     env = os.environ if environ is None else environ
     files = settings_files(env, project_dir)
     wired = wired_hooks(files)
-    report = Report(session_id, scope, session_type.value)
+    report = Report(session_id, scope, session_type.value, phase=phase)
+    surface = ([check_tool_surface(transcript, required_tools(scope, session_type, env, base))]
+               if phase == FIRST_TOOL_CALL else [])
     report.checks = [
-        check_tool_surface(transcript, required_tools(scope, session_type, env, base)),
+        *surface,
         check_hooks_runnable(wired, env, project_dir),
         check_guards(scope, wired, env, project_dir, base),
         check_budget(scope, wired, env, base),
@@ -495,29 +517,64 @@ def run(session_id: str, scope: str, session_type: SessionType, *,
     return report
 
 
+def state_path(session_id: str, phase: str = FIRST_TOOL_CALL,
+               directory: Path | None = None) -> Path:
+    """Where a phase's report is recorded. The first-tool-call file is also the
+    PreToolUse hook's state: once it exists the check is not run again."""
+    suffix = ".start.json" if phase == SESSION_START else ".json"
+    return (directory or PREFLIGHT_DIR) / f"{session_id}{suffix}"
+
+
 def record(report: Report, directory: Path | None = None) -> Path:
     """Write the report beside the run and append one line to the log."""
     out = directory or PREFLIGHT_DIR
     out.mkdir(parents=True, exist_ok=True)
-    path = out / f"{report.session_id}.json"
+    path = state_path(report.session_id, report.phase, out)
     path.write_text(json.dumps(report.as_dict(), indent=1))
     with (out / "preflight.jsonl").open("a") as log:
         log.write(json.dumps({"ts": report.ts, "session_id": report.session_id,
                               "scope": report.scope, "session_type": report.session_type,
-                              "passed": report.passed,
+                              "phase": report.phase, "passed": report.passed,
                               "failures": [c.name for c in report.failures]}) + "\n")
     return path
 
 
-def hook_output(report: Report) -> dict:
-    """What the PreToolUse hook prints for this report.
+def told_at_start(session_id: str, directory: Path | None = None) -> set[tuple[str, str]]:
+    """The (check, detail) pairs the session-start run already told this session, so
+    the first-tool-call run repeats none of them. Empty when there was no such run."""
+    try:
+        recorded = json.loads(state_path(session_id, SESSION_START, directory).read_text())
+    except (OSError, ValueError):
+        return set()
+    return {(c.get("name", ""), c.get("detail", "")) for c in recorded.get("checks") or []
+            if isinstance(c, dict) and c.get("ok") is False}
+
+
+def operator_message(checks: list[Check]) -> str:
+    """The on-screen notice for an attended session: one line per finding."""
+    return "\n".join([
+        "Thalamus preflight — this session is not armed the way its pin promises:",
+        *(f"  • {c.name}: {c.detail}" for c in checks),
+        "MCP servers and hooks arm per process; a relaunch is the repair.",
+    ])
+
+
+def hook_output(report: Report, told: set[tuple[str, str]] | frozenset = frozenset()) -> dict:
+    """What the hook prints for this report: PreToolUse's at the first tool call,
+    SessionStart's at session start.
 
     An aborting failure denies the call and stops the run: a deny alone lets the model
     carry on without the tool, and `continue: false` alone lets this very call run
-    first (both measured on Claude Code 2.1.330, 2026-11-23). A reporting failure
-    reaches the session as context, which a PreToolUse hook's `additionalContext` does.
-    (A0250, cites-as-live) (A0251, cites-as-live)
+    first (both measured on Claude Code 2.1.330, 2026-11-23). It is decided at the first
+    tool call only; at session start an autonomous report prints nothing. A reporting
+    failure reaches the session as context, which a hook's `additionalContext` does, and
+    the operator as a `systemMessage`, which Claude Code shows on screen, at
+    SessionStart before the first prompt. A finding in `told` was reported at session
+    start and is not reported again.
+    (A0250, cites-as-live) (A0252, cites-as-live) (A0253, cites-as-live)
     """
+    if report.phase == SESSION_START and report.aborts:
+        return {}
     if report.aborts and not report.passed:
         reason = f"Thalamus preflight failed — {report.summary()}"
         return {
@@ -527,15 +584,19 @@ def hook_output(report: Report) -> dict:
                                    "permissionDecision": "deny",
                                    "permissionDecisionReason": reason},
         }
-    told = [*report.failures, *report.advisories] if not report.aborts else []
-    if not told:
+    new = [c for c in (*report.failures, *report.advisories)
+           if (c.name, c.detail) not in told] if not report.aborts else []
+    if not new:
         return {}
-    return {"hookSpecificOutput": {
-        "hookEventName": "PreToolUse",
-        "additionalContext": (
-            "PREFLIGHT — this session is not armed the way its pin promises. Tell the "
-            "operator before relying on what is missing: "
-            + "; ".join(f"{c.name}: {c.detail}" for c in told) + ". "
-            "MCP servers and hooks arm per process; a relaunch is the repair."
-        ),
-    }}
+    return {
+        "systemMessage": operator_message(new),
+        "hookSpecificOutput": {
+            "hookEventName": _HOOK_EVENT[report.phase],
+            "additionalContext": (
+                "PREFLIGHT — this session is not armed the way its pin promises. The "
+                "operator has been shown this; do not rely on what is missing: "
+                + "; ".join(f"{c.name}: {c.detail}" for c in new) + ". "
+                "MCP servers and hooks arm per process; a relaunch is the repair."
+            ),
+        },
+    }
