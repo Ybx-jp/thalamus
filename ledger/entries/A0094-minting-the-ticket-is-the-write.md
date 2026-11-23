@@ -41,6 +41,13 @@ none
 - 2026-09-14T10:30:53-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/consultation.py § "open_exchange" =sha256:95b2e82afa1eb493ba271163ecdefc54741a75faf0665a4e4b76518eb97e7d91
   note: Read at the current revision. The write-gate change (7de0d95) added gate=refuse_unless_exchange_protocol_holds to the write_exchange call; mint_ticket and write_exchange are still performed in the one call before returning, so the single-act mint-and-write is unaffected.
+- 2026-11-23T11:03:32-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/consultation.py § "open_exchange" =sha256:95b2e82afa1eb493ba271163ecdefc54741a75faf0665a4e4b76518eb97e7d91
+  artifact: sha256:53ad9c98c554939334b32e375ea986879cabdcc1aca4c401d3c37d13a2b9cf55
+  note: propagated from a moved ground
+- 2026-11-23T11:03:32-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/consultation.py § "open_exchange" =sha256:53ad9c98c554939334b32e375ea986879cabdcc1aca4c401d3c37d13a2b9cf55
+  note: open_exchange now resolves the asking session's type and tier before the write; minting the ticket and writing the Exchange vertex are still one call, so the assertion is unaffected
 
 ## References
 
