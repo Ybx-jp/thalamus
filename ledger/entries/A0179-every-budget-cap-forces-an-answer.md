@@ -54,6 +54,13 @@ none
 - 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:5b0c2c094f0ef72fdeb201d5ebef4742ff4503e0a8d092f797f1d072c7585b49
   note: the table lost the four reflex rows, which moved to the thalamus-reflex plugin; budget.sh is still wired on PreToolUse and PostToolBatch, so the assertion is unaffected
+- 2026-11-23T02:07:22-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:5b0c2c094f0ef72fdeb201d5ebef4742ff4503e0a8d092f797f1d072c7585b49
+  artifact: sha256:d05a14643a3e5723874d51c032e33ce699451584349608578e1eb5d4113984de
+  note: propagated from a moved ground
+- 2026-11-23T02:07:22-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:d05a14643a3e5723874d51c032e33ce699451584349608578e1eb5d4113984de
+  note: HOOK_WIRING gained a PreToolUse preflight.sh entry (#395/#396); budget.sh is still wired on PreToolUse and PostToolBatch, so the assertion is unaffected
 
 ## References
 

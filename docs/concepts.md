@@ -349,6 +349,17 @@ separately (`autonomous=true`), and `thalamus thread promote` moves one into the
 Promotion changes where a thread is listed and nothing else — it keeps its tier and its
 marker.<!-- (A0249, cites-as-live) -->
 
+**Every session is preflighted at its first tool call** (`preflight.sh`,
+`thalamus preflight`): the MCP servers it needs are in the process, read from the
+harness's own record of what connected; its scope's guards are wired and deny a call its
+boundary forbids; the budget caps the hooks will enforce match the preset its job names;
+and its pin-ledger row distils it as the session type it runs as. An autonomous session
+that fails any of these, or one the check could not decide, is stopped at that call and
+at every later one; an attended session is told what is missing and carries
+on.<!-- (A0251, cites-as-live) -->
+A wired hook whose script cannot run is reported too, and stops nothing.
+The result is recorded at `~/.thalamus/preflight/<session_id>.json`.
+
 ## Distillation — how memory gets written
 
 **A session does not write its own memory.**

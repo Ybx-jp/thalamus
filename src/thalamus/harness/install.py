@@ -193,6 +193,10 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     # returned there reaches the model before its next request (A0179, cites-as-live).
     ("PreToolUse", None, "budget.sh"),
     ("PostToolBatch", None, "budget.sh"),
+    # The session preflight (harness/preflight.py), run once at the first tool call:
+    # an autonomous session that is not armed as promised is stopped there, and an
+    # attended one is told.
+    ("PreToolUse", None, "preflight.sh"),
 ]
 
 
@@ -456,11 +460,13 @@ class HookParity:
 
 
 DECLARED_HOOK_PARITY = HookParity(
-    scripts={"claude": 15, "codex": 14, "cursor": 15},
+    scripts={"claude": 16, "codex": 14, "cursor": 15},
     shared=10,
     missing={
-        "codex": ("room-guard.sh",),
-        "cursor": ("budget.sh", "post-tool-use.sh", "recipe-stage.sh",
+        # The preflight reads Claude Code's transcript records and settings files;
+        # neither other harness has been measured for an equivalent.
+        "codex": ("preflight.sh", "room-guard.sh"),
+        "cursor": ("budget.sh", "post-tool-use.sh", "preflight.sh", "recipe-stage.sh",
                    "role-guard.sh", "room-guard.sh"),
     },
     extra={

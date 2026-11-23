@@ -221,9 +221,10 @@ class TestDerivedRows:
 
         assert "codex" not in DECLARED_HOOK_PARITY.native
         assert "codex" not in DECLARED_HOOK_PARITY.renames
-        # `room-guard.sh` matches `SendMessage`, a tool codex has no analogue of — it
-        # stands as a declared gap rather than a quiet exemption.
-        assert DECLARED_HOOK_PARITY.missing["codex"] == ("room-guard.sh",)
+        # `room-guard.sh` matches `SendMessage`, a tool codex has no analogue of, and
+        # `preflight.sh` reads Claude Code's own transcript records — both stand as
+        # declared gaps rather than quiet exemptions.
+        assert DECLARED_HOOK_PARITY.missing["codex"] == ("preflight.sh", "room-guard.sh")
 
 
 class TestRefutedParityClaims:

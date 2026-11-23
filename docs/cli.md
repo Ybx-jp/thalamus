@@ -321,6 +321,25 @@ thalamus thread autonomous --scope <s>       # autonomous runs' threads awaiting
 thalamus thread promote <id> --scope <s>     # move one into your queue; its tier is unchanged
 ```
 
+## Preflight
+
+The `preflight.sh` hook runs this at each session's first tool call; run it by hand to
+see what it found:
+
+```bash
+thalamus preflight --session-id <id> --session-type attended|autonomous \
+  [--transcript <path>] [--scope <s>] [--project-dir <dir>]
+```
+
+It exits 1 when the preflight failed. A launcher shapes what an autonomous run is held
+to with three variables:
+
+| Variable | Means |
+|---|---|
+| `THALAMUS_PREFLIGHT_REQUIRES` | Comma-separated MCP server names or tool names the job needs, beyond its scope's own servers |
+| `THALAMUS_BUDGET_PRESET` | The budget preset the job promises to run under; the caps in force must equal it |
+| `THALAMUS_SETTING_SOURCES` | The settings sources the run loads (`user,project,local`), when `--setting-sources` narrowed them |
+
 ## The eval loop
 
 Layer 1 measures what retrieval did, from what the harness already logs — this is the
