@@ -35,19 +35,40 @@ set -uo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
 thalamus_sandbox_guard
 
+# Resolved from the environment before anything is read from the payload: what a hook
+# that cannot read its input does depends on it.
+session_type="$(thalamus_resolve_session_type)"
+
+# Deny the call and stop the run, then exit. Without jq the reason is fixed text,
+# since nothing else here can build the JSON.
+abort() {
+  if command -v jq >/dev/null 2>&1; then
+    jq -cn --arg reason "Thalamus preflight failed — $1" '{
+      continue: false, stopReason: $reason,
+      hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny",
+                           permissionDecisionReason: $reason}}'
+  else
+    printf '%s\n' '{"continue":false,"stopReason":"Thalamus preflight failed — jq is not on PATH, so the checks could not run","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Thalamus preflight failed — jq is not on PATH, so the checks could not run"}}'
+  fi
+  exit 0
+}
+
+# A hook that cannot read its input has checked nothing, which for an autonomous
+# session is a failure like any other (#403): no jq, no HOME to record the result
+# under, or a payload with no session_id. An attended session carries on silently,
+# as it does when the CLI cannot run.
+cannot_check() {
+  [ "$session_type" = "autonomous" ] && abort "$1"
+  exit 0
+}
+command -v jq >/dev/null 2>&1 || cannot_check "jq is not on PATH, so the checks could not run"
+[ -n "${HOME:-}" ] || cannot_check "HOME is unset, so the result could not be recorded"
+
 input=$(cat)
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
-[ -n "$session_id" ] || exit 0
+[ -n "$session_id" ] || cannot_check "the hook payload carried no readable session_id, so the checks could not run"
 
-session_type="$(thalamus_resolve_session_type)"
 state="$HOME/.thalamus/preflight/$session_id.json"
-
-abort() {
-  jq -cn --arg reason "Thalamus preflight failed — $1" '{
-    continue: false, stopReason: $reason,
-    hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny",
-                         permissionDecisionReason: $reason}}'
-}
 
 if [ -f "$state" ]; then
   if [ "$session_type" = "autonomous" ] && [ "$(jq -r '.passed' "$state" 2>/dev/null)" != "true" ]; then

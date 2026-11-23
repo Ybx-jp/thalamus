@@ -541,12 +541,20 @@ def record(report: Report, directory: Path | None = None) -> Path:
 
 def told_at_start(session_id: str, directory: Path | None = None) -> set[tuple[str, str]]:
     """The (check, detail) pairs the session-start run already told this session, so
-    the first-tool-call run repeats none of them. Empty when there was no such run."""
+    the first-tool-call run repeats none of them. Empty when there was no such run.
+
+    A record of any other shape counts as no record (#404): telling a finding twice is
+    the cost, and failing to read the record must never leave the first tool call
+    telling nothing.
+    """
     try:
         recorded = json.loads(state_path(session_id, SESSION_START, directory).read_text())
     except (OSError, ValueError):
         return set()
-    return {(c.get("name", ""), c.get("detail", "")) for c in recorded.get("checks") or []
+    checks = recorded.get("checks") if isinstance(recorded, dict) else None
+    if not isinstance(checks, list):
+        return set()
+    return {(str(c.get("name", "")), str(c.get("detail", ""))) for c in checks
             if isinstance(c, dict) and c.get("ok") is False}
 
 
