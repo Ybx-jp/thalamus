@@ -279,6 +279,19 @@ if [ -n "$session_id" ] && [ "$session_type" = "attended" ] && thalamus_cli_argv
   fi
 fi
 
+# A launcher running a job rather than a conversation sets THALAMUS_SESSION_CONTEXT=none:
+# the pin row is recorded as for every session, the operator notice is still shown,
+# and nothing is added to the model's context. The priming above points the model at
+# memory tools and grants standing subagent authority, which a scheduled job launched
+# with neither cannot use, and which would change the input the job's prompt defines.
+session_context="${THALAMUS_SESSION_CONTEXT:-}"
+# (A0256, cites-as-live)
+if [ "$session_context" = "none" ]; then
+  jq -n --arg notice "$operator_notice" \
+    'if $notice == "" then {} else {systemMessage: $notice} end'
+  exit 0
+fi
+
 jq -n --arg ctx "$context" --arg notice "$operator_notice" '{
   hookSpecificOutput: {
     hookEventName: "SessionStart",

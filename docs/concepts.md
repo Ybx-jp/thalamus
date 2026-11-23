@@ -332,6 +332,9 @@ The type is a launch fact. The launcher declares it in `THALAMUS_SESSION_TYPE`; 
 headless run nobody marked is autonomous, and a launcher acting on your behalf (a
 `quick ask` fork) marks itself attended. The session-start hook records it in the pin
 ledger, and distillation reads it back from there.<!-- (A0246, cites-as-live) -->
+A launcher running a job rather than a conversation also sets
+`THALAMUS_SESSION_CONTEXT=none`. The hook then records the pin as usual and adds nothing
+to the model's context, so the job's prompt stays its whole input.<!-- (A0256, cites-as-live) -->
 
 Everything distilled from an autonomous session carries `session_type: autonomous` and
 sits at tier 2, beside curated third-party content, so it is presented as tier-2 content
