@@ -16,7 +16,7 @@ from typing import Any, Protocol
 import yaml
 
 from thalamus import __version__, plugins
-from thalamus.substrate.schema import CloseDisposition, SessionGraph, ThreadClose
+from thalamus.substrate.schema import CloseDisposition, SessionGraph, SessionType, ThreadClose
 from thalamus.archive import archive_dir
 from thalamus.contract.conformance import (
     ContractViolation,
@@ -35,6 +35,7 @@ from thalamus.harness import (
     transcripts,
 )
 from thalamus.harness import closes as closes_mod
+from thalamus.harness import promotions as promotions_mod
 from thalamus.harness import quick as quick_mod
 from thalamus.harness.bootstrap import bootstrap_project
 from thalamus.harness import pin
@@ -208,6 +209,17 @@ def _main():
         help="Session these were forked from. Default: each session's own pin-ledger "
         "row, else $THALAMUS_FORKED_FROM, else none. A fork inherited its parent's "
         "context, so it derives from that session rather than corroborating it.",
+    )
+    extract_parser.add_argument(
+        "--session-type",
+        default=None,
+        choices=["attended", "autonomous"],
+        help="Whether the operator was present. Default: each session's own pin-ledger "
+        "row (its recorded type, else its entrypoint: a headless `-p` run is "
+        "autonomous), else attended. An autonomous session's nodes are written at "
+        "tier 2 and its threads stay out of the operator's queue until promoted. A "
+        "session already in the graph keeps the type it was written under; re-writing "
+        "it as the other is refused.",
     )
     extract_parser.add_argument(
         "--model",
@@ -653,7 +665,9 @@ def _main():
     preset_remove.add_argument("name")
 
     thread_parser = subparsers.add_parser(
-        "thread", help="Close threads: propose, approve, and audit the close ledger"
+        "thread",
+        help="Close threads (propose, approve, audit the close ledger), and promote "
+             "autonomous runs' threads into your queue",
     )
     thread_sub = thread_parser.add_subparsers(dest="thread_command")
 
@@ -703,6 +717,33 @@ def _main():
         "audit", help="Corroborate graph-side closes against the ledger"
     )
     thread_audit.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+
+    thread_autonomous = thread_sub.add_parser(
+        "autonomous",
+        help="Threads autonomous runs opened that are awaiting promotion into your queue",
+    )
+    thread_autonomous.add_argument("--scope", default=MAIN_SCOPE, help="Scope to list")
+    thread_autonomous.add_argument("--project", default="", help="Only this project")
+    thread_autonomous.add_argument("--limit", type=int, default=20, help="At most this many")
+    thread_autonomous.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+
+    thread_promote = thread_sub.add_parser(
+        "promote",
+        help="Move an autonomous run's thread into your queue (its trust is unchanged)",
+    )
+    thread_promote.add_argument("thread_id", help="Thread id, unqualified")
+    thread_promote.add_argument("--scope", default=MAIN_SCOPE, help="Scope it lives in")
+    thread_promote.add_argument(
+        "--surface", default="cli", choices=list(promotions_mod.SURFACES),
+        help="Where the promotion was given",
+    )
+    thread_promote.add_argument(
+        "--evidence", default="",
+        help="What kind of evidence exists that the operator promoted it. Defaults to "
+             "the surface's own (cli:tty)",
+    )
+    thread_promote.add_argument("--notes", default="", help="Operator's own words")
+    thread_promote.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
     # Plugins add theirs after core's, so a name core already uses is refused as that
     # plugin's failure rather than shadowing the core command.
@@ -1444,6 +1485,14 @@ def _cmd_extract(args):
             forked_from = args.forked_from if args.forked_from is not None else (
                 launched.get("forked_from") or env_forked_from
             )
+            # Flag, then the ledger, then attended — and not this shell's environment,
+            # which describes the re-extraction rather than the launch. The session-end
+            # path always finds a ledger row, written at session start with the type
+            # resolved there; a session with no row predates the field and was attended.
+            session_type = (
+                SessionType(args.session_type) if getattr(args, "session_type", None)
+                else pin.ledger_session_type(launched) or SessionType.ATTENDED
+            )
 
             entry, secrets = transcripts.retain(facts.path)
             # This is the path that runs at every session end. The scan reports and
@@ -1475,7 +1524,7 @@ def _cmd_extract(args):
                 scope=scope,
                 room=room,
                 forked_from=forked_from,
-            )
+            ).model_copy(update={"session_type": session_type})
 
             # The reference feed, read here rather than inside extraction: the
             # served set comes from the eval tap, and the harness layer does not
@@ -1501,6 +1550,7 @@ def _cmd_extract(args):
                     open_threads=_open_threads(graph, args.scope, facts.project),
                     known_claims=_known_claims(graph, args.scope, facts.project),
                     served_nodes=served,
+                    autonomous=session_type is SessionType.AUTONOMOUS,
                 )
 
             try:
@@ -1576,6 +1626,7 @@ def _cmd_extract(args):
                 f"{len(session.claims()):>2} claims  {len(session.threads)} threads  "
                 f"{len(session.thread_refs)} refs"
                 + (f"  {floored} ingress-floored" if floored else "")
+                + ("  autonomous" if session.session_type is SessionType.AUTONOMOUS else "")
             )
             if args.write:
                 try:
@@ -2792,7 +2843,7 @@ def _cmd_preset(args, parser):
 
 
 def _cmd_thread(args, parser):
-    """Propose, approve, reject and audit thread closes.
+    """Propose, approve, reject and audit thread closes; list and promote autonomous threads.
 
     `propose` never touches the graph and `approve` writes the ledger row before the
     edge — so a crash between them leaves a visible, repairable gap rather than a close
@@ -2896,6 +2947,65 @@ def _cmd_thread(args, parser):
                 print(f"  {close['thread']}  approval_ref={close['approval_ref']}")
             sys.exit(1)
         print("Every agent-written close is backed by an approval row.")
+        return
+
+    if command == "autonomous":
+        from thalamus.substrate.reader import recall_open_threads
+
+        graph = connect(args.url)
+        try:
+            results = recall_open_threads(
+                graph, args.project or None, args.limit, args.scope, autonomous=True
+            )
+        finally:
+            close_connection(graph)
+        if not results:
+            print(f"No autonomous threads awaiting promotion in scope {args.scope}.")
+            return
+        for result in results:
+            print(f"{args.scope}:{result.thread_id}  [{result.status}]  {result.title}")
+            print(f"    {result.description}")
+            if result.spawned_by:
+                print(f"    opened in {result.spawned_by}")
+        print(f"\nPromote one into your queue with:\n"
+              f"  thalamus thread promote <id> --scope {args.scope}")
+        return
+
+    if command == "promote":
+        from thalamus.substrate.writer import (
+            NotPromotable,
+            check_promotable,
+            write_thread_promotion,
+        )
+
+        thread_vid = vid("Thread", args.thread_id, args.scope)
+        graph = connect(args.url)
+        try:
+            # The graph is checked before the ledger row is written, so a promotion of
+            # a thread that is not there, or not an autonomous run's, leaves no row.
+            try:
+                check_promotable(graph, thread_vid)
+            except NotPromotable as exc:
+                print(f"Not promoted: {exc}", file=sys.stderr)
+                sys.exit(1)
+            row, created = promotions_mod.promote(
+                args.thread_id, args.scope, args.surface,
+                approver_evidence=args.evidence, notes=args.notes,
+            )
+            # A repeat writes no row but rewrites the same properties, which is how a
+            # graph write that failed after its row landed is repaired.
+            write_thread_promotion(
+                graph, thread_vid,
+                promoted_at=row["ts"], promotion_ref=row["ref"], surface=row["surface"],
+            )
+            _persist(graph)
+        finally:
+            close_connection(graph)
+        if not created:
+            print(f"{args.scope}:{args.thread_id} was already promoted ({row['ref']}); "
+                  "properties rewritten")
+        print(f"promoted {args.scope}:{args.thread_id} into the operator's queue "
+              f"({row['ref']}). It keeps its tier and its autonomous marker.")
         return
 
     parser.parse_args(["--help"])

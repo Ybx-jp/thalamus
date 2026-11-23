@@ -100,17 +100,29 @@ session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
 # that is not JSON, a missing field, or any value pair other than the one above
 # leaves `tmux_pane` unwritten and costs only what its absence has always cost.
 pane=""
+originator=""
 transcript=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
-if [ -n "${TMUX_PANE:-}" ] && [ -n "$transcript" ] && [ -r "$transcript" ]; then
+if [ -n "$transcript" ] && [ -r "$transcript" ]; then
   # `head -1` and not a whole-file read: the rollout grows to megabytes over a
   # session, and `session_meta` is always its first record.
   meta=$(head -n 1 "$transcript" 2>/dev/null || true)
   originator=$(printf '%s' "$meta" | jq -r '(.payload // .).originator // empty' 2>/dev/null || true)
   origin_source=$(printf '%s' "$meta" | jq -r '(.payload // .).source | if type == "string" then . else empty end' 2>/dev/null || true)
-  if [ "$originator" = "codex-tui" ] && [ "$origin_source" = "cli" ]; then
+  if [ -n "${TMUX_PANE:-}" ] && [ "$originator" = "codex-tui" ] && [ "$origin_source" = "cli" ]; then
     pane="$TMUX_PANE"
   fi
 fi
+
+# Whether the operator is in the loop. A launcher's THALAMUS_SESSION_TYPE wins; else
+# the rollout's originator decides it, by the same rule as Claude Code's entrypoint:
+# `codex_exec` is a headless run, autonomous unless declared, and `codex-tui` — a TUI
+# session or a subagent one spawned — is attended. An unreadable rollout reads
+# attended, as an unexported entrypoint does on Claude Code.
+session_type="$(printf '%s' "${THALAMUS_SESSION_TYPE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+case "$session_type" in
+  attended|autonomous) ;;
+  *) if [ "$originator" = "codex_exec" ]; then session_type="autonomous"; else session_type="attended"; fi ;;
+esac
 
 if [ -n "$session_id" ]; then
   pin_dir="$HOME/.thalamus/pins"
@@ -120,8 +132,10 @@ if [ -n "$session_id" ]; then
     --arg repo_root "$repo_root" \
     --arg project "$project" \
     --arg tmux_pane "$pane" \
+    --arg session_type "$session_type" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{session_id: $sid, scope: $scope, cwd: $cwd, room: $room,
+      session_type: $session_type,
       repo_root: $repo_root, project: $project, tmux_pane: $tmux_pane, ts: $ts}' \
     >> "$pin_dir/pins.jsonl"
 fi

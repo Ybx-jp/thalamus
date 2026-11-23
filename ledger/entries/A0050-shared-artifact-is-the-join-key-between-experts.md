@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-11-23T01:57:50-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/substrate/writer.py § "_upsert_artifacts" =sha256:c6f8d9fba882eb59218af1624a31d87b83143297a093d9b892451e03ea4a10b3
+  artifact: sha256:19e0be9de63f90ea6ad3f765227967be15db6f622443497483b8b2dff87281a5
+  note: propagated from a moved ground
+- 2026-11-23T01:58:10-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/substrate/writer.py § "_upsert_artifacts" =sha256:19e0be9de63f90ea6ad3f765227967be15db6f622443497483b8b2dff87281a5
+  note: _upsert_artifacts now stamps the session type and keeps an artifact's provenance as held when a session of the other type re-writes it (#394); artifacts are still merged on identifier alone into one global node, so the assertion is unaffected
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

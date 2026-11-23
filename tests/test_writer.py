@@ -215,6 +215,11 @@ class RecordingGraph:
     def project(self, *_keys):
         return self
 
+    def value_map(self, *_keys):
+        # The held-session-type read before an upsert. It starts from `V(id)`, which
+        # resets `_reading`, so it finds nothing: every vertex is new to this fake.
+        return self
+
     def by(self, *_args, **_kwargs):
         return self
 

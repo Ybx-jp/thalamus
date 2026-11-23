@@ -770,7 +770,7 @@ thread_refs:
 ### Session metadata
 Project: {project}
 Session title: {title}
-
+{session_note}
 ### Transcript digest
 {digest}
 """
@@ -784,6 +784,7 @@ def build_prompt(
     open_threads: list[dict] | None = None,
     known_claims: list[dict] | None = None,
     served_nodes: list[dict] | None = None,
+    autonomous: bool = False,
 ) -> str:
     if open_threads:
         rendered = "\n".join(
@@ -805,8 +806,20 @@ def build_prompt(
         served_nodes=render_served_nodes(served_nodes),
         project=project,
         title=title,
+        session_note=_AUTONOMOUS_NOTE if autonomous else "",
         digest=digest,
     )
+
+
+# An autonomous run has no operator in it. Its user-role turns are the launcher's job
+# prompt, so a decision, refusal or preference read off them would be recorded as the
+# operator's when no operator said it — measured: a scheduler's prompt record was
+# flagged as operator voice on 2026-11-22 (#394).
+_AUTONOMOUS_NOTE = (
+    "Session type: AUTONOMOUS — no operator was present. The user-role turns are a "
+    "launcher's job prompt, not the operator speaking: record nothing as the operator's "
+    "decision, refusal or preference on their strength.\n"
+)
 
 
 _SERVED_TEXT_CAP = 160

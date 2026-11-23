@@ -49,6 +49,13 @@ none
 - 2026-10-16T17:55:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/harness/hooks/claude-code/resolve-scope.sh § "thalamus_guard_command" =sha256:00685d3a576cd3dc9d9a4134406c3801d0ec4f58e6b086d2c55784598156fb7d
   note: Only wording in the section changed: #342 retires "roster" where it meant the set of experts or the console's tmux windows. The assertion is unaffected.
+- 2026-11-23T01:57:50-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/hooks/claude-code/resolve-scope.sh § "thalamus_guard_command" =sha256:00685d3a576cd3dc9d9a4134406c3801d0ec4f58e6b086d2c55784598156fb7d
+  artifact: sha256:0b257a1ccf8a93d182e8299fe680c73ffb7f10250d2a66cbc2af41b07a25e926
+  note: propagated from a moved ground
+- 2026-11-23T01:58:10-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/hooks/claude-code/resolve-scope.sh § "thalamus_guard_command" =sha256:0b257a1ccf8a93d182e8299fe680c73ffb7f10250d2a66cbc2af41b07a25e926
+  note: the section gained thalamus_resolve_session_type (#394); thalamus_resolve_scope still tries the payload's agent_type before CLAUDE_CODE_AGENT, so the assertion is unaffected
 
 ## References
 

@@ -41,6 +41,13 @@ none
 - 2026-09-24T01:16:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/substrate/schema.py § "SessionGraph" =sha256:39816ac9843eb35e21714e6f0c9cc24dd9302e5d43a567e5a8e0c4d7bb3a7ea9
   note: The docstring of a removed conformance wrapper moved onto SessionGraph.referenced_artifact_ids; the scope and project field declarations are unchanged, so the assertion is unaffected.
+- 2026-11-23T01:57:50-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/substrate/schema.py § "SessionGraph" =sha256:39816ac9843eb35e21714e6f0c9cc24dd9302e5d43a567e5a8e0c4d7bb3a7ea9
+  artifact: sha256:d26573c8afd09d77769e1bc25da28fe4e94db9af834f1fd4db3b9cae1dcaf6e1
+  note: propagated from a moved ground
+- 2026-11-23T01:58:10-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/substrate/schema.py § "SessionGraph" =sha256:d26573c8afd09d77769e1bc25da28fe4e94db9af834f1fd4db3b9cae1dcaf6e1
+  note: SessionGraph gained a session_type field (attended | autonomous) and a provenance_for method (#394); scope and project are still two independent fields carried together, so the assertion is unaffected
 
 ## References
 

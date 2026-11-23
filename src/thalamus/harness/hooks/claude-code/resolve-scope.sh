@@ -263,6 +263,25 @@ thalamus_resolve_forked_from() {
   printf '%s' "${THALAMUS_FORKED_FROM:-}"
 }
 
+# Whether the operator is in the loop: `attended` or `autonomous`, written into the
+# pin ledger and read back by harness/pin.ledger_session_type. A launcher's declaration
+# (THALAMUS_SESSION_TYPE) wins; a headless run nobody declared is autonomous, because
+# reading an unattended run as attended would put its conclusions at first-party trust
+# and its threads in the operator's queue. CLAUDE_CODE_ENTRYPOINT is `sdk-cli` under
+# `claude -p` and `cli` in a terminal; anything else, including unset, reads attended.
+# (A0246, cites-as-live)
+thalamus_resolve_session_type() {
+  local declared
+  declared="$(printf '%s' "${THALAMUS_SESSION_TYPE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  case "$declared" in
+    attended|autonomous) printf '%s' "$declared"; return 0 ;;
+  esac
+  case "${CLAUDE_CODE_ENTRYPOINT:-}" in
+    sdk*) printf 'autonomous' ;;
+    *) printf 'attended' ;;
+  esac
+}
+
 # $1 (optional): the tool-hook payload's `agent_type`. Pass it from every hook that
 # receives a tool payload; omit it in session-lifecycle hooks, which have none.
 #
