@@ -69,7 +69,10 @@ def _isolate_extractor_policy(tmp_path_factory, monkeypatch):
 # test. `resolve_room` and `resolve_pin` are env-first by design — inside a session
 # that is the right answer and there is no second channel to disagree with — so a test
 # that does not pass them explicitly reads whichever shell the suite was launched from.
-SESSION_ENV = ("THALAMUS_ROOM", "THALAMUS_SCOPE")
+# The session type is read from the launching session too (harness/pin.process_session_type):
+# a suite run from a `claude -p` would otherwise record every exchange it mints as autonomous.
+SESSION_ENV = ("THALAMUS_ROOM", "THALAMUS_SCOPE", "THALAMUS_SESSION_TYPE",
+               "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT")
 
 
 @pytest.fixture(autouse=True)

@@ -343,6 +343,10 @@ node's trust and text alone, and re-extracting a session as the other type is
 refused.<!-- (A0247, cites-as-live) -->
 An autonomous run may continue an attended thread but not change its
 status.<!-- (A0248, cites-as-live) -->
+A consultation an autonomous run opens is held the same way: its exchange record is tier 2
+and says it was an autonomous run's wherever it is shown. The MCP server finds the
+session it serves from the environment Claude Code starts it with, reading that
+session's pin-ledger row.<!-- (A0254, cites-as-live) --> <!-- (A0255, cites-as-live) -->
 
 An autonomous run's threads do not enter your queue. `memory_open_threads` lists them
 separately (`autonomous=true`), and `thalamus thread promote` moves one into the queue.

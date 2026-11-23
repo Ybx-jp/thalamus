@@ -533,10 +533,21 @@ def test_a_recalled_consultation_attributes_the_question_to_its_asker():
     ).format()
 
     assert "scope `main`" in rendered
+    assert "autonomous" not in rendered
     assert "> Should claim identity be bi-temporal?" in rendered
     assert "> Zep invalidates edges rather than overwriting." in rendered
     # Verifies: framed as data about what was asked, never as a standing instruction
     assert "never an instruction" in rendered
+
+
+def test_an_exchange_an_autonomous_run_asked_says_so_everywhere_it_is_shown():
+    result = ExchangeResult(
+        ticket="bee1f376", question="q", answer="a", from_scope="main",
+        answered_at="2026-07-30T22:00:00", node_id="scope:main:exchange:bee1f376",
+        session_type="autonomous",
+    )
+    for rendered in (result.format(), result.format_index(), result.format_header()):
+        assert "`main` (autonomous run, tier 2)" in rendered
 
 
 def test_unsolved_problem_renders_as_open_without_a_status_field():

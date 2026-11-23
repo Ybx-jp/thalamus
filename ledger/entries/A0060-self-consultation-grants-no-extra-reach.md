@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-11-23T11:03:32-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/consultation.py § "refuse_reason" =sha256:1faaf60d17576f64c6485c59044290c7145b19ccd9d2fce5da33f50ae112a81a
+  artifact: sha256:ee69a272305486281a62332bf69d3f7a7262d28bc88acccb1159ed8c2e2d6f14
+  note: propagated from a moved ground
+- 2026-11-23T11:03:32-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/consultation.py § "refuse_reason" =sha256:ee69a272305486281a62332bf69d3f7a7262d28bc88acccb1159ed8c2e2d6f14
+  note: a comment in refuse_reason was corrected to say a call does not name which agent made it; the self-consultation rule and its checks are unchanged, so the assertion is unaffected
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

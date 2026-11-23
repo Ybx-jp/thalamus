@@ -445,7 +445,8 @@ class ExchangeResult:
 
     The question is a *main-scope agent's* words entering an expert's context, so it
     renders as attributed quotation with its asker named, not as the expert's own
-    recollection.
+    recollection. An exchange an autonomous run asked says so wherever it is shown.
+    (A0255, cites-as-live)
     """
 
     ticket: str
@@ -454,11 +455,19 @@ class ExchangeResult:
     from_scope: str
     answered_at: str
     node_id: str = ""
+    session_type: str = ""
+
+    @property
+    def _asked_by(self) -> str:
+        """The asker, marked when it was an autonomous run."""
+        asker = f"`{self.from_scope or 'unknown'}`"
+        return asker + (f" ({_AUTONOMOUS_LABEL}, tier 2)"
+                        if self.session_type == AUTONOMOUS else "")
 
     def format(self) -> str:
         lines = [
             f"## Consultation answered — ticket `{self.ticket}`",
-            f"**Asked by:** scope `{self.from_scope or 'unknown'}`"
+            f"**Asked by:** scope {self._asked_by}"
             + (f" · **answered** {self.answered_at[:10]}" if self.answered_at else ""),
         ]
         if self.node_id:
@@ -480,7 +489,7 @@ class ExchangeResult:
         """
         head = f"- **`{self.ticket}`**"
         if self.from_scope:
-            head += f" · `{self.from_scope}` asked"
+            head += f" · {self._asked_by} asked"
         if self.answered_at:
             head += f" · answered {self.answered_at[:10]}"
         lines = [head]
@@ -509,7 +518,7 @@ class ExchangeResult:
         if self.answered_at:
             head += f" · answered {self.answered_at[:10]}"
         if self.from_scope:
-            head += f" · asked by `{self.from_scope}`"
+            head += f" · asked by {self._asked_by}"
         lines = [head]
         if self.node_id:
             lines.append(f"  **Node:** `{self.node_id}`")
@@ -603,6 +612,7 @@ def _exchange_result(row: dict) -> ExchangeResult:
         from_scope=_first(row.get("from_scope", "")),
         answered_at=_first(row.get("answered_at", "")),
         node_id=node_id,
+        session_type=_first(row.get("session_type", "")) or "",
     )
 
 

@@ -58,9 +58,27 @@ HOOKS = Path(__file__).resolve().parents[1] / "src" / "thalamus" / "harness" / "
          SessionType.AUTONOMOUS),
     ],
 )
-def test_launch_resolution(env, expected):
-    """A headless run nobody marked is autonomous; a declaration wins."""
+def test_launch_resolution(env, expected, tmp_path):
+    """A headless run nobody marked is autonomous; a declaration wins — at launch, and
+    in a process that finds no ledger row for its session."""
     assert _resolve(env) == expected.value
+    assert pin.process_session_type(env, tmp_path / "none.jsonl") is expected
+
+
+def test_a_process_reads_its_session_row_before_its_environment(tmp_path):
+    """The MCP server and `quick ask` resolve the session they serve from its pin row,
+    which Claude Code names in CLAUDE_CODE_SESSION_ID."""
+    ledger = tmp_path / "pins.jsonl"
+    ledger.write_text(json.dumps({"session_id": "s1", "scope": "main",
+                                  "session_type": "autonomous", "entrypoint": "sdk-cli"}) + "\n")
+    # The row wins over what the environment would say.
+    env = {"CLAUDE_CODE_SESSION_ID": "s1", "CLAUDE_CODE_ENTRYPOINT": "cli"}
+    assert pin.process_session_type(env, ledger) is SessionType.AUTONOMOUS
+    # A session with no row falls back to the launch rule.
+    other = {"CLAUDE_CODE_SESSION_ID": "s2", "CLAUDE_CODE_ENTRYPOINT": "sdk-cli"}
+    assert pin.process_session_type(other, ledger) is SessionType.AUTONOMOUS
+    # A plain shell outside any session is the operator's.
+    assert pin.process_session_type({}, ledger) is SessionType.ATTENDED
 
 
 def _resolve(env: dict[str, str]) -> str:
