@@ -113,12 +113,12 @@ def is_our_hook(command: str) -> bool:
     return OUR_HOOK_MARKER in command or PLUGIN_HOOK_PATH.search(command) is not None
 
 
-#: `install.claude_wiring()` on the matrix box: core's `HOOK_WIRING` (20 entries) plus
+#: `install.claude_wiring()` on the matrix box: core's `HOOK_WIRING` (21 entries) plus
 #: the 4 entries of `thalamus_reflex.plugin.register_hooks` (reflex.sh on two events and
 #: reflex-pointer-tap.sh on two). The documented sequence is `uv sync` — whose default
 #: groups install the thalamus-reflex plugin — then `thalamus init`, so the plugin's
-#: rows are written and counted; a box without the plugin would carry 20.
-EXPECTED_HOOK_ENTRIES = 24
+#: rows are written and counted; a box without the plugin would carry 21.
+EXPECTED_HOOK_ENTRIES = 25
 
 #: The rendering a HEALTHY MCP registration produces: a backticked server name, the
 #: word `in`, one location, and nothing after it. Every unhealthy branch appends a

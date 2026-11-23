@@ -900,32 +900,26 @@ def test_every_declared_exemption_still_matches_a_definition():
 def test_the_contract_symbols_the_role_guard_calls_are_reached_not_reported():
     """`role-guard.sh` runs on every Edit and Write in every session on this checkout.
 
-    It reaches four contract symbols from `"$py" - <<PY` heredocs, and no `.py` module
-    imports any of them. Reporting them would be the false accusation the route channel
-    refuses to make about an uncalled route.
+    It reaches four contract symbols from `"$py" - <<PY` heredocs, and the session
+    preflight (`harness/preflight.py`) calls the same boundary methods to build the call
+    it probes the guard with. Whichever channel reaches them, none is reported.
     """
     report = test_only_symbols(REPO_ROOT)
-    reached = {
-        (item.definition.path, item.definition.name): item for item in report.silenced
-    }
-    for path, name in (
+    reported = {(item.path, item.name) for item in report.test_only}
+    for symbol in (
         ("src/thalamus/contract/ownership.py", "denies"),
         ("src/thalamus/contract/manifest.py", "denies"),
         ("src/thalamus/contract/manifest.py", "denies_skill"),
         ("src/thalamus/contract/manifest.py", "denies_tool"),
     ):
-        silenced = reached[(path, name)]
-        assert silenced.form == SILENCE_EMBEDDED
-        assert all("role-guard.sh:" in site for site in silenced.sites)
-    assert {name for _, name in reached} .isdisjoint({item.name for item in report.test_only})
+        assert symbol not in reported
 
 
 @pytest.mark.skipif(not (REPO_ROOT / "tests").is_dir(), reason="needs a full checkout")
 def test_the_module_the_role_guard_imports_is_not_an_orphan():
-    """`contract/ownership.py` is imported by `role-guard.sh` and by no scanned module."""
+    """`contract/ownership.py` is imported by `role-guard.sh` and by the preflight."""
     walked = census(REPO_ROOT)
     graph = scan_repo(REPO_ROOT, ExtractorPolicy(roots=("src",)))
-    assert "src/thalamus/contract/ownership.py" in orphan_modules(graph)
     assert "src/thalamus/contract/ownership.py" not in orphan_modules(graph, None, walked)
 
 

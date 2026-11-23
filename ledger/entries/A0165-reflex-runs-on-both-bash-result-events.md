@@ -81,6 +81,13 @@ none
 - 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: packages/thalamus-reflex/src/thalamus_reflex/hooks/claude-code/reflex.sh § "event" =sha256:e231cfa8a86a72cc9313e42e4601bfca8cbcc99345fe471b9a8a9c716d848816
   note: src/thalamus/harness/hooks/claude-code/reflex.sh moved into the thalamus-reflex plugin package as hooks/claude-code/reflex.sh with event unchanged, so the assertion is unaffected
+- 2026-11-23T02:07:22-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:55e36f47f67e88eeedc9235d80601a79a2c9f128e744eaeb4c87b16e0194b106
+  artifact: sha256:d05a14643a3e5723874d51c032e33ce699451584349608578e1eb5d4113984de
+  note: propagated from a moved ground
+- 2026-11-23T02:07:22-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:d05a14643a3e5723874d51c032e33ce699451584349608578e1eb5d4113984de
+  note: HOOK_WIRING gained a PreToolUse preflight.sh entry (#395/#396); the reflex's wiring on PostToolUse and PostToolUseFailure is unchanged, so the assertion is unaffected
 
 ## References
 

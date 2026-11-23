@@ -95,6 +95,13 @@ none
 - 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: packages/thalamus-reflex/src/thalamus_reflex/plugin.py § "register_hooks" =sha256:16ea8a0d510a757c3aab50a1f1dc89b29a0e02ac65937f30c7bf16c55967f919
   note: the carrier's wiring moved out of core's HOOK_WIRING into the thalamus-reflex plugin's register_hooks, which wires reflex-pointer-tap.sh on every tool under both PostToolUse and PostToolUseFailure as the table did, so the assertion is unaffected
+- 2026-11-23T02:07:22-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:55e36f47f67e88eeedc9235d80601a79a2c9f128e744eaeb4c87b16e0194b106
+  artifact: sha256:d05a14643a3e5723874d51c032e33ce699451584349608578e1eb5d4113984de
+  note: propagated from a moved ground
+- 2026-11-23T02:07:22-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:d05a14643a3e5723874d51c032e33ce699451584349608578e1eb5d4113984de
+  note: HOOK_WIRING gained a PreToolUse preflight.sh entry (#395/#396); nothing about the reflex's carrier delivery changed, so the assertion is unaffected
 
 ## References
 

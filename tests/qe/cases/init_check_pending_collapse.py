@@ -1,7 +1,7 @@
 """A blinded install and a never-installed one must not read the same.
 
 Issue #125. `verify_armed()` (`src/thalamus/harness/install.py:1862`) returns three
-states over the declared hook wirings (`install.claude_wiring()`: core's `HOOK_WIRING`, 20 entries, plus the installed
+states over the declared hook wirings (`install.claude_wiring()`: core's `HOOK_WIRING`, 21 entries, plus the installed
 reflex plugin's 4): all
 present (ok), some missing (fatal), or *all* missing (`pending=True`,
 `install.py:1899`-1905). `pending` is excluded from `failed` (`install.py:2294`-2295),

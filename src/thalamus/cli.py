@@ -745,6 +745,30 @@ def _main():
     thread_promote.add_argument("--notes", default="", help="Operator's own words")
     thread_promote.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
+    preflight_parser = subparsers.add_parser(
+        "preflight",
+        help="Check a session is armed as its pin and job promise: tools, hooks, "
+             "guards, budget, write path",
+    )
+    preflight_parser.add_argument("--session-id", required=True, help="The session to check")
+    preflight_parser.add_argument(
+        "--transcript", default="", help="Its transcript, where the tool surface is recorded"
+    )
+    preflight_parser.add_argument("--scope", default=MAIN_SCOPE, help="Its pinned scope")
+    preflight_parser.add_argument(
+        "--session-type", required=True, choices=["attended", "autonomous"],
+        help="What it runs as. An autonomous session's preflight aborts on any failure; "
+             "an attended one's reports",
+    )
+    preflight_parser.add_argument(
+        "--project-dir", default="", help="The project whose settings files it loads"
+    )
+    preflight_parser.add_argument(
+        "--hook", action="store_true",
+        help="Print the PreToolUse hook's JSON output and record the result, instead of "
+             "the report",
+    )
+
     # Plugins add theirs after core's, so a name core already uses is refused as that
     # plugin's failure rather than shadowing the core command.
     plugins.loaded().register_commands(
@@ -811,10 +835,40 @@ def _main():
         _cmd_preset(args, preset_parser)
     elif args.command == "thread":
         _cmd_thread(args, thread_parser)
+    elif args.command == "preflight":
+        _cmd_preflight(args)
     elif args.command == "growth":
         _cmd_growth(args)
     else:
         parser.print_help()
+        sys.exit(1)
+
+
+def _cmd_preflight(args):
+    """Run the session preflight (harness/preflight.py) and record the result.
+
+    `--hook` is the PreToolUse hook's form: it prints only the hook's JSON and exits 0
+    whatever it found, because the decision is carried in that JSON. Without it, a
+    readable report, exiting 1 when the preflight failed.
+    """
+    from thalamus.harness import preflight
+
+    report = preflight.run(
+        args.session_id, args.scope, SessionType(args.session_type),
+        transcript=Path(args.transcript) if args.transcript else None,
+        project_dir=args.project_dir,
+    )
+    preflight.record(report)
+    if args.hook:
+        print(json.dumps(preflight.hook_output(report)))
+        return
+    for check in report.checks:
+        mark = {True: "ok  ", False: "FAIL", None: "?   "}[check.ok]
+        print(f"{mark} {check.name}: {check.detail}")
+    verdict = "passed" if report.passed else (
+        "failed — the run aborts" if report.aborts else "failed — reported to the session")
+    print(f"\npreflight {verdict} ({report.session_type})")
+    if not report.passed:
         sys.exit(1)
 
 
