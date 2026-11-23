@@ -117,6 +117,7 @@ CASE_MODULES = (
     "qe.cases.codex_profile_without_registration",
     "qe.cases.session_end_log_per_session",
     "qe.cases.graph_guard_script_pairing",
+    "qe.cases.preflight_hook",
 )
 
 
@@ -125,14 +126,16 @@ def load_cases() -> tuple[list[Case], list[str]]:
     for name in CASE_MODULES:
         try:
             module = importlib.import_module(name)
-            case = module.CASE
+            # A module carries one `CASE`, or a `CASES` tuple when its cases share a driver.
+            declared = tuple(getattr(module, "CASES", None) or (module.CASE,))
         except Exception as exc:  # noqa: BLE001
             broken.append(f"{name}: {type(exc).__name__}: {exc}")
             continue
-        if not isinstance(case, Case):
-            broken.append(f"{name}: CASE is {type(case).__name__}, not Case")
-            continue
-        cases.append(case)
+        for case in declared:
+            if not isinstance(case, Case):
+                broken.append(f"{name}: CASE is {type(case).__name__}, not Case")
+                continue
+            cases.append(case)
     return cases, broken
 
 
