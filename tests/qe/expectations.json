@@ -81,6 +81,20 @@
       "witness_contains": "T1 read marked.py + curl: got block, expected pass; N1 python3 marked.py; ls: got pass, expected block; N2 python3 marked.py&& ls: got pass, expected block",
       "triaged_at_rev": "9c1a7f3",
       "note": "Issue #344. claude-code graph-guard.sh checks 'a .py token names a marker-bearing file' and 'an interpreter or network client is invoked' independently. A command that only reads a marker-bearing file and also runs an unrelated curl is blocked (T1); a script name with an attached separator (marked.py; / marked.py&&) does not match *.py, so the file is never read and the run passes (N1, N2). Controls asserted in the case: read+ls passes, clean file+curl passes, python3 marked.py blocks, main passes. A fix that reads a .py file only when it is an interpreter's script argument and strips shell separators from tokens makes the three verdicts correct and this entry goes stale."
+    },
+    {
+      "case": "preflight-autonomous-unreadable-payload-fails-closed",
+      "failure_class": "failed-open",
+      "witness_contains": "stdin is not JSON: exit=0 stdout=''; stdin is empty: exit=0 stdout=''; no session_id key: exit=0 stdout=''; jq not on PATH: exit=0 stdout=''",
+      "triaged_at_rev": "d51abab",
+      "note": "Issue #403. preflight.sh reads session_id with jq and `exit 0`s when it is empty, before the session type is resolved, so an autonomous run whose payload cannot be read (not JSON, empty, session_id key drifted, jq absent) proceeds with no state written. The control, a readable payload on an unarmed pin, is denied. A fix that denies for an autonomous session in that branch makes the witness rows read as stopped and this entry goes stale."
+    },
+    {
+      "case": "preflight-start-record-shape-does-not-hide-findings",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "checks is an int: exit=0 stdout=''; record is a list: exit=0 stdout=''; record is a string: exit=0 stdout=''",
+      "triaged_at_rev": "d51abab",
+      "note": "Issue #404. preflight.told_at_start catches only OSError and ValueError, so a start record that parses but whose shape is wrong raises TypeError or AttributeError inside `thalamus preflight --hook`; the attended hook then prints nothing, and since <sid>.json was already recorded no later call tells the findings. A truncated record and one with non-object entries are handled and are controls here."
     }
   ]
 }
