@@ -35,6 +35,14 @@ none
 
 ## Verdicts
 
+- 2026-11-23T01:57:50-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/substrate/writer.py § "_write_threads" =sha256:e7934b94b6af0e2b72bcf002ecdf55492b76151a621ad3a2290b199ae57e01ef
+  artifact: sha256:77f5c5930fd8cb07e6a0027e10a4548e7005498e11b70713d05897163c4bad5c
+  note: propagated from a moved ground
+- 2026-11-23T01:58:10-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/substrate/writer.py § "_write_threads" =sha256:77f5c5930fd8cb07e6a0027e10a4548e7005498e11b70713d05897163c4bad5c
+  note: _write_threads now stamps the session type and leaves a thread held under the other session type as it was (#394); it is still the only writer of Thread vertices and runs only inside distillation, so the assertion is unaffected
+
 ## References
 
 - CLAUDE.md · standing · cites-as-live

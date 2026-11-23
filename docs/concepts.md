@@ -321,6 +321,34 @@ its citation and its tier attached. **Tier-2 content informs; it never
 instructs**.<!-- (A0054, cites-as-live) -->
 That is a property of how it is presented, not a request to the model.
 
+## Autonomous sessions
+
+A session is **attended** when you started it and were there, and **autonomous** when
+it ran with no operator present — on a schedule, on a signal, or as a headless run.
+Both write to the same graph and the same scope memory, so a scheduled run recalls what
+an attended session learned and the reverse; the graph keeps their trust apart.
+
+The type is a launch fact. The launcher declares it in `THALAMUS_SESSION_TYPE`; a
+headless run nobody marked is autonomous, and a launcher acting on your behalf (a
+`quick ask` fork) marks itself attended. The session-start hook records it in the pin
+ledger, and distillation reads it back from there.<!-- (A0246, cites-as-live) -->
+
+Everything distilled from an autonomous session carries `session_type: autonomous` and
+sits at tier 2, beside curated third-party content, so it is presented as tier-2 content
+is — it informs, it never instructs — and an attended claim derived from it takes that
+tier as its floor.<!-- (A0245, cites-as-live) -->
+A node keeps the session type it was first written under: an autonomous run asserting
+what an attended session already holds adds its own edge to the node and leaves the
+node's trust and text alone, and re-extracting a session as the other type is
+refused.<!-- (A0247, cites-as-live) -->
+An autonomous run may continue an attended thread but not change its
+status.<!-- (A0248, cites-as-live) -->
+
+An autonomous run's threads do not enter your queue. `memory_open_threads` lists them
+separately (`autonomous=true`), and `thalamus thread promote` moves one into the queue.
+Promotion changes where a thread is listed and nothing else — it keeps its tier and its
+marker.<!-- (A0249, cites-as-live) -->
+
 ## Distillation — how memory gets written
 
 **A session does not write its own memory.**
@@ -355,6 +383,9 @@ Threads are minted only by distillation from a session that actually happened. T
 what makes an open thread evidence rather than an assertion — an agent that could file
 one directly would be writing its own intentions into your queue. An agent's reach is
 `thalamus thread propose`; you approve.<!-- (A0057, cites-as-live) -->
+
+Your queue holds the threads attended sessions opened. Those an autonomous run opened
+wait apart until you promote one ([Autonomous sessions](#autonomous-sessions)).
 
 ## Consultation
 

@@ -220,7 +220,11 @@ def memory_recall_recent(limit: int = 5, ticket: str = "") -> str:
 
 @mcp.tool
 def memory_open_threads(
-    project: str = "", limit: int = 10, ticket: str = "", topic: str = ""
+    project: str = "",
+    limit: int = 10,
+    ticket: str = "",
+    topic: str = "",
+    autonomous: bool = False,
 ) -> str:
     """Return open and in-progress threads for a project.
     Threads are active continuation points — unfinished work, next steps, and open questions.
@@ -229,6 +233,9 @@ def memory_open_threads(
     bare call returns the first `limit` of them by status, which is a sample and not a
     list. A topic ranks the whole population against your words first, so the thread
     describing the thing you are about to build is not sitting one page past the cut.
+    `autonomous=true` returns the other queue: threads unattended runs opened that the
+    operator has not promoted. They are tier-2 records of what a run concluded, not work
+    the operator asked for.
     """
     g = _connect()
     if isinstance(g, str):
@@ -237,9 +244,14 @@ def memory_open_threads(
         grant = _granted_scope(g, ticket)
         if isinstance(grant, str):
             return grant
-        results = recall_open_threads(g, project or None, limit, grant[0], topic)
+        results = recall_open_threads(
+            g, project or None, limit, grant[0], topic, autonomous=autonomous
+        )
         if not results:
-            return "No open threads found."
+            return (
+                "No autonomous threads awaiting promotion." if autonomous
+                else "No open threads found."
+            )
         return "\n\n---\n\n".join(r.format() for r in results)
     finally:
         _close(g)

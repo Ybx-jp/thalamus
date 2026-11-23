@@ -154,18 +154,24 @@ if [ -n "$session_id" ]; then
   # and nothing else. `project` carries the THALAMUS_PROJECT override and is therefore
   # the grouping key; `repo_root` is the unambiguous path under it, and a consumer
   # that wants to key on identity rather than on a name uses that one.
+  # `session_type` is whether the operator is in the loop (attended | autonomous),
+  # resolved by thalamus_resolve_session_type and read back at distillation: an
+  # autonomous session's nodes are held at tier 2 and its threads stay out of the
+  # operator's queue until promoted.
   jq -cn --arg sid "$session_id" --arg scope "$scope" --arg cwd "$cwd" \
     --arg agent "${CLAUDE_CODE_AGENT:-}" \
     --arg room "$(thalamus_resolve_room)" \
     --arg forked_from "$(thalamus_resolve_forked_from)" \
+    --arg session_type "$(thalamus_resolve_session_type)" \
     --arg entrypoint "$entrypoint" \
     --arg tmux_pane "$pane" \
     --arg repo_root "$repo_root" \
     --arg project "$project" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{session_id: $sid, scope: $scope, agent: $agent, room: $room,
-      forked_from: $forked_from, cwd: $cwd, entrypoint: $entrypoint,
-      tmux_pane: $tmux_pane, repo_root: $repo_root, project: $project, ts: $ts}' \
+      forked_from: $forked_from, session_type: $session_type, cwd: $cwd,
+      entrypoint: $entrypoint, tmux_pane: $tmux_pane, repo_root: $repo_root,
+      project: $project, ts: $ts}' \
     >> "$pin_dir/pins.jsonl"
 fi
 

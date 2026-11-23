@@ -102,6 +102,7 @@ class TestSessionStart:
                 "scope": "main",
                 "cwd": str(checkout),
                 "room": "",
+                "session_type": "attended",
                 # The grouping keys. `cwd` cannot group: a checkout and a directory
                 # inside it are one project and sort as two, and several sessions in
                 # one checkout share the string exactly and sort as one pile. Both

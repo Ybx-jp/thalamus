@@ -98,6 +98,12 @@ thalamus ingest <url|path> --scope <expert>  # feed one document to an expert (d
 `ingest` is added by the `thalamus-ingest` plugin ([Plugins](#plugins)); the core
 package alone does not have it.
 
+`extract` distils each session as the type its pin-ledger row recorded at launch —
+attended, or autonomous when no operator was present (see
+[concepts](concepts.md#autonomous-sessions)). `--session-type attended|autonomous`
+overrides the ledger; a session already in the graph keeps the type it was written under,
+and re-writing it as the other is refused.
+
 `--harness` and `--extract-with` are two questions, not one. `--harness` says who
 *wrote* the transcripts, which decides how the digest is rendered and where sessions are
 discovered. `--extract-with` says which CLI runs the extraction pass — a digest is plain
@@ -303,6 +309,7 @@ thalamus ceremony ack              # acknowledge a delivery
 ## Threads
 
 Threads are minted only by distillation. An agent may propose a close; you approve it.
+Threads an autonomous run opened wait outside your queue until you promote one.
 
 ```bash
 thalamus thread propose <id>       # an agent's whole reach: propose a close
@@ -310,6 +317,8 @@ thalamus thread pending            # proposals awaiting you
 thalamus thread approve <id>       # close it
 thalamus thread reject <id>        # decline the proposed close
 thalamus thread audit              # the close ledger
+thalamus thread autonomous --scope <s>       # autonomous runs' threads awaiting promotion
+thalamus thread promote <id> --scope <s>     # move one into your queue; its tier is unchanged
 ```
 
 ## The eval loop
@@ -723,7 +732,7 @@ box to one expert.
 
 | Tool | Input | Purpose |
 |---|---|---|
-| `memory_open_threads` | `project`, `limit`, `topic` | Active continuation points — **the entrypoint**. Pass `topic`; a bare call returns one page of many |
+| `memory_open_threads` | `project`, `limit`, `topic`, `autonomous` | Active continuation points — **the entrypoint**. Pass `topic`; a bare call returns one page of many. `autonomous=true` lists the threads autonomous runs opened that are awaiting promotion |
 | `memory_recall` | `query`, `limit` | Keyword search across session memories |
 | `memory_recall_by_artifact` | `identifier`, `limit` | Sessions that touched a file, class or dependency, under any spelling of its name — an absolute path answers for the repo-relative one and back |
 | `memory_recall_by_project` | `project`, `limit` | Recent sessions for a project |

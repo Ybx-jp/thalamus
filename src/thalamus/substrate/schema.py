@@ -44,6 +44,29 @@ class Tier(IntEnum):
     WILD = 3  # external content from unvetted sources
 
 
+class SessionType(str, Enum):
+    """Whether the operator was in the loop for the session a node was distilled from.
+
+    An **attended** session is one the operator started and was present for; its
+    distilled nodes are first-party (tier 1), and its threads are the operator's queue.
+    An **autonomous** session ran with no operator present — on a schedule, on a
+    signal, or as a headless run nobody marked — and everything distilled from it is
+    held at tier 2 with this marker, so it informs an attended session and never
+    instructs one (#394).
+    """
+
+    ATTENDED = "attended"
+    AUTONOMOUS = "autonomous"
+
+
+def session_type_tier(session_type: "SessionType") -> Tier:
+    """The tier a session of this type distils at: first-party when attended, level
+    with `CURATED` when autonomous. Autonomous memory is kept below attended memory by
+    tier, so the existing floor over `DERIVED_FROM` carries it into anything an
+    attended session derives from it. (A0245, cites-as-live)"""
+    return Tier.CURATED if session_type is SessionType.AUTONOMOUS else Tier.FIRST_PARTY
+
+
 class Provenance(BaseModel):
     """Where a node came from. Required on every node in the graph."""
 
@@ -552,6 +575,15 @@ class SessionGraph(BaseModel):
         "the whole reason it is worth a field of its own.",
     )
 
+    session_type: SessionType = Field(
+        default=SessionType.ATTENDED,
+        description="Whether the operator was present. A launch fact like `room`: the "
+        "launcher declares it (`THALAMUS_SESSION_TYPE`), the pin ledger records it at "
+        "session start, and a headless run nobody marked is autonomous by default. "
+        "Every node this session distils carries it, and an autonomous session's nodes "
+        "are held at tier 2.",
+    )
+
     artifacts: list[Artifact] = Field(default_factory=list)
     decisions: list[Decision] = Field(default_factory=list)
     problems: list[Problem] = Field(default_factory=list)
@@ -594,14 +626,28 @@ class SessionGraph(BaseModel):
     def default_provenance(self) -> Provenance:
         """Provenance for nodes this session asserts without stating an origin.
 
-        A session extraction is tier-1 by construction: the agent's own lived experience,
-        sourced to the session that produced it.
+        An attended session's extraction is tier-1 by construction: the agent's own
+        lived experience, sourced to the session that produced it. An autonomous
+        session's is tier 2 (`session_type_tier`).
         """
         return Provenance(
-            tier=Tier.FIRST_PARTY,
+            tier=session_type_tier(self.session_type),
             source=f"session:{self.session_id}",
             ingested_at=self.timestamp,
         )
+
+    def provenance_for(self, provenance: Provenance | None) -> Provenance:
+        """The provenance a node this session writes is stamped with.
+
+        An item's own provenance is kept when it has one — the ingress floor sets one —
+        but never below the session type's tier: an autonomous session cannot write a
+        node more trusted than tier 2, whatever an item carries.
+        """
+        chosen = provenance or self.default_provenance()
+        floor = session_type_tier(self.session_type)
+        if chosen.tier < floor:
+            chosen = chosen.model_copy(update={"tier": floor})
+        return chosen
 
     model_config = {
         "json_schema_extra": {

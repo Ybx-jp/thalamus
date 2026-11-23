@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-11-23T01:57:50-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/mcp_server.py § "memory_open_threads" =sha256:54610625bb0bea0530f1e0a6d3429e714f41f4b342ca9d6a5f82a18bd69b40f0
+  artifact: sha256:d0c4f8b58abe62b84b979e4568d60a4d9b1adac5e15623c50a0170f93473c6bc
+  note: propagated from a moved ground
+- 2026-11-23T01:58:10-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/mcp_server.py § "memory_open_threads" =sha256:d0c4f8b58abe62b84b979e4568d60a4d9b1adac5e15623c50a0170f93473c6bc
+  note: memory_open_threads gained an autonomous parameter that lists autonomous runs' threads awaiting promotion (#394); the default call is unchanged and is still the entrypoint, so the assertion is unaffected
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

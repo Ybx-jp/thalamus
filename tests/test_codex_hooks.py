@@ -121,6 +121,7 @@ class TestSessionStart:
                 "scope": "main",
                 "cwd": str(checkout),
                 "room": "",
+                "session_type": "attended",
                 "repo_root": str(checkout),
                 "project": "myproject",
                 "ts": pins[0]["ts"],
