@@ -56,6 +56,13 @@ none
 - 2026-11-23T01:58:10-08:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/hooks/claude-code/resolve-scope.sh § "thalamus_guard_command" =sha256:0b257a1ccf8a93d182e8299fe680c73ffb7f10250d2a66cbc2af41b07a25e926
   note: the section gained thalamus_resolve_session_type (#394); thalamus_resolve_scope still tries the payload's agent_type before CLAUDE_CODE_AGENT, so the assertion is unaffected
+- 2026-11-23T15:37:08-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/hooks/claude-code/resolve-scope.sh § "thalamus_guard_command" =sha256:0b257a1ccf8a93d182e8299fe680c73ffb7f10250d2a66cbc2af41b07a25e926
+  artifact: sha256:bd323616388d3ee5334760551f1686b9c1a24da05f5b462a57baf2648e834f82
+  note: propagated from a moved ground
+- 2026-11-23T15:40:00-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/hooks/claude-code/resolve-scope.sh § "thalamus_guard_command" =sha256:bd323616388d3ee5334760551f1686b9c1a24da05f5b462a57baf2648e834f82
+  note: thalamus_resolve_session_type now case-folds by pattern with builtins only (#403); thalamus_resolve_scope still tries the payload's agent_type before CLAUDE_CODE_AGENT, so the assertion is unaffected
 
 ## References
 

@@ -32,7 +32,9 @@
 
 set -uo pipefail
 
-. "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
+# The directory by parameter expansion, not `dirname`: nothing here may need PATH
+# before the session type is known (#403).
+. "${BASH_SOURCE[0]%/*}/resolve-scope.sh"
 thalamus_sandbox_guard
 
 # Resolved from the environment before anything is read from the payload: what a hook
