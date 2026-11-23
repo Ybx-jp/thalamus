@@ -389,3 +389,49 @@ def test_an_autonomous_session_start_runs_no_preflight(tmp_path, config):
     out = json.loads(_session_start(tmp_path, home, env).stdout)
     assert "systemMessage" not in out
     assert not (home / ".thalamus" / "preflight").exists()
+
+
+# ---------------------------------------------------------------------------
+# A hook that cannot read its input (#403, #404)
+
+
+def _raw_hook(stdin: str, env: dict, path: str = "/usr/bin:/bin"):
+    return subprocess.run([str(HOOKS / "preflight.sh")], input=stdin, capture_output=True,
+                          text=True, timeout=60, env={"PATH": path, **env})
+
+
+@pytest.mark.parametrize("stdin", ["not json", "", '{"sessionId": "s1"}'])
+def test_an_autonomous_run_whose_payload_is_unreadable_is_stopped(tmp_path, stdin):
+    result = _raw_hook(stdin, {"HOME": str(tmp_path), "THALAMUS_SESSION_TYPE": "autonomous"})
+    out = json.loads(result.stdout)
+    assert out["continue"] is False and "session_id" in out["stopReason"]
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_an_autonomous_run_with_no_home_is_stopped():
+    result = _raw_hook('{"session_id": "s1"}', {"THALAMUS_SESSION_TYPE": "autonomous"})
+    assert json.loads(result.stdout)["continue"] is False
+
+
+def test_an_autonomous_run_without_jq_is_stopped_in_valid_json(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("bash", "cat", "dirname", "tr"):
+        (bin_dir / tool).symlink_to(f"/usr/bin/{tool}")
+    result = _raw_hook('{"session_id": "s1"}',
+                       {"HOME": str(tmp_path), "THALAMUS_SESSION_TYPE": "autonomous"}, path=str(bin_dir))
+    out = json.loads(result.stdout)
+    assert out["continue"] is False and "jq" in out["stopReason"]
+
+
+@pytest.mark.parametrize("stdin", ["not json", ""])
+def test_an_attended_session_whose_payload_is_unreadable_carries_on(tmp_path, stdin):
+    result = _raw_hook(stdin, {"HOME": str(tmp_path), "THALAMUS_SESSION_TYPE": "attended"})
+    assert result.returncode == 0 and result.stdout.strip() == ""
+
+
+@pytest.mark.parametrize("record", ['{"checks": 3}', "[1, 2]", '"text"',
+                                    '{"checks": [3, {"ok": false}]}'])
+def test_a_malformed_start_record_is_read_as_none(tmp_path, record):
+    (tmp_path / "s1.start.json").write_text(record)
+    assert preflight.told_at_start("s1", tmp_path) <= {("", "")}

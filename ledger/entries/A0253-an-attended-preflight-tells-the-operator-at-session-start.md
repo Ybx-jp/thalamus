@@ -39,6 +39,14 @@ none
 
 ## Verdicts
 
+- 2026-11-23T13:18:00-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/preflight.py § "told_at_start" =sha256:f89ae5f544d5890c8f1fcfc3bb7e5b5cd6e5366b1a8cf6c542648d8ee6de0d24
+  artifact: sha256:ff9f8d25412a8d2dd66daff07f4d5d56e05ca3a7cd7a2cf2b472466bed5ab418
+  note: propagated from a moved ground
+- 2026-11-23T13:20:00-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/preflight.py § "told_at_start" =sha256:ff9f8d25412a8d2dd66daff07f4d5d56e05ca3a7cd7a2cf2b472466bed5ab418
+  note: told_at_start now reads a start record of the wrong shape as no record (#404) instead of raising; a well-formed record still yields the name and detail of each failed check, so the assertion is unaffected
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live
