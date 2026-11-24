@@ -64,16 +64,12 @@ body.board { --bar: #565e69; /* --muted at .55 over --panel, flattened */ }
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .b-foot[hidden] { display: none; }
 .b-resize { display: none; }
-.b-hidden-line { font-size: .75rem; color: var(--pending); margin-top: .3rem; }
-.b-hidden-line[hidden] { display: none; }
 .b-wait { font-size: .9rem; }
 .b-none { font-size: .82rem; padding: .4rem 0; }
 .b-wid-err { color: var(--danger-text); font-size: .82rem; }
 
 /* A widget whose show-when is not met: gone from the board, kept (dashed, with its
    line saying why) while editing so it can still be found and changed. */
-body:not(.b-editing) .b-card.hidden-now { display: none; }
-.b-card.hidden-now { border-style: dashed; }
 
 
 /* ---- widget bodies ----------------------------------------------------- */
@@ -138,7 +134,6 @@ body:not(.b-editing) .b-card.hidden-now { display: none; }
 .b-run { width: 100%; }
 
 .b-note { font-size: .95rem; line-height: 1.4; color: var(--ink); }
-.b-note-l { font-size: .76rem; margin-top: auto; padding-top: .8rem; }
 
 .b-app-frame { display: block; width: 100%; height: 260px; border: 0; background: var(--panel); }
 .b-app-full { position: fixed; inset: 0; z-index: 60; background: var(--bg); }

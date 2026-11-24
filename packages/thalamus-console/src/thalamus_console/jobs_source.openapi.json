@@ -1064,7 +1064,6 @@
             "window": "latest",
             "compare": 6
            },
-           "show_when": "always",
            "x": 0,
            "y": 0,
            "w": 1,
@@ -1092,7 +1091,6 @@
              "window": "latest",
              "compare": 6
             },
-            "show_when": "always",
             "x": 0,
             "y": 0,
             "w": 1,
@@ -1210,7 +1208,6 @@
            "window": "latest",
            "compare": 6
           },
-          "show_when": "always",
           "x": 0,
           "y": 0,
           "w": 1,
@@ -1374,7 +1371,6 @@
           "window": "latest",
           "compare": 6
          },
-         "show_when": "always",
          "x": 0,
          "y": 0,
          "w": 1,
@@ -2345,7 +2341,7 @@
     "description": "A status: the word the source chose, and its tone."
    },
    "RunStatus": {
-    "description": "A run's status. The word set is closed, and each word has one tone (x-tones).",
+    "description": "A run's status. The word set is closed, and each word has one tone (x-tones). A run made of stages is failed if any stage failed, else running if any stage runs, else the status of its last stage that ran. skipped is faint, like silent: nothing ran.",
     "oneOf": [
      {
       "type": "object",
@@ -2419,7 +2415,7 @@
         "const": "skipped"
        },
        "tone": {
-        "const": "muted"
+        "const": "faint"
        }
       },
       "required": [
@@ -2433,7 +2429,7 @@
      "silent": "faint",
      "failed": "danger",
      "running": "pending",
-     "skipped": "muted"
+     "skipped": "faint"
     }
    },
    "Label": {
@@ -2677,7 +2673,7 @@
      "summary",
      "groups"
     ],
-    "description": "J1. The banner is the newest applied change from the last 7 days that has not been reverted (provisional: returned to the designer, see x-open-decisions).",
+    "description": "J1. The banner is the newest applied change from the last 7 days that has not been reverted. The page hides it on a device once that change's receipt (getChange) has been opened there.",
     "examples": [
      {
       "as_of_ms": 1795400000000,
@@ -4761,10 +4757,6 @@
       "type": "string",
       "maxLength": 500
      },
-     "line": {
-      "type": "string",
-      "maxLength": 200
-     },
      "app": {
       "type": "string",
       "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
@@ -4802,15 +4794,6 @@
      "binding": {
       "$ref": "#/components/schemas/Binding"
      },
-     "show_when": {
-      "type": "string",
-      "enum": [
-       "always",
-       "nonzero",
-       "unlabelled"
-      ],
-      "description": "Saved, not yet evaluated by any source (returned to the designer)."
-     },
      "x": {
       "type": "integer",
       "minimum": 0,
@@ -4841,7 +4824,6 @@
      "kind",
      "title",
      "binding",
-     "show_when",
      "x",
      "y",
      "w",
@@ -4923,7 +4905,6 @@
          "window": "latest",
          "compare": 6
         },
-        "show_when": "always",
         "x": 0,
         "y": 0,
         "w": 1,
@@ -4951,7 +4932,6 @@
           "window": "latest",
           "compare": 6
          },
-         "show_when": "always",
          "x": 0,
          "y": 0,
          "w": 1,
@@ -5412,17 +5392,12 @@
        "text": {
         "type": "string",
         "description": "Display text the source composed for this place. Printed as text."
-       },
-       "line": {
-        "type": "string",
-        "description": "Display text the source composed for this place. Printed as text."
        }
       },
       "required": [
-       "text",
-       "line"
+       "text"
       ],
-      "description": "note"
+      "description": "note: pinned text, nothing else"
      },
      {
       "type": "object",
@@ -5443,7 +5418,7 @@
       "description": "app"
      }
     ],
-    "description": "What a widget shows, composed. Any of them may also carry shown: false (not yet sent by any source).",
+    "description": "What a widget shows, composed.",
     "examples": [
      {
       "value": "7 of 16",
@@ -5728,11 +5703,25 @@
          "type": "string"
         },
         "found": {
-         "type": "boolean"
+         "anyOf": [
+          {
+           "type": "boolean"
+          },
+          {
+           "type": "null"
+          }
+         ]
         },
         "ep_lost": {
-         "type": "number",
-         "minimum": 0
+         "anyOf": [
+          {
+           "type": "number",
+           "minimum": 0
+          },
+          {
+           "type": "null"
+          }
+         ]
         },
         "seconds": {
          "type": "number",
@@ -5745,7 +5734,8 @@
         "found",
         "ep_lost",
         "seconds"
-       ]
+       ],
+       "description": "A first try. found and ep_lost are null until the engine has scored it."
       }
      }
     },
@@ -5809,32 +5799,74 @@
       "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$"
      },
      "found": {
-      "type": "boolean",
-      "description": "Must equal ep_lost <= 0.05."
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Must equal ep_lost <= 0.05; null until scored."
      },
      "ep_lost": {
-      "type": "number",
-      "minimum": 0
+      "anyOf": [
+       {
+        "type": "number",
+        "minimum": 0
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "engine_move": {
-      "type": "boolean",
-      "description": "The try was exactly the engine move."
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The try was exactly the engine move; null until scored."
      },
      "nodes": {
-      "type": "integer",
-      "minimum": 0
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 0
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "engine": {
-      "type": "string",
-      "maxLength": 64
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 64
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "seconds": {
       "type": "number",
       "minimum": 0
      },
      "engine_ms": {
-      "type": "number",
-      "minimum": 0
+      "anyOf": [
+       {
+        "type": "number",
+        "minimum": 0
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "submitted_ms": {
       "type": "integer"
@@ -5854,7 +5886,7 @@
      "engine_ms",
      "submitted_ms"
     ],
-    "description": "One row per first try, the chess-positions app's write grant.",
+    "description": "The chess-positions app's write grant, one row per first try. Submit writes the row at once with the verdict fields null, which locks the position; a later write with the same uci and a verdict scores it. A row that has a verdict is never scored again (409).",
     "examples": [
      {
       "run_id": "947d9612",
@@ -5868,6 +5900,20 @@
       "engine": "Stockfish 18 lite single",
       "seconds": 18,
       "engine_ms": 1650,
+      "submitted_ms": 1795400000000
+     },
+     {
+      "run_id": "947d9612",
+      "n": 2,
+      "move": "Nxc1",
+      "uci": "e2c1",
+      "found": null,
+      "ep_lost": null,
+      "engine_move": null,
+      "nodes": null,
+      "engine": null,
+      "seconds": 41,
+      "engine_ms": null,
       "submitted_ms": 1795400000000
      }
     ]
@@ -5993,27 +6039,5 @@
   "age": "just now, N min ago, N h ago, N d ago",
   "time": "today 01:13 for today, Nov 22 23:43 for another day",
   "note": "Formats a source uses for display text. The page never parses them."
- },
- "x-open-decisions": [
-  {
-   "what": "A grouped run's status: failed if any stage failed, else running if any runs, else the last stage's.",
-   "class": 1,
-   "state": "provisional; returned to the designer"
-  },
-  {
-   "what": "The J1 banner: the newest applied change from the last 7 days that has not been reverted.",
-   "class": 4,
-   "state": "provisional; returned to the designer (when is a change read?)"
-  },
-  {
-   "what": "The word skipped and its tone muted.",
-   "class": 2,
-   "state": "provisional; returned to the designer"
-  },
-  {
-   "what": "Widget show_when values other than always are saved but not evaluated.",
-   "class": 4,
-   "state": "returned to the designer"
-  }
- ]
+ }
 }

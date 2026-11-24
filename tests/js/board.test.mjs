@@ -108,9 +108,9 @@ suite("board — eval result to render model");
     { type: "auto_apply", job: "career-discover:plan", label: "auto-apply career-discover:plan", on: true }, { type: "shell", cmd: "rm" }] });
   check("controls keep switches, run buttons and auto-apply only", c.items.length === 3 && c.items[0].on === false
     && c.items[1].job === "chess-weekly-review" && c.items[2].on === true);
-  check("a note keeps its text and line", F.evalModel("note", { text: "q", line: "not answerable yet" }).line === "not answerable yet");
+  check("a note is its text alone", F.evalModel("note", { text: "q", line: "ignored" }).text === "q"
+    && !("line" in F.evalModel("note", { text: "q", line: "ignored" })));
   check("a table keeps columns and rows", F.evalModel("table", { columns: ["job"], rows: [["a", 1]] }).rows[0].join() === "a,1");
-  check("show_when false hides; absent shows", F.evalModel("number", { shown: false }).shown === false && n.shown === true);
   check("an app tile's footer comes from its tile", F.evalModel("app", { app: "chess-positions",
     tile: { foot: "app · chess positions" } }).foot === "app · chess positions");
   check("an unknown kind renders as unknown, not as a crash", F.evalModel("gauge", {}).unknown === true);

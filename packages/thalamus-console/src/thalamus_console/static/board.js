@@ -57,32 +57,26 @@ const DEFAULT_SIZE = {
 
 // B3 designs the Number editor only. Every other kind gets the same form pattern —
 // a stack of labelled selects, a live preview above, one primary button below — with
-// the fields its binding needs and nothing more. Title and Show when are on every
-// kind: every widget has a title, and per-card visibility is a board-wide feature
-// (N2's Home Assistant borrowing), not a number feature. The fields are the bindings
+// the fields its binding needs and nothing more. Title is on every kind. There is no
+// Show when: a visibility rule nothing evaluates is a saved field nobody reads, so it
+// waits for an evaluator (designer ruling, 2026-11-24). The fields are the bindings
 // the source validates (sensorium board.py): it takes structured fields only, never a
 // query, and refuses anything outside them with a reason the preview prints.
 const KIND_FIELDS = {
-  number: ["title", "source", "value", "where", "period", "window", "compare", "show_when"],
-  series: ["title", "source", "value", "where", "period", "count", "style", "show_when"],
-  table: ["title", "source", "columns", "where", "limit", "show_when"],
-  tail: ["title", "where", "limit", "show_when"],
-  inbox: ["title", "where", "limit", "show_when"],
-  control: ["title", "mute", "run", "show_when"],
-  note: ["title", "text", "line", "show_when"],
-  app: ["title", "app", "show_when"],
+  number: ["title", "source", "value", "where", "period", "window", "compare"],
+  series: ["title", "source", "value", "where", "period", "count", "style"],
+  table: ["title", "source", "columns", "where", "limit"],
+  tail: ["title", "where", "limit"],
+  inbox: ["title", "where", "limit"],
+  control: ["title", "mute", "run"],
+  note: ["title", "text"],
+  app: ["title", "app"],
 };
 // Row limits per kind, inside the source's bounds (table and tail 1–50, inbox 1–20).
 const LIMITS = { table: [5, 10, 20, 50], tail: [6, 12, 20, 50], inbox: [3, 5, 10, 20] };
 // The periods a series spans, and how many earlier periods a number sums to compare.
 const COUNTS = [4, 6, 8, 12, 18, 26, 52];
 const COMPARES = [null, 1, 2, 3, 4, 6, 8, 12, 26, 52];
-// The source's show_when values, with the words the form prints for them.
-const SHOW_WHEN = [
-  { id: "always", label: "always" },
-  { id: "nonzero", label: "when it is not zero" },
-  { id: "unlabelled", label: "when something is unlabelled" },
-];
 // Tail and inbox read fixed tables; their "Only rows where" offers that table's filters.
 const FIXED_SOURCE = { tail: "events", inbox: "findings" };
 
@@ -232,9 +226,6 @@ function evalModel(kind, r) {
   const base = {
     kind,
     foot: foot != null ? String(foot) : null,
-    // A widget whose show_when is not met. The source decides it (the page would
-    // otherwise be reading "0" out of a composed string); absent means shown.
-    shown: res.shown !== false,
   };
   const arr = (v) => (Array.isArray(v) ? v : []);
   const str = (v) => (v == null ? "" : String(v));
@@ -274,7 +265,8 @@ function evalModel(kind, r) {
         }),
       });
     case "note":
-      return Object.assign(base, { text: str(res.text), line: res.line ? str(res.line) : null });
+      // A note is pinned text and nothing else (designer ruling, 2026-11-24).
+      return Object.assign(base, { text: str(res.text) });
     case "app":
       return Object.assign(base, { app: str(res.app) });
     default:
@@ -412,7 +404,7 @@ async function evalWidget(w) {
     const r = await apiPost("board/eval", { widget: w, range: S.range, scope: S.scope });
     model = evalModel(w.kind, r);
   } catch (e) {
-    model = { kind: w.kind, error: e.message || String(e), shown: true };
+    model = { kind: w.kind, error: e.message || String(e) };
   }
   if (S.gen.get(w.id) !== g) return;
   S.results.set(w.id, model);
@@ -591,12 +583,11 @@ function cardSlots(card, id) {
   const handle = h("button.b-handle", { type: "button", title: "drag to move" }, "⠿");
   const slots = {
     title, handle,
-    hidden: h("div.b-hidden-line", { hidden: true }, "hidden on the board now · its show-when is not met"),
     body: h("div.b-card-b"),
     foot: h("div.b-foot.mono"),
     resize: h("span.b-resize", { "aria-hidden": "true", title: "drag the corner to resize" }),
   };
-  card.replaceChildren(h("div.b-card-h", title, handle), slots.hidden, slots.body, slots.foot, slots.resize);
+  card.replaceChildren(h("div.b-card-h", title, handle), slots.body, slots.foot, slots.resize);
   card._slots = slots;
   if (id) wireCard(card, id);
   return slots;
@@ -605,11 +596,9 @@ function cardSlots(card, id) {
 function fillCard(card, w, model) {
   const s = cardSlots(card, card.dataset.id);
   card.dataset.kind = w.kind;
-  card.classList.toggle("hidden-now", !!(model && model.shown === false));
   const titleText = cardTitle(w.title, model && model.period, kindInfo(w.kind).label);
   s.title.textContent = titleText;
   s.handle.setAttribute("aria-label", "Move " + titleText);
-  s.hidden.hidden = !(model && model.shown === false);
   const frame = s.body.querySelector(":scope > iframe.b-app-frame");
   const keep = w.kind === "app" && frame && model && !model.error && frame.dataset.app === model.app;
   if (!keep) s.body.replaceChildren(...[].concat(cardBody(w, model)).filter((x) => x != null));
@@ -763,7 +752,7 @@ function controlBody(w, m) {
 }
 
 function noteBody(m) {
-  return [h("div.b-note", m.text), m.line ? h("div.b-note-l.muted", m.line) : null];
+  return [h("div.b-note", m.text)];
 }
 
 // ------------------------------------------------------------ app widget host
@@ -914,7 +903,7 @@ function addWidget(w, slot) {
 // Inside edit mode it joins the draft like anything else.
 async function addSuggestion(s) {
   const wasEditing = editing();
-  addWidget(Object.assign({ show_when: "always" }, s.widget || {}));
+  addWidget(Object.assign({}, s.widget || {}));
   if (!wasEditing) await finishEditing();
   else closeSheet();
 }
@@ -1160,7 +1149,7 @@ async function openEditor(kind, existing, slot) {
   const sources = meta.sources || [];
   const draft = existing
     ? JSON.parse(JSON.stringify(existing))
-    : { kind, title: "", binding: {}, show_when: "always" };
+    : { kind, title: "", binding: {} };
   draft.binding = draft.binding || {};
   if (!existing && KIND_FIELDS[kind].includes("source") && sources[0]) draft.binding.source = sources[0].name;
 
@@ -1243,15 +1232,11 @@ async function openEditor(kind, existing, slot) {
         if (b.limit == null) b.limit = opts[1];
         rows.push(field("Rows", select(opts.map((n) => ({ id: n, label: n + " rows" })), b.limit,
           (v) => { b.limit = Number(v); })));
-      } else if (f === "show_when") {
-        rows.push(field("Show when", select(SHOW_WHEN, draft.show_when || "always", (v) => { draft.show_when = v; })));
-      } else if (f === "text" || f === "line") {
-        const t = f === "text"
-          ? h("textarea.b-in.b-ta", { rows: 3, maxlength: 500, placeholder: "a question, or something to keep in view" })
-          : h("input.b-in", { type: "text", maxlength: 200, placeholder: "a line under it, e.g. why it cannot be answered yet" });
-        t.value = b[f] || "";
-        t.addEventListener("input", () => { b[f] = t.value; refresh(); });
-        rows.push(field(f === "text" ? "Text" : "Line", t));
+      } else if (f === "text") {
+        const t = h("textarea.b-in.b-ta", { rows: 3, maxlength: 500, placeholder: "a question, or something to keep in view" });
+        t.value = b.text || "";
+        t.addEventListener("input", () => { b.text = t.value; refresh(); });
+        rows.push(field("Text", t));
       } else if (f === "app") {
         const opts = (S.apps || []).map((a) => ({ id: a.id, label: a.title || a.id }));
         if (b.app == null && opts[0]) b.app = opts[0].id;
@@ -1286,7 +1271,7 @@ async function openEditor(kind, existing, slot) {
       const probe = Object.assign({ id: draft.id || "preview" }, draft);
       let model;
       try { model = evalModel(kind, await apiPost("board/eval", { widget: probe, range: S.range, scope: S.scope })); }
-      catch (e) { model = { kind, error: e.message, shown: true }; }
+      catch (e) { model = { kind, error: e.message }; }
       if (g !== pgen || !cardHost.isConnected) return;
       // The preview never hosts a live app frame: one tile per app on screen.
       if (kind === "app") {

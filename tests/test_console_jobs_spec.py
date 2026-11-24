@@ -168,7 +168,7 @@ def test_the_tone_vocabulary_is_closed_and_runs_map_one_to_one():
     tones = SCHEMAS["Tone"]["enum"]
     assert tones == ["ok", "faint", "danger", "pending", "muted", "accent"]
     assert SCHEMAS["RunStatus"]["x-tones"] == {"notable": "ok", "silent": "faint", "failed": "danger",
-                                              "running": "pending", "skipped": "muted"}
+                                              "running": "pending", "skipped": "faint"}
 
 
 # The page calls each jobs-source path through api("<literal>" + ...) or apiPost(...).
