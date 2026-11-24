@@ -5318,7 +5318,37 @@
        "items": {
         "type": "array",
         "items": {
-         "$ref": "#/components/schemas/Finding"
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "id": {
+           "type": "string"
+          },
+          "title": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          },
+          "kind": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          },
+          "label": {
+           "anyOf": [
+            {
+             "$ref": "#/components/schemas/Label"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          }
+         },
+         "required": [
+          "id",
+          "title",
+          "kind",
+          "label"
+         ]
         }
        },
        "foot": {
@@ -5330,7 +5360,7 @@
        "items",
        "foot"
       ],
-      "description": "inbox"
+      "description": "inbox: kept findings with no label yet"
      },
      {
       "type": "object",
