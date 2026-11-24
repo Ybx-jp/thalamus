@@ -125,6 +125,11 @@ class Rig:
     proc: subprocess.Popen
     log: Path
     repos: list[Path] = field(default_factory=list)
+    # The console's environment, reused for every tmux client this rig runs. A window
+    # created from a client resolves its command on the *client's* PATH, so a client
+    # running in the suite's own environment would find the operator's real `claude`
+    # (or, on CI, nothing — the window dies) instead of the rig's stand-in.
+    env: dict[str, str] = field(default_factory=dict)
 
     @property
     def base(self) -> str:
@@ -157,7 +162,7 @@ class Rig:
 
     def tmux(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run(["tmux", "-L", self.socket, *args], capture_output=True,
-                              text=True, timeout=15)
+                              text=True, timeout=15, env=self.env or None)
 
     def window_names(self) -> list[tuple[int, str]]:
         r = self.tmux("list-windows", "-t", self.session, "-F",
@@ -334,7 +339,7 @@ def console_rig(*, repos: tuple[str, ...] = ("alpha", "beta"),
         proc = subprocess.Popen(argv, env=child_env, stdout=fh, stderr=subprocess.STDOUT,
                                 cwd=str(root), start_new_session=True)
     rig = Rig(root=root, home=home, projects=projects, socket=sock, session=session,
-              port=port, proc=proc, log=log, repos=made)
+              port=port, proc=proc, log=log, repos=made, env=child_env)
     try:
         deadline = time.monotonic() + start_timeout
         while True:
