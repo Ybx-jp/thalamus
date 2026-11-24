@@ -132,6 +132,43 @@ def test_an_app_file_keeps_its_sandbox_policy_and_cors_header(console):
     assert headers["Access-Control-Allow-Origin"] == "*"
 
 
+def _header_lines(port, path):
+    conn = HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.request("GET", path)
+    resp = conn.getresponse()
+    resp.read()
+    conn.close()
+    return resp.getheaders()
+
+
+@pytest.mark.parametrize("path", ["/api/jobs/apps/x/files/index.html", "/api/jobs/jobs", "/api/jobs/missing",
+                                  "/api/jobs/../x"])
+def test_every_jobs_reply_carries_the_consoles_own_sandbox_policy(console, path):
+    """A reply here is served from the console's origin, which can drive every pane.
+
+    A source that answered with HTML and no policy would hand a top-level tab at that
+    URL the whole console, so the console sends its own sandbox policy on every reply,
+    as a separate line beside the source's: the browser enforces both, so a source can
+    tighten and never loosen.
+    """
+    lines = _header_lines(console, path)
+    policies = [v for k, v in lines if k.lower() == "content-security-policy"]
+    assert "sandbox allow-scripts" in policies
+    assert all("allow-same-origin" not in p for p in policies)
+    assert ("X-Content-Type-Options", "nosniff") in lines
+    if path.endswith("index.html"):
+        # The source's own policy still arrives, as a second line.
+        assert "sandbox allow-scripts; default-src 'none'" in policies
+
+
+def test_a_source_that_sends_no_policy_still_gets_one(tmp_path):
+    from thalamus_console.jobs_source import relay_headers
+
+    lines = relay_headers({"Content-Type": "text/html"})
+    assert ("Content-Security-Policy", "sandbox allow-scripts") in lines
+    assert ("X-Content-Type-Options", "nosniff") in lines
+
+
 def test_the_sources_refusal_comes_back_as_it_was_sent(console):
     status, _, data = _request(console, "GET", "/api/jobs/missing")
     assert status == 404 and json.loads(data) == {"error": "no such job"}

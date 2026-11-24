@@ -2146,7 +2146,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", cache or
                          ("no-store" if ctype.startswith("application/json") else "no-cache"))
-        for key, value in (headers or {}).items():
+        # A dict, or a list of (key, value) lines when one header must be sent twice:
+        # the jobs proxy sends its own Content-Security-Policy beside the source's.
+        for key, value in (headers.items() if isinstance(headers, dict) else headers or ()):
             self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
@@ -2180,10 +2182,9 @@ class Handler(BaseHTTPRequestHandler):
         reply = jobs_source.forward(self.cfg.jobs_source, self.cfg.jobs_token_file,
                                     "POST" if body is not None else "GET",
                                     path[len("/api/jobs/"):], query, body)
-        headers = dict(reply.headers)
-        ctype = headers.pop("Content-Type", "application/json")
-        cache = headers.pop("Cache-Control", None)
-        self._send(reply.status, reply.body, ctype, cache=cache, headers=headers)
+        self._send(reply.status, reply.body, reply.headers.get("Content-Type", "application/json"),
+                   cache=reply.headers.get("Cache-Control"),
+                   headers=jobs_source.relay_headers(reply.headers))
 
     @_answered("GET")
     def do_GET(self):

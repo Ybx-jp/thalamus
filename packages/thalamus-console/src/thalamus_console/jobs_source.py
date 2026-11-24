@@ -41,6 +41,32 @@ _QUERY = re.compile(r"^[A-Za-z0-9._:=&-]*$")
 PASSED_HEADERS = ("Content-Type", "Content-Security-Policy", "Access-Control-Allow-Origin",
                   "Cache-Control", "X-Content-Type-Options")
 
+# What the console sends on every /api/jobs/ reply, whatever the source sent. A reply
+# here is served from the console's own origin, and that origin can drive every tmux
+# window (/api/send passes the Origin check for it). So a source that answered some
+# path with HTML and no policy of its own would hand a page opened at that URL the
+# whole console. The sandbox policy gives any such document an opaque origin, and it
+# is sent beside the source's policy, never instead of it: a browser enforces every
+# policy it receives, so a source can tighten (connect-src, wasm-unsafe-eval for an
+# engine) and cannot loosen. A sandbox policy does nothing to a JSON reply, so it is
+# sent on all of them rather than on the paths that look like files.
+FORCED_HEADERS = (("Content-Security-Policy", "sandbox allow-scripts"),
+                  ("X-Content-Type-Options", "nosniff"))
+
+
+def relay_headers(source_headers: dict[str, str]) -> list[tuple[str, str]]:
+    """The header lines the console sends with a source's reply.
+
+    FORCED_HEADERS first, then the source's own Content-Security-Policy and CORS header
+    as further lines. Content-Type and Cache-Control are the caller's; the source's
+    nosniff is dropped as a duplicate of the forced one.
+    """
+    lines = list(FORCED_HEADERS)
+    for key in ("Content-Security-Policy", "Access-Control-Allow-Origin"):
+        if source_headers.get(key):
+            lines.append((key, source_headers[key]))
+    return lines
+
 TIMEOUT_S = 15.0
 # A JSON reply is small; an app's engine bytes are not (a Stockfish WebAssembly build
 # with its network runs to tens of megabytes).

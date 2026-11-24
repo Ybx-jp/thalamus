@@ -8,6 +8,13 @@ program serves. Anything that answers these paths can be a jobs source.
 `/api/jobs/<path>` to `URL/v1/console/<path>` with `Authorization: Bearer <token>`
 added by the console. Status codes and bodies pass through unchanged.
 
+Every reply the console relays from a source carries the console's own
+`Content-Security-Policy: sandbox allow-scripts` and `X-Content-Type-Options: nosniff`,
+whatever the source sent. The console sends the source's own policy as well, on a
+separate line. A browser enforces both, so a source can tighten the policy but never
+loosen it. A page the source serves, even one opened in a tab of its own, runs in an
+opaque origin and cannot use the console's API.<!-- (A0265, cites-as-live) -->
+
 ## Rules every answer follows
 
 - JSON objects only. An error is `{"error": "<sentence>"}` with a 4xx or 5xx status;
