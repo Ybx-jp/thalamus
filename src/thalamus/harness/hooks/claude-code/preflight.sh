@@ -32,7 +32,9 @@
 
 set -uo pipefail
 
-. "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
+# Builtins only until the session type is known: a PATH that has lost jq has usually
+# lost coreutils with it, and a resolver that cannot run reads as attended (#403).
+. "${BASH_SOURCE[0]%/*}/resolve-scope.sh"
 thalamus_sandbox_guard
 
 # Resolved from the environment before anything is read from the payload: what a hook
