@@ -547,6 +547,25 @@ never cached — a stale pane would be a lie.
 
 ---
 
+### Jobs
+
+With `--jobs-source` set, the header carries a **jobs** link. It opens pages for
+whatever program runs your scheduled jobs: the jobs and their last state, one job's
+stages for a chosen run, its history by commit, a tuned change's replay-gate receipt
+with the diff, a run's telemetry and findings (each with useful / not useful / wrong),
+and the repository's commits. On a window 1024 px wide or more the list is a canvas
+instead: the jobs as a graph from sources to the phone, a version lane, and an inspector.
+
+The console knows nothing about that program. It forwards `/api/jobs/<path>` to
+`<source>/v1/console/<path>` and attaches the token itself, so the token never reaches
+the browser.<!-- (A0262, cites-as-contested) -->
+A write (run now, replay, revert, a label, the auto-apply switch) is forwarded only after
+the same Origin check every other write here passes, so a page on another origin, or a
+sandboxed frame, cannot reach the source through the console.<!-- (A0263, cites-as-live) -->
+The source composes every word the pages show and sends a status as a word and a tone;
+the pages print the word. The paths and shapes a source answers with are in
+[console-jobs-source.md](console-jobs-source.md).
+
 ## Keeping it running
 
 The console runs under whatever supervises processes on the box — systemd on Linux,
@@ -794,6 +813,8 @@ nothing about one operator's setup is baked into the code.
 | `--frames PATH` | none | Frame-theme definitions for the desktop client (see "On a desktop browser") |
 | `--allow-origin ORIGIN` | none | Also accept writes from this origin, for a proxy that rewrites `Host` (repeatable — see "The one thing reachability does not cover") |
 | `--fetch-interval MIN` | `10` | How often to fetch the checkout's remote, so "behind" is a fact rather than a report on the last manual fetch. `0` disables it |
+| `--jobs-source URL` | none | The program that runs your scheduled jobs; the jobs pages read it (see "Jobs") |
+| `--jobs-token-file PATH` | none | A file holding that program's bearer token |
 
 The spawn picker's directory list is also the **whitelist**: a spawn request is
 checked against the same computation that built the list, so the client can only

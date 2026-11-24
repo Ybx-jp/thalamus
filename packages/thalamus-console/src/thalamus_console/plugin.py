@@ -344,6 +344,16 @@ def register_commands(subparsers, commands) -> None:
              "to is accepted)"
     )
     console_parser.add_argument(
+        "--jobs-source", default="", metavar="URL",
+        help="Base URL of the program that runs your scheduled jobs; the jobs, board "
+             "and app-widget screens read it through /api/jobs/ (default: none — no "
+             "such screens)"
+    )
+    console_parser.add_argument(
+        "--jobs-token-file", type=Path, default=None, metavar="PATH",
+        help="File holding the jobs source's bearer token, sent server-side only"
+    )
+    console_parser.add_argument(
         "--fetch-interval", type=float, default=10.0, metavar="MINUTES",
         help="How often to fetch the checkout's remote so the console knows whether "
              "it is behind (default: 10; 0 disables, and the count then only reflects "

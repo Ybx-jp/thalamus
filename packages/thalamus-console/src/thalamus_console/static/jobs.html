@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Relative URLs, like the roster's shell: the console is mounted under a path. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1116">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'none'">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="surface.css">
+<link rel="stylesheet" href="jobs.css">
+<title>Jobs · Thalamus Console</title>
+</head>
+<body class="surface jobs">
+<header class="s-head">
+  <a class="s-back" id="back" href="./" aria-label="Back">‹</a>
+  <span class="s-title" id="title">jobs</span>
+  <span id="head-act"></span>
+</header>
+<main class="s-main" id="main" aria-live="polite"></main>
+<script src="surface.js"></script>
+<script src="jobs.js"></script>
+</body>
+</html>

@@ -728,6 +728,16 @@ textarea:focus { outline: none; border-color: var(--chan); }
   cursor: pointer;
 }
 .admin-btn:active { color: var(--chan); }
+/* The jobs and board links: words in the header's control slot. 44 px tall so the
+   word is a thumb target, not just its glyph box. */
+.navlink {
+  font: 400 .82rem var(--ui);
+  text-decoration: none;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.navlink[hidden] { display: none; }
 .admin {
   position: fixed;
   inset: 0;
