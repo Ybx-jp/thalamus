@@ -751,8 +751,8 @@ function graphNode(n, box) {
 // The version lane: one row per job, commits along the bottom, a mark where a job ran
 // on a version. Marks are text ("1", "6 replays", "next"), so the lane reads without
 // its tones. The commit axis is pinned at the bottom of the canvas column, always in
-// view; the job rows above it scroll on their own once there are more than five.
-const LANE = { x0: 170, rowH: 30, rowsMax: 5, axisH: 66 };
+// view; the job rows above it scroll on their own once there are more than four.
+const LANE = { x0: 170, rowH: 30, rowsMax: 4, axisH: 66 };
 
 function laneView(lane) {
   if (!lane || !(lane.commits || []).length) return null;
