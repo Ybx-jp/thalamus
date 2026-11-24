@@ -161,8 +161,10 @@ graph, `~/.thalamus/` and the transcript archive alone.
 
 ### Then relaunch your editor
 
-Hooks and the MCP server arm per process, so an already-running session picks up
-nothing. Quit and reopen your editor; `/clear` is not enough.
+The MCP server arms per process, so a session already running never gains its
+tools. Quit and reopen your editor; `/clear` is not enough. Claude Code picks up
+the hooks in an open session by itself — the relaunch is for the
+server.<!-- (A0257, cites-as-live) -->
 
 A new session should greet you with a memory prompt and its pinned scope. From there,
 memory builds itself. Distillation runs when a session ends, detached, and says nothing

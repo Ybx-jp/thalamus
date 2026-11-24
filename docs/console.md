@@ -423,8 +423,9 @@ discontinuity is what guards the controls rather than putting them out of reach.
 The two are the same size and differ by outline, because shipping the more final
 action as the smaller target is how a mis-tap happens.
 
-- **restart** replaces a window's claude process. MCP servers and hooks arm *per
-  process*, so this is how a wiring change actually takes effect. It
+- **restart** replaces a window's claude process. MCP servers arm *per process*, so
+  this is how a server or env change takes effect; a hook edit reaches a Claude
+  Code window without one.<!-- (A0257, cites-as-live) --> It
   sends `/exit` — which fires SessionEnd, so the session distills to memory
   normally — waits up to 4 minutes for it, then respawns the window with its
   original command and `THALAMUS_SCOPE` intact. Only a session that hangs past the
