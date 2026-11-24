@@ -57,9 +57,7 @@ const DEFAULT_SIZE = {
 
 // B3 designs the Number editor only. Every other kind gets the same form pattern —
 // a stack of labelled selects, a live preview above, one primary button below — with
-// the fields its binding needs and nothing more. Title is on every kind. There is no
-// Show when: a visibility rule nothing evaluates is a saved field nobody reads, so it
-// waits for an evaluator (designer ruling, 2026-11-24). The fields are the bindings
+// the fields its binding needs and nothing more. Title is on every kind. The fields are the bindings
 // the source validates (sensorium board.py): it takes structured fields only, never a
 // query, and refuses anything outside them with a reason the preview prints.
 const KIND_FIELDS = {

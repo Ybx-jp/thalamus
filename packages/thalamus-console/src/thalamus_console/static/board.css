@@ -68,8 +68,6 @@ body.board { --bar: #565e69; /* --muted at .55 over --panel, flattened */ }
 .b-none { font-size: .82rem; padding: .4rem 0; }
 .b-wid-err { color: var(--danger-text); font-size: .82rem; }
 
-/* A widget whose show-when is not met: gone from the board, kept (dashed, with its
-   line saying why) while editing so it can still be found and changed. */
 
 
 /* ---- widget bodies ----------------------------------------------------- */
