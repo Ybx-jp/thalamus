@@ -111,6 +111,13 @@ A manifest can also declare:
   an undeclared name, or round a loop is refused, naming its manifest, and a chain may be
   any depth.<!-- (A0259, cites-as-live) -->
   `thalamus reporting` prints the tree.
+- **`rules`** — rules that bind this scope and every scope under it, at any depth. A
+  scope's charter is its `domain` followed by the `rules` of each scope above it and
+  its own, top-most first, and every carrier of a charter reads that text: the pinned
+  agent file and codex profile, the delegated prompt and the consultation brief. A
+  subordinate's own `rules` add to what it inherits, and nothing in a manifest removes
+  an inherited rule.<!-- (A0261, cites-as-live) -->
+  `thalamus contract check --experts` lists whose rules bind each scope.
 - **MCP servers** of its own, in `config/mcp/<scope>.json`, giving a scope tools no
   other scope has.<!-- (A0007, cites-as-live) -->
   `designer` is the worked example.

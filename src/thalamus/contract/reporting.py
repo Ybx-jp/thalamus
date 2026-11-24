@@ -9,6 +9,13 @@ a loop fails the build. There is no limit on depth.
 
 The manifests are the only place this is stored. The tree is rebuilt from them on every
 read and never saved anywhere else, so it cannot disagree with them.
+
+A manifest's `rules` travel down the tree. A scope's charter is its own `domain`
+followed by the `rules` of every scope above it and its own, top-most first, so a
+manager's rules bind its whole group at any depth, and a subordinate can add a rule and
+cannot remove one. This is the shape of a service control policy in AWS Organizations:
+a policy attached to a unit applies to every account under it, and nothing granted
+lower down can exceed it.
 """
 
 from __future__ import annotations
@@ -16,7 +23,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from thalamus.contract.manifest import available_scopes, experts_dir, load_manifest
+from thalamus.contract.manifest import (
+    ExpertManifest,
+    available_scopes,
+    experts_dir,
+    load_manifest,
+)
 from thalamus.contract.ontology import MAIN_SCOPE
 
 
@@ -99,3 +111,55 @@ def reporting_graph(base: Path | None = None) -> ReportingGraph:
     superiors = {scope: load_manifest(scope, base).reports_to for scope in scopes}
     where = {scope: experts_dir(base) / f"{scope}.yaml" for scope in scopes}
     return build(superiors, where)
+
+
+def inherited_rules(
+    manifest: ExpertManifest, base: Path | None = None
+) -> list[tuple[str, str]]:
+    """Every `rules` text binding this scope, as (origin scope, text), top-most first.
+
+    The chain runs from the scope's superior up to `main` and ends with the scope's own
+    `rules`; a scope with no text is skipped. `base` defaults to the config root the
+    manifest was loaded from. A scope reporting to `main` reads no other manifest. Any
+    other reads the whole tree, checked by `build`, so a loop or an undeclared superior
+    anywhere in it is refused here as it is by `thalamus reporting`.
+    """
+    base = base if base is not None else manifest._base
+    chain = [manifest]
+    if manifest.reports_to != MAIN_SCOPE:
+        graph = reporting_graph(base)
+        if manifest.scope not in graph.superiors:
+            raise ValueError(
+                f"`{manifest.scope}` is not declared under {experts_dir(base)}, so the "
+                f"rules above it cannot be read"
+            )
+        up = graph.superior(manifest.scope)
+        while up is not None and up != MAIN_SCOPE:
+            chain.append(load_manifest(up, base))
+            up = graph.superior(up)
+    return [(m.scope, m.rules.strip()) for m in reversed(chain) if m.rules.strip()]
+
+
+def charter_domain(manifest: ExpertManifest, base: Path | None = None) -> str:
+    """The domain a scope's charter states: its own `domain`, then each rule set binding it.
+
+    Every carrier of a charter reads this rather than `domain`: the pinned agent file
+    and codex profile, the delegated prompt, and the consultation brief. A rule a
+    carrier left out would bind a pinned session and not a delegated one
+    (A0261, cites-as-live).
+    """
+    parts = [manifest.domain.strip()]
+    for origin, text in inherited_rules(manifest, base):
+        if origin == manifest.scope:
+            heading = (
+                "Rules binding this scope and every scope that reports to it, "
+                "at any depth:"
+            )
+        else:
+            heading = (
+                f"Rules binding this scope, from `{origin}`, which it reports to. "
+                "Nothing in this charter relaxes them; where they and the charter "
+                "differ, the stricter governs:"
+            )
+        parts.append(f"{heading}\n\n{text}")
+    return "\n\n".join(p for p in parts if p)

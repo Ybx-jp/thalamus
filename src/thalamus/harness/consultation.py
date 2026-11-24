@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from gremlin_python.process.graph_traversal import GraphTraversalSource
 
 from thalamus.contract.manifest import available_scopes, load_manifest
+from thalamus.contract.reporting import charter_domain
 from thalamus.contract.ontology import (
     CORE_NODES,
     MAIN_SCOPE,
@@ -388,7 +389,7 @@ def consult_request(
     return "\n".join(
         [
             f"## Consultation ticket `{ticket}` (exchange `{vertex_id}`)",
-            f"**Expert:** {manifest.name} (scope `{expert}`) — {manifest.domain.strip()}",
+            f"**Expert:** {manifest.name} (scope `{expert}`) — {charter_domain(manifest)}",
             f"**Question:** {question}",
             "",
             *(
