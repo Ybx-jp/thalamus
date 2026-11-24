@@ -264,11 +264,11 @@ button.d-node { cursor: pointer; }
 }
 .d-note { position: absolute; font-style: italic; }
 .d-lane { border-top: 1px solid var(--hair); flex: none; overflow-x: auto; overflow-y: hidden; }
-.d-lane-in { position: relative; min-width: 100%; padding-top: 2rem; }
+.d-lane-in { position: relative; min-width: 100%; padding-top: 1.7rem; }
 .d-lane-rows { overflow-y: auto; overflow-x: hidden; }
 .d-lane-rows-in { position: relative; }
 .d-lane-axis { position: relative; }
-.d-lane-label { position: absolute; left: 1rem; top: .7rem; }
+.d-lane-label { position: absolute; left: 1rem; top: .5rem; }
 .d-lane-row { position: absolute; left: 0; right: 0; height: 30px; border-bottom: 1px solid #1d232b; }
 .d-all { margin: 0 1.2rem .4rem; }
 .d-lane-name { position: absolute; left: 1rem; top: 6px; }
@@ -277,7 +277,7 @@ button.d-node { cursor: pointer; }
   border-radius: 5px; font-size: .68rem; display: inline-flex; align-items: center; justify-content: center;
   background: var(--panel);
 }
-.d-tick { position: absolute; top: 8px; width: 56px; text-align: center; font-size: .66rem; line-height: 1.4; }
+.d-tick { position: absolute; top: 3px; width: 56px; text-align: center; font-size: .66rem; line-height: 1.4; }
 .d-tick-dot {
   display: block; width: 12px; height: 12px; margin: 0 auto .3rem; border-radius: 50%;
   border: 2px solid var(--muted); background: var(--bg);
