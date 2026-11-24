@@ -5854,8 +5854,15 @@
       ]
      },
      "seconds": {
-      "type": "number",
-      "minimum": 0
+      "anyOf": [
+       {
+        "type": "number",
+        "minimum": 0
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "engine_ms": {
       "anyOf": [
@@ -5869,7 +5876,14 @@
       ]
      },
      "submitted_ms": {
-      "type": "integer"
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ]
      }
     },
     "required": [
@@ -5886,7 +5900,7 @@
      "engine_ms",
      "submitted_ms"
     ],
-    "description": "The chess-positions app's write grant, one row per first try. Submit writes the row at once with the verdict fields null, which locks the position; a later write with the same uci and a verdict scores it. A row that has a verdict is never scored again (409).",
+    "description": "The chess-positions app's write grant, one row per first try. Submit writes the row at once with the verdict fields null, which locks the position; a later write with the same uci and a verdict scores it. A row that has a verdict is never scored again (409). seconds and submitted_ms are required on the first write and may be null on the scoring write, where the stored values stand.",
     "examples": [
      {
       "run_id": "947d9612",
