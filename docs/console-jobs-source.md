@@ -152,3 +152,48 @@ Each is a POST with a JSON body, forwarded only after the console's Origin check
 | `changes/<sha>/revert` | `{}` | pauses auto-apply for the job, then reverts the change as a new commit |
 
 A write answers `{"ok": true, …}` or an error.
+
+## The board
+
+`GET board` answers `{"widgets": [Widget], "version": sha | null}`. `POST board`
+with `{"widgets": [Widget], "base": sha | null}` saves a layout and answers
+`{"ok": true, "version": sha}`. It answers 409 when `base` is no longer the saved
+version, so two editors cannot overwrite each other unseen.
+
+A Widget is `{"id", "kind", "title", "binding": {…}, "show_when", "x", "y", "w", "h"}`.
+`kind` is one of `number`, `series`, `table`, `tail`, `inbox`, `control`, `note`
+or `app`. The binding is structured: a source table, a value, filters and windows,
+each picked from `GET board/sources`. A source never runs SQL text a client sent.
+`POST board/eval` with `{"widget": Widget, "range"?, "scope"?}` answers what that
+widget shows, already composed; `"shown": false` hides it. For example, a number answers
+`{"value": "7 of 16", "compare": "previous 6 weeks: 10 of 64", "foot": "games_weekly"}`.
+
+## App widgets
+
+An app widget is a small page a person or a job built. The source serves its files at
+`apps/<app>/files/<path>` with this policy and CORS header on every response:
+
+    Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src blob:; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'
+    Access-Control-Allow-Origin: *
+
+The board embeds it as `<iframe sandbox="allow-scripts">`, with no `allow-same-origin`
+ever. The page therefore has an opaque origin. It cannot read the console's DOM, its
+storage or its API responses, and any POST it sends carries `Origin: null` and is
+refused. The CORS header lets the opaque page fetch its own static files, for example
+an engine's WebAssembly. Nothing else in the tree carries that header.
+
+The page gets data and writes rows only through the board, by `postMessage`:
+
+| From | Message | Meaning |
+|---|---|---|
+| app | `{"thalamus": "app/ready"}` | loaded; send me my data |
+| board | `{"thalamus": "app/data", "data": …, "error"?}` | the answer of `GET apps/<app>/data` |
+| app | `{"thalamus": "app/write", "id", "row": {…}}` | store this row |
+| board | `{"thalamus": "app/written", "id", "ok", "error"?, "data"?}` | the answer of `POST apps/<app>/write`, whose body is the row itself |
+| app | `{"thalamus": "app/open"}` / `{"thalamus": "app/close"}` | open the app full screen / close it |
+
+The board accepts a message only when `event.source` is one of its own app frames, and
+it routes the message by that frame, never by an id in the body. A write is capped at
+4 KB and one per second per app. `GET apps/<app>/data` returns only the fields the
+app's grant names, and `POST apps/<app>/write` checks the row against the grant's
+schema. Whatever an app is not granted never reaches its frame.

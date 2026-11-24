@@ -566,6 +566,23 @@ The source composes every word the pages show and sends a status as a word and a
 the pages print the word. The paths and shapes a source answers with are in
 [console-jobs-source.md](console-jobs-source.md).
 
+### The board
+
+The **board** link opens a page of widgets over the same source: a number with a
+comparison, a series, a table, the newest raw events, findings to label, a switch or
+a run button, a note, or an app. **edit** adds, edits and removes widgets. On a
+desktop-width window, edit mode is a four-column grid: drag a widget by its handle,
+and resize it from its corner. **Done** saves the layout to the source. If someone
+else saved first, the board reloads and says so.
+
+An app widget is a small page a person or a job built, such as a trainer that runs a
+chess engine in the page. The board runs it in a frame sandboxed to scripts alone,
+so it has an opaque origin. The board acts on a message only when it comes from one of
+its own app frames, and it identifies the app by the frame that sent it, never by
+anything the message says.<!-- (A0264, cites-as-live) -->
+The app gets only the fields its grant names, and it writes back only through the
+board. The page's own policy keeps a frame from navigating to another origin.
+
 ## Keeping it running
 
 The console runs under whatever supervises processes on the box — systemd on Linux,
