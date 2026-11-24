@@ -38,6 +38,9 @@ none
   evidence: code: packages/thalamus-console/src/thalamus_console/jobs_source.py § "forward" =sha256:9f43e31d48bf477af81fcc8f9cd4d160c287f97b98e95e7b959c45d4ca611519
   artifact: sha256:88b7034e31b48af1445912b0272092bfae471d20ee72e046688e482748ad01b0
   note: propagated from a moved ground
+- 2026-11-24T01:58:33-08:00 · corroborated · grade: argued · author: main
+  evidence: code: packages/thalamus-console/src/thalamus_console/jobs_source.py § "forward" =sha256:88b7034e31b48af1445912b0272092bfae471d20ee72e046688e482748ad01b0
+  note: forward moved for the proxy fixes: the token is now added with add_unredirected_header, redirects are refused through _NoRedirects and answered 502, and the reply is built by _relay, which 502s a short or oversized body and otherwise keeps only PASSED_HEADERS. The token is still read and attached in the console process, no relayed header and no 502 message carries it, so it still never reaches the browser
 
 ## References
-- docs/console.md · standing · cites-as-contested
+- docs/console.md · standing · cites-as-live

@@ -66,6 +66,11 @@ dev = [
     # HTTP surface (`tests/qe/cases/console_api_*`). In `dev` rather than its own extra
     # because those cases are in the fast tier, which CI runs on `--extra dev`.
     "hypothesis>=6.100",
+    # Validates the jobs-source OpenAPI spec's schemas and examples
+    # (`tests/test_console_jobs_spec.py`). Declared because it otherwise arrives only
+    # through `mcp`; the console never imports it at run time. 4.0 is the first release
+    # with Draft 2020-12, the dialect OpenAPI 3.1 schemas are written in.
+    "jsonschema>=4.0",
 ]
 # The browser the qe suite's `browser` tier drives the console's pages in. Its own
 # extra because it downloads a Chromium build (`playwright install chromium`) that no

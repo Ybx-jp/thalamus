@@ -56,6 +56,13 @@ none
 - 2026-11-24T01:57:36-08:00 · corroborated · grade: measured · author: main
   evidence: toml: pyproject.toml § "project.optional-dependencies" =sha256:87d7b9364b44e3089819b378f8eb1c62f7c224e0ce15c8f61d2c63ea489bde3f
   note: the dev extra gained hypothesis>=6.100 and a new qe-browser extra holds playwright>=1.49; ty is still pinned at ==0.0.74 in the dev extra, so the assertion is unaffected
+- 2026-11-24T08:15:24-08:00 · contested · grade: measured · author: propagation
+  evidence: toml: pyproject.toml § "project.optional-dependencies" =sha256:87d7b9364b44e3089819b378f8eb1c62f7c224e0ce15c8f61d2c63ea489bde3f
+  artifact: sha256:a7bcfb16ec265f088ef228c3d86b1fc1f9980df15a50f1b76ad3aed20bc1cd23
+  note: propagated from a moved ground
+- 2026-11-24T08:15:25-08:00 · corroborated · grade: measured · author: main
+  evidence: toml: pyproject.toml § "project.optional-dependencies" =sha256:a7bcfb16ec265f088ef228c3d86b1fc1f9980df15a50f1b76ad3aed20bc1cd23
+  note: the dev extra gained jsonschema>=4.0 for the jobs-source spec test; ty is still pinned at ==0.0.74 in the dev extra, so the assertion is unaffected
 
 ## References
 
