@@ -43,7 +43,22 @@ none
 - 2026-09-20T20:37:29-07:00 · corroborated · grade: argued · author: main
   evidence: code: src/thalamus/arch/routes.py § "_matching" =sha256:f3345b5f3da64cc18f6b3f1793763a012af0301fbcc141d5615b1d3c04143662
   note: the citation marker inside this section now names the entry by id alone, under the `citation-slug` rule `claims-ledger.toml` sets for source files, and the paragraph holding it was rewrapped. The assertion is unaffected.
+- 2026-10-25T23:45:33-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/arch/routes.py § "_matching" =sha256:f3345b5f3da64cc18f6b3f1793763a012af0301fbcc141d5615b1d3c04143662
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-25T23:45:33-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/arch/routes.py § "_nameable" =sha256:117bd7272da4b09c999c8c6e9ec7580d51024526305e10d37020d55e64f5e8a4
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-25T23:47:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: packages/thalamus-arch/src/thalamus_arch/routes.py § "_matching" =sha256:f3345b5f3da64cc18f6b3f1793763a012af0301fbcc141d5615b1d3c04143662
+  note: src/thalamus/arch/routes.py moved into the thalamus-arch package as routes.py with _matching unchanged, so the assertion is unaffected
+- 2026-10-25T23:47:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: packages/thalamus-arch/src/thalamus_arch/routes.py § "_nameable" =sha256:117bd7272da4b09c999c8c6e9ec7580d51024526305e10d37020d55e64f5e8a4
+  note: src/thalamus/arch/routes.py moved into the thalamus-arch package as routes.py with _nameable unchanged, so the assertion is unaffected
 
 ## References
 
-- src/thalamus/arch/routes.py · standing · cites-as-live
+- packages/thalamus-arch/src/thalamus_arch/routes.py · standing · cites-as-live

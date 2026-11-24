@@ -59,14 +59,16 @@ RETRIEVAL_TOOLS = frozenset(
         "memory_source_chunks",
         "memory_resolve",
         "bash_gremlin",
-        # The memory reflex's arms, one per plan (harness/reflex.py, reflex.sh):
-        # retrieval the harness initiated off a failed Bash result. Priced here like
-        # every other retrieval; `eval reflex` reads them by arm. Without an arm's
-        # entry `load_events()`'s default filter drops every line it writes.
+        # The memory reflex's arms, one per plan (the thalamus-reflex plugin's
+        # `thalamus_reflex.reflex` and `reflex.sh`): retrieval the harness initiated off
+        # a failed Bash result. Priced here like every other retrieval; `eval reflex`
+        # reads them by arm. Without an arm's entry `load_events()`'s default filter
+        # drops every line it writes. Named here rather than by the plugin because the
+        # lines are already on disk: a box that removes the plugin still prices them.
         "reflex_lexical",
         "reflex_propagation",
         # Written by the carrier when it delivers the worker's result
-        # (harness/reflex_worker.py), not when the firing happened.
+        # (thalamus_reflex.reflex_worker), not when the firing happened.
         "reflex_agentic",
         # A read of a reflex pointer file (reflex-pointer-tap.sh): the file's records
         # entering context when the agent opens them, priced like any retrieval.

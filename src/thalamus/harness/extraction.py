@@ -53,7 +53,7 @@ from thalamus.harness.agents import (
     cli_for,
     sandbox_env,
 )
-from thalamus.harness.transcripts import EXTERNAL_INGRESS_TOOLS
+from thalamus.harness.transcripts import EXTERNAL_INGRESS_TOOLS, is_compaction_summary
 from thalamus.substrate.reader import (
     MIN_MATCHED_RATIO,
     MIN_MATCHED_TERMS,
@@ -199,8 +199,9 @@ def render_digest(
     """Render archived transcript bytes into a compact, readable exchange log.
 
     Keeps user prompts, assistant prose, tool calls (name + salient input), and heavily
-    truncated tool results. Drops sidechains, meta records, and system-injected noise —
-    the extractor needs the *conversation*, not the plumbing.
+    truncated tool results. Drops sidechains, meta records, system-injected noise, and
+    the summary a compaction writes, whose turns are already earlier in the file
+    (A0229, cites-as-live) — the extractor needs the *conversation*, not the plumbing.
 
     Harness-tolerant where the harnesses are alike and dispatched where they are not.
     Claude Code discriminates rows with `type`, Cursor with `role` and nothing else
@@ -220,7 +221,7 @@ def render_digest(
     lines: list[str] = []
     external_tool_uses: set[str] = set()
     for record in _records(payload):
-        if record.get("isSidechain") or record.get("isMeta"):
+        if record.get("isSidechain") or record.get("isMeta") or is_compaction_summary(record):
             continue
         record_type = record.get("type") or record.get("role")
         content = (record.get("message") or {}).get("content")
@@ -264,7 +265,7 @@ def render_digest(
                 elif block.get("type") == "tool_use":
                     if block.get("name") in EXTERNAL_INGRESS_TOOLS and block.get("id"):
                         external_tool_uses.add(block["id"])
-                    lines.append(f"{tag}  tool: {_tool_use_line(block)}")
+                    lines.append(f"{tag}  tool: {tool_use_line(block)}")
 
     digest = "\n".join(lines)
     if len(digest) <= budget:
@@ -375,7 +376,7 @@ def _codex_output_text(output) -> str:
     return "\n".join(part for part in parts if part).strip()
 
 
-def _tool_use_line(block: dict) -> str:
+def tool_use_line(block: dict) -> str:
     name = block.get("name", "?")
     tool_input = block.get("input") or {}
     for key in ("file_path", "notebook_path", "path", "pattern", "url"):
@@ -389,7 +390,7 @@ def _tool_use_line(block: dict) -> str:
     # fallback below dumps the whole option tree as escaped JSON, which is the
     # least readable line in the feed and the one most worth reading — it is the
     # session saying it is blocked on a human.
-    asked = _questions(tool_input)
+    asked = asked_questions(tool_input)
     if asked:
         more = f" (+{len(asked) - 1} more)" if len(asked) > 1 else ""
         return f"{name} — {_clip(asked[0]['question'], _COMMAND_CAP)}{more}"
@@ -397,7 +398,7 @@ def _tool_use_line(block: dict) -> str:
     return f"{name} {_clip(rendered, _COMMAND_CAP)}"
 
 
-def _questions(tool_input: dict) -> list[dict]:
+def asked_questions(tool_input: dict) -> list[dict]:
     """The questions in an `AskUserQuestion` input, normalised, or []."""
     raw = tool_input.get("questions")
     if not isinstance(raw, list):
@@ -769,7 +770,7 @@ thread_refs:
 ### Session metadata
 Project: {project}
 Session title: {title}
-
+{session_note}
 ### Transcript digest
 {digest}
 """
@@ -783,6 +784,7 @@ def build_prompt(
     open_threads: list[dict] | None = None,
     known_claims: list[dict] | None = None,
     served_nodes: list[dict] | None = None,
+    autonomous: bool = False,
 ) -> str:
     if open_threads:
         rendered = "\n".join(
@@ -804,8 +806,20 @@ def build_prompt(
         served_nodes=render_served_nodes(served_nodes),
         project=project,
         title=title,
+        session_note=_AUTONOMOUS_NOTE if autonomous else "",
         digest=digest,
     )
+
+
+# An autonomous run has no operator in it. Its user-role turns are the launcher's job
+# prompt, so a decision, refusal or preference read off them would be recorded as the
+# operator's when no operator said it — measured: a scheduler's prompt record was
+# flagged as operator voice on 2026-11-22 (#394).
+_AUTONOMOUS_NOTE = (
+    "Session type: AUTONOMOUS — no operator was present. The user-role turns are a "
+    "launcher's job prompt, not the operator speaking: record nothing as the operator's "
+    "decision, refusal or preference on their strength.\n"
+)
 
 
 _SERVED_TEXT_CAP = 160
@@ -1610,7 +1624,7 @@ def apply_ingress_floor(
     - the extractor's `external: true` marks are honored (good recall, but a poisoned
       page can talk the model out of marking);
     - claims whose distinctive terms echo the external texts are forced external
-      **regardless of the mark** — no instruction reaches this layer, and `_tokens`
+      **regardless of the mark** — no instruction reaches this layer, and `word_forms`
       makes it read through a claim rewritten to spell the page's words differently.
       Same dials as used-vs-ignored attribution: crude, cheap, honest.
 
@@ -1637,7 +1651,7 @@ def apply_ingress_floor(
     elif not external_texts and not any(c.external for c in graph.claims()):
         return graph
 
-    corpus_tokens = _tokens(" ".join(external_texts))
+    corpus_tokens = word_forms(" ".join(external_texts))
 
     reason = "transcript-ingress" if ingress_verifiable else "transcript-ingress-unverifiable"
     floored = Provenance(
@@ -1665,7 +1679,7 @@ def apply_ingress_floor(
     )
 
 
-def _tokens(text: str) -> set[str]:
+def word_forms(text: str) -> set[str]:
     """Every form of every word in `text` that either side could spell it as.
 
     One tokenizer, run over the page and over the claim, emitting a compound token
@@ -1712,7 +1726,7 @@ def _echoes(item: Claim | Thread | Artifact, corpus_tokens: set[str]) -> bool:
         for field_name in _ECHO_FIELDS
         if (value := getattr(item, field_name, None))
     )
-    terms = sorted(t for t in _tokens(text) if len(t) > 2 and t not in STOPWORDS)
+    terms = sorted(t for t in word_forms(text) if len(t) > 2 and t not in STOPWORDS)
     if not terms:
         return False
     matched = [term for term in terms if term in corpus_tokens]

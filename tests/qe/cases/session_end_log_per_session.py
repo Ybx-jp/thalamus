@@ -139,7 +139,7 @@ def _stub_ran(record: str, ids: tuple[str, str]) -> bool:
 
 
 def _widget_keeps_sessions_apart() -> Finding | None:
-    from thalamus.console.distill import STATE_V, DistillWatch, record_kill  # noqa: PLC0415
+    from thalamus_console.distill import STATE_V, DistillWatch, record_kill  # noqa: PLC0415
 
     a, b = _SHARED
     with tempfile.TemporaryDirectory(prefix="qe-303w-") as raw:
@@ -168,7 +168,7 @@ def _widget_keeps_sessions_apart() -> Finding | None:
                 failure_class=FailureClass.COLLAPSED_SENTINEL,
                 summary="the widget did not show a single failed session as one row joined "
                         "to its pin, so the two-session checks below prove nothing",
-                witness=f"rows={one}", site="src/thalamus/console/distill.py::rows")
+                witness=f"rows={one}", site="packages/thalamus-console/src/thalamus_console/distill.py::rows")
         (logs / f"session-end-{b}.log").write_text(_FAILED.format(sid=b))
         got = rows()
         if got != {a: "scope-a", b: "scope-b"}:
@@ -176,7 +176,7 @@ def _widget_keeps_sessions_apart() -> Finding | None:
                 failure_class=FailureClass.INVARIANT_FALSIFIED,
                 summary="two sessions sharing an 8-character id prefix are not two widget "
                         "rows each joined to its own pin",
-                witness=f"rows={got}", site="src/thalamus/console/distill.py::rows")
+                witness=f"rows={got}", site="packages/thalamus-console/src/thalamus_console/distill.py::rows")
         watch.dismiss(a)
         got = rows()
         if got != {b: "scope-b"}:
@@ -184,7 +184,7 @@ def _widget_keeps_sessions_apart() -> Finding | None:
                 failure_class=FailureClass.INVARIANT_FALSIFIED,
                 summary="dismissing one shared-prefix session did not leave exactly the other",
                 witness=f"rows after dismissing {a}: {got}",
-                site="src/thalamus/console/distill.py::dismiss")
+                site="packages/thalamus-console/src/thalamus_console/distill.py::dismiss")
         # A kill row for a session with no log must not hide its sibling's log row.
         c = "01a0d7d6-7000-7c00-8000-000000000003"
         record_kill(c, "scope-c", "/x", "close", at=time.time(), path=kills)
@@ -194,7 +194,7 @@ def _widget_keeps_sessions_apart() -> Finding | None:
                 failure_class=FailureClass.INVARIANT_FALSIFIED,
                 summary="a kill row for one shared-prefix session hid, or was hidden by, "
                         "a sibling's log row",
-                witness=f"rows={got}", site="src/thalamus/console/distill.py::rows")
+                witness=f"rows={got}", site="packages/thalamus-console/src/thalamus_console/distill.py::rows")
     return None
 
 

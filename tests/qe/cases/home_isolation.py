@@ -37,7 +37,7 @@ from ..model import Case, FailureClass, Finding, Substrate, Tier
 # perfect isolation.
 _PROBE = r"""
 import json, pathlib, importlib
-mods = ["thalamus.harness.pin", "thalamus.console.ceremonies", "thalamus.harness.rescope",
+mods = ["thalamus.harness.pin", "thalamus_console.ceremonies", "thalamus.harness.rescope",
         "thalamus.harness.quick", "thalamus.eval.conditioning",
         "thalamus.eval.traces", "thalamus.archive.store"]
 found = {}

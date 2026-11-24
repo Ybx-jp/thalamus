@@ -22,7 +22,8 @@ import pytest
 
 from thalamus.eval import legibility
 
-CSS = Path(__file__).parent.parent / "src" / "thalamus" / "console" / "static" / "style.css"
+CSS = (Path(__file__).parent.parent / "packages" / "thalamus-console" / "src"
+       / "thalamus_console" / "static" / "style.css")
 AA = 4.5
 
 

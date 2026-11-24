@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from thalamus.console import transcript as tr
+from thalamus_console import transcript as tr
 
 
 def write_jsonl(path, records):

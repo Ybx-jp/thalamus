@@ -161,9 +161,9 @@ def _fail(summary: str, witness: str, site: str) -> Finding:
 
 
 def run() -> Finding | None:
-    from thalamus.arch.extractor import ExtractorPolicy, scan_repo  # noqa: PLC0415
-    from thalamus.arch.metrics import measure  # noqa: PLC0415
-    from thalamus.arch.routes import RoutePolicy, extract_routes, merge  # noqa: PLC0415
+    from thalamus_arch.extractor import ExtractorPolicy, scan_repo  # noqa: PLC0415
+    from thalamus_arch.metrics import measure  # noqa: PLC0415
+    from thalamus_arch.routes import RoutePolicy, extract_routes, merge  # noqa: PLC0415
 
     policy = RoutePolicy(enabled=True, clients=CLIENTS, servers=("code/srv/api.py",))
     routes = extract_routes(FIXTURE, policy)
@@ -173,7 +173,7 @@ def run() -> Finding | None:
         return _fail(
             "The route walk's per-client call sets disagree with the hand-counted fixture.",
             f"observed {observed_calls}, expected {EXPECTED_CALLS}",
-            "src/thalamus/arch/routes.py:_client_literal",
+            "packages/thalamus-arch/src/thalamus_arch/routes.py:_client_literal",
         )
 
     # Membership follows the declaration, not the finding. Asserted separately from the
@@ -182,14 +182,14 @@ def run() -> Finding | None:
         return _fail(
             "A declared client with no route literals was dropped from the client set.",
             "web/sw.js is declared and must be an element whether or not it calls anything",
-            "src/thalamus/arch/routes.py:extract_routes",
+            "packages/thalamus-arch/src/thalamus_arch/routes.py:extract_routes",
         )
 
     if "/api/" in routes.called():
         return _fail(
             "The bare api namespace was counted as a route.",
             "sw.js names '/api/' to exclude it from its cache; that is not a call",
-            "src/thalamus/arch/routes.py:extract_routes",
+            "packages/thalamus-arch/src/thalamus_arch/routes.py:extract_routes",
         )
 
     defines = tuple(sorted(routes.defined()))
@@ -197,7 +197,7 @@ def run() -> Finding | None:
         return _fail(
             "The route walk's server route set disagrees with the hand-counted fixture.",
             f"observed {list(defines)}, expected {list(EXPECTED_DEFINES)}",
-            "src/thalamus/arch/routes.py:_server_literal",
+            "packages/thalamus-arch/src/thalamus_arch/routes.py:_server_literal",
         )
 
     if "/health" in routes.defined():
@@ -205,28 +205,28 @@ def run() -> Finding | None:
             "A server route outside the declared prefix was collected.",
             "/health cannot be called by a client matcher bound to '/api/', so collecting "
             "it manufactures an uncalled-route finding out of the asymmetry",
-            "src/thalamus/arch/routes.py:_server_literal",
+            "packages/thalamus-arch/src/thalamus_arch/routes.py:_server_literal",
         )
 
     if tuple(routes.unmatched_calls()) != EXPECTED_UNMATCHED:
         return _fail(
             "A call no scanned server defines must be a finding, and exactly these two are.",
             f"observed {routes.unmatched_calls()}, expected {list(EXPECTED_UNMATCHED)}",
-            "src/thalamus/arch/routes.py:RouteGraph.unmatched_calls",
+            "packages/thalamus-arch/src/thalamus_arch/routes.py:RouteGraph.unmatched_calls",
         )
 
     if tuple(routes.uncalled_routes()) != EXPECTED_UNCALLED:
         return _fail(
             "A route no scanned client calls must be reported, and exactly this one is.",
             f"observed {routes.uncalled_routes()}, expected {list(EXPECTED_UNCALLED)}",
-            "src/thalamus/arch/routes.py:RouteGraph.uncalled_routes",
+            "packages/thalamus-arch/src/thalamus_arch/routes.py:RouteGraph.uncalled_routes",
         )
 
     if tuple(routes.unresolved) != EXPECTED_UNRESOLVED:
         return _fail(
             "The scan did not name exactly the two gaps in its own reach.",
             f"observed {routes.unresolved}, expected {list(EXPECTED_UNRESOLVED)}",
-            "src/thalamus/arch/routes.py:_SERVER_INEXACT",
+            "packages/thalamus-arch/src/thalamus_arch/routes.py:_SERVER_INEXACT",
         )
 
     observed_edges = tuple(edge.as_row() for edge in routes.edges())
@@ -235,7 +235,7 @@ def run() -> Finding | None:
             "Five matched literals between two files must be one dependency, and a "
             "declared client sharing no route must be none.",
             f"observed {list(observed_edges)}, expected {list(EXPECTED_ROUTE_EDGES)}",
-            "src/thalamus/arch/routes.py:RouteGraph.edges",
+            "packages/thalamus-arch/src/thalamus_arch/routes.py:RouteGraph.edges",
         )
 
     merged = merge(scan_repo(FIXTURE, ExtractorPolicy(roots=("code",))), routes)
@@ -244,7 +244,7 @@ def run() -> Finding | None:
         return _fail(
             "The merged element set disagrees with the hand-counted fixture.",
             f"observed {merged.modules}, expected {list(EXPECTED_MODULES)}",
-            "src/thalamus/arch/routes.py:merge",
+            "packages/thalamus-arch/src/thalamus_arch/routes.py:merge",
         )
 
     merged_rows = tuple(edge.as_row() for edge in merged.edges)
@@ -255,7 +255,7 @@ def run() -> Finding | None:
             "The merged edge list disagrees with the hand-counted fixture: "
             f"{len(missing)} missing, {len(extra)} unexpected.",
             f"missing: {missing}; unexpected: {extra}",
-            "src/thalamus/arch/routes.py:merge",
+            "packages/thalamus-arch/src/thalamus_arch/routes.py:merge",
         )
 
     for depth, (edges, in_cycles, cost) in EXPECTED_READINGS.items():
@@ -275,7 +275,7 @@ def run() -> Finding | None:
                 f"Reading import_depth={depth} counted {observed}; the fixture is "
                 f"hand-counted at {(edges, in_cycles, cost)}.",
                 f"observed (edges, in_cycles, pc%) = {observed}, expected {(edges, in_cycles, cost)}",
-                "src/thalamus/arch/extractor.py:ExtractorPolicy.counts_edge",
+                "packages/thalamus-arch/src/thalamus_arch/extractor.py:ExtractorPolicy.counts_edge",
             )
 
     # Disabled is the identity case, not a third value: a scan taken before this channel
@@ -293,7 +293,7 @@ def run() -> Finding | None:
             "Merging a disabled route channel changed the import-only reading.",
             f"modules {off.modules} at {measure(off).propagation_cost * 100:.2f}%, "
             f"import-only {import_only.modules} at {import_only.propagation_cost * 100:.2f}%",
-            "src/thalamus/arch/routes.py:merge",
+            "packages/thalamus-arch/src/thalamus_arch/routes.py:merge",
         )
 
     # What the element rule is worth. Pinned so that a published movement can never be
@@ -308,7 +308,7 @@ def run() -> Finding | None:
             f"observed {without}%, hand-counted at {EXPECTED_WITHOUT_ROUTELESS_CLIENT}% "
             f"(8 of 16 cells); the shipped reading is {EXPECTED_READINGS['all'][2]}% "
             "(9 of 25), and the difference is the element rule, not a dependency",
-            "src/thalamus/arch/metrics.py:propagation_cost",
+            "packages/thalamus-arch/src/thalamus_arch/metrics.py:propagation_cost",
         )
 
     return None

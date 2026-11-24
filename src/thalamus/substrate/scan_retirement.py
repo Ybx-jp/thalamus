@@ -18,7 +18,7 @@ forever. Anything with a surviving neighbour is reported and kept — a migratio
 prints only its deletions cannot be checked for having been too eager.
 
 **Retained bytes are reported, never deleted.** Dropping a Source leaves its archived
-blob uncited, which is a category `thalamus arch growth` already measures and ranks by
+blob uncited, which is a category `thalamus growth` already measures and ranks by
 size. Unlinking evidence quietly is the one thing the archive's scan-and-report posture
 does not do.
 """

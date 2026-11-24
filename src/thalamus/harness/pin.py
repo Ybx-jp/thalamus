@@ -34,6 +34,7 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Mapping
 
 import yaml
 
@@ -44,6 +45,7 @@ from thalamus.contract.manifest import (
     load_manifest,
 )
 from thalamus.contract.ontology import MAIN_SCOPE
+from thalamus.substrate.schema import SessionType
 
 AGENT_PREFIX = "thalamus-"
 
@@ -161,8 +163,64 @@ def resolve_room(env: os._Environ | dict[str, str] | None = None) -> str:
     return env.get("THALAMUS_ROOM", "")
 
 
+# The Claude Code entrypoints a headless run reports (`claude -p` and the Agent SDK
+# both export `sdk-*`); `cli` is a terminal session. An entrypoint outside both reads
+# as attended, which keeps a harness exporting none resolving as before. The same
+# rule resolves a live session's type at launch (`thalamus_resolve_session_type` in
+# hooks/claude-code/resolve-scope.sh), which writes it into the pin ledger.
+HEADLESS_ENTRYPOINT_PREFIX = "sdk"
+
+
+def ledger_session_type(facts: dict[str, str]) -> SessionType | None:
+    """The session type a pin-ledger row records, or None when it records nothing.
+
+    The session-start hook resolves the type at launch and records it: a launcher's
+    `THALAMUS_SESSION_TYPE` wins, and a headless run nobody marked is autonomous,
+    because an unattended run read as attended would put its conclusions at
+    first-party trust and its threads in the operator's queue. A row written before the
+    field existed has no `session_type` but may carry the Claude Code `entrypoint`,
+    which settles it by that same default.
+    """
+    recorded = facts.get("session_type", "")
+    if recorded in {t.value for t in SessionType}:
+        return SessionType(recorded)
+    entrypoint = facts.get("entrypoint", "")
+    if entrypoint:
+        return (SessionType.AUTONOMOUS if entrypoint.startswith(HEADLESS_ENTRYPOINT_PREFIX)
+                else SessionType.ATTENDED)
+    return None
+
+
+def process_session_type(environ: Mapping[str, str] | None = None,
+                         pins_file: Path | None = None) -> SessionType:
+    """The session type of the session this process serves, for a write made outside
+    distillation: an exchange minted by the MCP server, or by `thalamus quick ask` run
+    from a session's shell.
+
+    Claude Code exports the session's id and entrypoint to the MCP servers it starts
+    as it does to hooks (measured on 2.1.330, 2026-11-23), so the session's own
+    pin-ledger row answers first. Without one, the rule `thalamus_resolve_session_type`
+    applies at launch: a declared `THALAMUS_SESSION_TYPE`, else a headless entrypoint is
+    autonomous, else attended — which is what a plain shell outside any session reads
+    as. (A0254, cites-as-live)
+    """
+    env = os.environ if environ is None else environ
+    session_id = env.get("CLAUDE_CODE_SESSION_ID", "")
+    if session_id:
+        recorded = ledger_session_type(ledger_facts(session_id, pins_file))
+        if recorded is not None:
+            return recorded
+    declared = "".join(env.get("THALAMUS_SESSION_TYPE", "").split()).lower()
+    if declared in {t.value for t in SessionType}:
+        return SessionType(declared)
+    if env.get("CLAUDE_CODE_ENTRYPOINT", "").startswith(HEADLESS_ENTRYPOINT_PREFIX):
+        return SessionType.AUTONOMOUS
+    return SessionType.ATTENDED
+
+
 def ledger_facts(session_id: str, pins_file: Path | None = None) -> dict[str, str]:
-    """What the pin ledger recorded about one session at launch: room, fork parent.
+    """What the pin ledger recorded about one session at launch: room, fork parent,
+    session type and entrypoint.
 
     `resolve_room` and `resolve_forked_from` read the *current* process's environment,
     which is the right answer inside the session and the wrong one afterwards. A
@@ -191,7 +249,7 @@ def ledger_facts(session_id: str, pins_file: Path | None = None) -> dict[str, st
             continue
         if row.get("session_id") != session_id:
             continue
-        for key in ("room", "forked_from"):
+        for key in ("room", "forked_from", "session_type", "entrypoint"):
             value = row.get(key) or ""
             if value:
                 facts[key] = value

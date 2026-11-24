@@ -60,6 +60,7 @@ CASE_MODULES = (
     "qe.cases.tool_write_freedom",
     "qe.cases.emptiness_predicate",
     "qe.cases.console_send_oversize_text",
+    "qe.cases.console_checkout_root_enclosing_repo",
     "qe.cases.arch_extractor",
     "qe.cases.arch_route_channel",
     "qe.cases.expectation_additions",
@@ -90,6 +91,8 @@ CASE_MODULES = (
     "qe.cases.arch_refs_ground_truth",
     "qe.cases.mcp_tool_arg_sweep",
     "qe.cases.query_guard_evasion",
+    "qe.cases.query_names_its_language",
+    "qe.cases.query_render_nonstring_keys",
     "qe.cases.console_teardown_kills_reused_window",
     "qe.cases.install_cell_ceiling",
     "qe.cases.case_logic_erosion",
@@ -115,6 +118,7 @@ CASE_MODULES = (
     "qe.cases.session_end_log_per_session",
     "qe.cases.graph_guard_script_pairing",
     "qe.cases.project_override_recall_key",
+    "qe.cases.preflight_hook",
 )
 
 
@@ -123,14 +127,16 @@ def load_cases() -> tuple[list[Case], list[str]]:
     for name in CASE_MODULES:
         try:
             module = importlib.import_module(name)
-            case = module.CASE
+            # A module carries one `CASE`, or a `CASES` tuple when its cases share a driver.
+            declared = tuple(getattr(module, "CASES", None) or (module.CASE,))
         except Exception as exc:  # noqa: BLE001
             broken.append(f"{name}: {type(exc).__name__}: {exc}")
             continue
-        if not isinstance(case, Case):
-            broken.append(f"{name}: CASE is {type(case).__name__}, not Case")
-            continue
-        cases.append(case)
+        for case in declared:
+            if not isinstance(case, Case):
+                broken.append(f"{name}: CASE is {type(case).__name__}, not Case")
+                continue
+            cases.append(case)
     return cases, broken
 
 

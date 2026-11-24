@@ -46,7 +46,7 @@ on:
 
 jobs:
   install-cell:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
@@ -98,7 +98,7 @@ jobs:
           echo "config from spec.py: $config"
           python3 tests/qe/install/drive.py \
             --config "$config" \
-            --cell "macos-14-$config" \
+            --cell "macos-15-$config" \
             --artifacts "$RUNNER_TEMP/qe-artifacts"
 
       # Uploaded on failure too, and especially then: the step logs and snapshots are

@@ -42,7 +42,12 @@ from pathlib import Path
 
 from ..model import Case, FailureClass, Finding, Substrate, Tier
 
-_SRC = Path(__file__).resolve().parents[3] / "src" / "thalamus"
+_REPO = Path(__file__).resolve().parents[3]
+_SRC = _REPO / "src" / "thalamus"
+# Plugin packages are separate distributions under `packages/<name>/src/<import name>`;
+# `thalamus_ingest` archives fetched third-party bytes, so a scan of the core alone would
+# stop seeing that retention site without anything failing.
+_PLUGIN_SRCS = sorted((_REPO / "packages").glob("*/src/*/"))
 # Under the archive package the two functions are defined and re-exported; call sites
 # there are the mechanism, not consumers of it.
 _MECHANISM = ("archive",)
@@ -153,8 +158,9 @@ def run() -> Finding | None:
 
     violations: list[str] = []
     retention_sites = 0
-    for path in sorted(_SRC.rglob("*.py")):
-        relative = path.relative_to(_SRC.parents[1])
+    sources = [path for root in (_SRC, *_PLUGIN_SRCS) for path in sorted(root.rglob("*.py"))]
+    for path in sources:
+        relative = path.relative_to(_REPO)
         if relative.parts[1:2] and relative.parts[1] in _MECHANISM:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
@@ -174,6 +180,20 @@ def run() -> Finding | None:
             site="tests/qe/cases/secret_scan_heard.py",
         )
 
+    # CONTROL: the plugin that archives fetched third-party bytes must be in the scan.
+    # Its code left `src/thalamus` for `packages/thalamus-ingest`, and a scan rooted at
+    # the core alone reports the same clean result with that site unread.
+    if not any(path.name == "ingest.py" and "thalamus_ingest" in path.parts
+               for path in sources):
+        return Finding(
+            failure_class=FailureClass.COLLAPSED_SENTINEL,
+            summary="thalamus_ingest/ingest.py was not among the scanned sources, so a "
+                    "clean result says nothing about the ingest path's archive writes",
+            witness=f"scanned {len(sources)} files under {_SRC} and {len(_PLUGIN_SRCS)} "
+                    "plugin source root(s)",
+            site="tests/qe/cases/secret_scan_heard.py",
+        )
+
     if not violations:
         return None
 
@@ -187,7 +207,7 @@ def run() -> Finding | None:
         ),
         witness=f"{len(violations)} site(s) across {retention_sites} file(s): "
                 + "; ".join(violations[:6]),
-        site="src/thalamus/cli.py (extract) and src/thalamus/harness/ingest.py",
+        site="src/thalamus/cli.py (extract) and packages/thalamus-ingest/src/thalamus_ingest/ingest.py",
     )
 
 

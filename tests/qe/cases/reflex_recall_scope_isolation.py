@@ -1,7 +1,7 @@
 """`recall`'s `.has("scope", scope)` filter must not leak a fixture across scopes.
 
 `reflex.fire` retrieves through `substrate.reader.recall(g, query, scope=scope, ...)`
-(`harness/reflex.py:376`), and the whole trust model behind an unsolicited injection
+(`thalamus_reflex/reflex.py:376`), and the whole trust model behind an unsolicited injection
 rests on that call being scoped: a session pinned to one expert must never be served
 another scope's episodic memory just because the words happen to match
 (`reader.py`'s own module docstring — "the server, not the model, decides what a scope
@@ -58,7 +58,7 @@ def run() -> Finding | None:
     from thalamus.contract.conformance import refuse_unless_conformant  # noqa: PLC0415
     from thalamus.contract.manifest import available_scopes  # noqa: PLC0415
     from thalamus.contract.ontology import MAIN_SCOPE, vid  # noqa: PLC0415
-    from thalamus.harness.reflex import extract_anchors  # noqa: PLC0415
+    from thalamus_reflex.reflex import extract_anchors  # noqa: PLC0415
     from thalamus.substrate.reader import recall  # noqa: PLC0415
     from thalamus.substrate.schema import SessionGraph, Solution, Tool  # noqa: PLC0415
     from thalamus.substrate.writer import (  # noqa: PLC0415

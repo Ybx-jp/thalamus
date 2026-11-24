@@ -50,7 +50,7 @@ return code.
 `-l <text>`, and the property fails on `-n`, `--help`, `-t 0`, `-t t:1 leaked` and every trailing-`;`
 payload; the decoy stays empty there, because tmux consumes the whole element as a
 target rather than typing it. Repeat it by checking out
-`src/thalamus/console/server.py` and `src/thalamus/harness/dispatch.py` from 21a385b.
+`packages/thalamus-console/src/thalamus_console/server.py` and `src/thalamus/harness/dispatch.py` from 21a385b.
 """
 
 from __future__ import annotations
@@ -243,8 +243,8 @@ def _arrived(private: _PrivateTmux, argv: tuple[str, ...], text: str) -> tuple[b
 
 
 def run() -> Finding | None:
-    from thalamus.console import server as console  # noqa: PLC0415
-    from thalamus.console import dispatch  # noqa: PLC0415
+    from thalamus_console import server as console  # noqa: PLC0415
+    from thalamus_console import dispatch  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmp:
         private = _PrivateTmux(Path(tmp))
@@ -279,7 +279,7 @@ def run() -> Finding | None:
                                     "so this case has nothing to replay and cannot "
                                     "report on what tmux would do with it",
                             witness=f"text={text!r} ({why}) produced no send-keys call",
-                            site="src/thalamus/console/server.py",
+                            site="packages/thalamus-console/src/thalamus_console/server.py",
                         )
                     captured.append(("/api/send", text, why, new[0]))
 
@@ -303,7 +303,7 @@ def run() -> Finding | None:
                             summary="dispatch._send built no send-keys argv for a "
                                     "payload, so this case cannot report on it",
                             witness=f"text={text!r} ({why}) produced no send-keys call",
-                            site="src/thalamus/console/dispatch.py",
+                            site="packages/thalamus-console/src/thalamus_console/dispatch.py",
                         )
                     captured.append(("dispatch._send", text, why, new[0]))
             finally:
@@ -345,7 +345,7 @@ def run() -> Finding | None:
                             "which the KEYMAP whitelist should make impossible — the "
                             "probe is more likely wrong than the whitelist",
                     witness=f"/api/key argv={key_argv[0]}",
-                    site="src/thalamus/console/server.py",
+                    site="packages/thalamus-console/src/thalamus_console/server.py",
                 )
 
             # THE PROPERTY, over each argv as it ships.
@@ -365,7 +365,7 @@ def run() -> Finding | None:
                             "dropped",
                     witness="; ".join(lost) + " — the same payloads all arrive through "
                             "an argv built as `-l -- <text, final ; escaped>`",
-                    site="src/thalamus/console/server.py, src/thalamus/console/dispatch.py",
+                    site="packages/thalamus-console/src/thalamus_console/server.py, packages/thalamus-console/src/thalamus_console/dispatch.py",
                 )
         finally:
             private.stop()

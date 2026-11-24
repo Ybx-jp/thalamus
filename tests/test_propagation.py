@@ -1,7 +1,7 @@
 """
 Propagation plan tests — the spread's arithmetic and its stopping, minus the graph.
 
-Interfaces: thalamus.harness.propagation (propagate, linked_line, CAPS), run through a
+Interfaces: thalamus_reflex.propagation (propagate, linked_line, CAPS), run through a
             real thalamus.harness.retrieval.Job
 Infrastructure: `expand_one_hop` replaced by a table of (node, relation) -> neighbours;
                 no graph
@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import pytest
 
-from thalamus.harness import propagation, retrieval
-from thalamus.harness.propagation import linked_line, propagate
+from thalamus.harness import retrieval
+from thalamus_reflex import propagation
+from thalamus_reflex.propagation import linked_line, propagate
 from thalamus.harness.retrieval import Caps, Job, Tool
 from thalamus.substrate.vocabulary import Row
 

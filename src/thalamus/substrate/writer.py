@@ -20,9 +20,11 @@ from thalamus.substrate import spans
 from thalamus.substrate.artifact_paths import checkout_registry, relativize
 from thalamus.substrate.schema import (
     Alternative,
+    Chunk,
     Claim,
     Provenance,
     SessionGraph,
+    SessionType,
     ThreadClose,
     Tier,
     rejected_kind,
@@ -141,6 +143,10 @@ def close_connection(g: GraphTraversalSource) -> None:
 Gate = Callable[..., None]
 
 
+class SessionTypeConflict(ValueError):
+    """A session re-written under a different session type than the graph holds."""
+
+
 def write_session(g: GraphTraversalSource, session: SessionGraph, *, gate: Gate) -> str:
     """Write a session subgraph to the graph. Idempotent on session_id.
 
@@ -210,18 +216,96 @@ def _text_stamp(g: GraphTraversalSource, vertex_id: str, text: str) -> dict[str,
     return {"written_at": now, "text_digest": digest}
 
 
-def _provenance_properties(provenance: Provenance) -> dict[str, object]:
+def _provenance_properties(
+    provenance: Provenance, session_type: SessionType | None = None
+) -> dict[str, object]:
     """Flatten a provenance envelope into vertex properties.
 
     Every node in the graph carries these. `derived_from` is deliberately NOT among them
     — it becomes edges, not a property, because effective trust is a traversal over the
     derivation closure and a property could not be walked.
+
+    `session_type` is stamped on every node a session distils, attended or autonomous,
+    so the marker is read off the node itself rather than walked back to its Session.
+    Knowledge-batch nodes have no session and carry none.
     """
-    return {
+    properties: dict[str, object] = {
         "tier": int(provenance.tier),
         "source": provenance.source,
         "ingested_at": provenance.ingested_at.isoformat(),
     }
+    if session_type is not None:
+        properties["session_type"] = session_type.value
+    return properties
+
+
+# The properties a write of one session type may not rewrite on a node held under the
+# other. A node keeps the session type it was first written under: an autonomous run
+# never demotes an attended node (or a node written before session types existed, which
+# was attended — no autonomous run distilled before them), and an attended write never
+# lifts an autonomous node to tier 1. The other session's edges to the node are still
+# written, so the node records both witnesses; only its trust and text stay as held.
+_SESSION_TYPED_PROVENANCE = ("tier", "source", "ingested_at", "session_type")
+
+
+class _Unreadable:
+    """A held session type the graph could not be asked for."""
+
+    value = "unreadable"
+
+
+UNREADABLE = _Unreadable()
+
+
+def _held_session_type(
+    g: GraphTraversalSource, vertex_id: str
+) -> SessionType | _Unreadable | None:
+    """The session type an existing vertex was written under; None when it is absent.
+
+    A vertex with no `session_type` property predates the field and reads as attended.
+    A read that fails is not a read that found nothing, so it answers `UNREADABLE`, and
+    every caller treats that as a type other than its own: the write then leaves the
+    node's trust as held rather than overwriting a node whose type it could not see.
+    """
+    try:
+        rows = g.V(vertex_id).value_map("session_type").to_list()
+    except Exception as exc:
+        logger.warning("could not read the session type held on %s: %s", vertex_id, exc)
+        return UNREADABLE
+    if not rows:
+        return None
+    held = rows[0].get("session_type") if isinstance(rows[0], dict) else None
+    held = held[0] if isinstance(held, list) and held else held
+    return SessionType(held) if held else SessionType.ATTENDED
+
+
+def _on_match_for(
+    g: GraphTraversalSource,
+    session: SessionGraph,
+    vertex_id: str,
+    properties: dict[str, object],
+    *,
+    keep_text: bool,
+) -> dict[str, object]:
+    """The properties a re-write of an existing vertex may set, given who holds it.
+
+    Same session type, or a vertex not yet written: everything, as before. Different
+    or unreadable: nothing of its provenance, and — for a Claim or a Thread
+    (`keep_text`) — nothing at all, because the description, status and title are the
+    held session's account and the other session's own is already recorded by its edge
+    to the node. (A0247, cites-as-live)
+    """
+    held = _held_session_type(g, vertex_id)
+    if held is None or held is session.session_type:
+        return properties
+    logger.info(
+        "%s was written by an %s session; this %s session's write keeps its "
+        "provenance%s",
+        vertex_id, held.value, session.session_type.value, " and text" if keep_text else "",
+    )
+    if keep_text:
+        return {}
+    return {k: v for k, v in properties.items() if k not in _SESSION_TYPED_PROVENANCE}
 
 
 # Source properties a matching upsert may not silently rewrite.
@@ -356,6 +440,27 @@ def _upsert_session_vertex(g: GraphTraversalSource, session: SessionGraph) -> st
     session_vid = vid("Session", session.session_id, session.scope)
     provenance = session.default_provenance()
 
+    # A session keeps the type it was first written under. Re-extracting an attended
+    # session as autonomous would demote the operator's own work, and the reverse would
+    # lift an unattended run to first-party trust; either means the launch fact was
+    # resolved differently this time, so the write is refused rather than applied.
+    # A Session written before the field existed holds no type and takes this one, and
+    # so does one the graph could not be asked about: the refusal guards a
+    # misconfigured launch, and a read failure is not evidence of one.
+    try:
+        rows = g.V(session_vid).value_map("session_type").to_list()
+    except Exception as exc:
+        logger.warning("could not read the session type held on %s: %s", session_vid, exc)
+        rows = []
+    held = rows[0].get("session_type") if rows and isinstance(rows[0], dict) else None
+    held = held[0] if isinstance(held, list) and held else held
+    if held and held != session.session_type.value:
+        raise SessionTypeConflict(
+            f"Session {session.session_id} is held as {held}; refusing to re-write it as "
+            f"{session.session_type.value}. Pass `--session-type {held}` to re-extract it "
+            "as it was recorded."
+        )
+
     properties = {
         "session_id": session.session_id,
         "timestamp": session.timestamp.isoformat(),
@@ -368,7 +473,7 @@ def _upsert_session_vertex(g: GraphTraversalSource, session: SessionGraph) -> st
         "room": session.room,
         "forked_from": session.forked_from,
         "summary": session.summary,
-        **_provenance_properties(provenance),
+        **_provenance_properties(provenance, session.session_type),
         **_text_stamp(g, session_vid, session.summary),
     }
 
@@ -479,11 +584,11 @@ def _upsert_artifacts(g: GraphTraversalSource, session: SessionGraph) -> dict[st
 
     for artifact in session.artifacts:
         artifact_vid = vid("Artifact", artifact.identifier)
-        provenance = artifact.provenance or session.default_provenance()
+        provenance = session.provenance_for(artifact.provenance)
         properties = {
             "type": artifact.type.value,
             "project": artifact.project or session.project or "",
-            **_provenance_properties(provenance),
+            **_provenance_properties(provenance, session.session_type),
         }
         if projectable:
             repo, path = _project_artifact(artifact.identifier, registry, session.repo_root)
@@ -497,7 +602,10 @@ def _upsert_artifacts(g: GraphTraversalSource, session: SessionGraph) -> dict[st
                 Merge.on_create,
                 {T.id: artifact_vid, "identifier": artifact.identifier, **properties},
             )
-            .option(Merge.on_match, properties)
+            .option(
+                Merge.on_match,
+                _on_match_for(g, session, artifact_vid, properties, keep_text=False),
+            )
         )
         _iterate(graph_traversal, "upsert Artifact", artifact_vid)
 
@@ -521,7 +629,7 @@ def _write_sources(g: GraphTraversalSource, session: SessionGraph, session_vid: 
     """
     for source in session.sources:
         source_vid = vid("Source", source.content_hash, session.scope)
-        provenance = source.provenance or session.default_provenance()
+        provenance = session.provenance_for(source.provenance)
 
         prior_heads = (
             _snapshot_heads(g, session_vid) if source.kind.value == "transcript" else []
@@ -536,7 +644,7 @@ def _write_sources(g: GraphTraversalSource, session: SessionGraph, session_vid: 
             "byte_size": source.byte_size,
             "message_count": source.message_count,
             "scope": session.scope,
-            **_provenance_properties(provenance),
+            **_provenance_properties(provenance, session.session_type),
             **_text_stamp(g, source_vid, source.title),
         }
 
@@ -638,7 +746,7 @@ def _upsert_claim(
     """One Claim vertex with the edges every claim carries: CONTAINS from its session,
     TOUCHES to its artifacts, DERIVED_FROM to its origins, USES to its references."""
     claim_vid = vid("Claim", claim.content_id(), session.scope)
-    provenance = claim.provenance or session.default_provenance()
+    provenance = session.provenance_for(claim.provenance)
 
     properties = {
         "kind": claim.kind,
@@ -646,13 +754,15 @@ def _upsert_claim(
         "scope": session.scope,
         **_claim_properties(claim),
         **(extra or {}),
-        **_provenance_properties(provenance),
+        **_provenance_properties(provenance, session.session_type),
     }
 
     graph_traversal = (
         g.merge_v({T.id: claim_vid, T.label: "Claim"})
         .option(Merge.on_create, {T.id: claim_vid, **properties})
-        .option(Merge.on_match, properties)
+        .option(
+            Merge.on_match, _on_match_for(g, session, claim_vid, properties, keep_text=True)
+        )
     )
     _iterate(graph_traversal, "upsert Claim", claim_vid)
 
@@ -768,7 +878,7 @@ def _write_threads(
     # in the YAML, and merge_e requires both endpoint vertices to exist.
     for thread in session.threads:
         thread_vid = vid("Thread", thread.id, session.scope)
-        provenance = thread.provenance or session.default_provenance()
+        provenance = session.provenance_for(thread.provenance)
 
         properties = {
             "title": thread.title,
@@ -776,14 +886,17 @@ def _write_threads(
             "status": thread.status.value,
             "scope": session.scope,
             "project": session.project or "",
-            **_provenance_properties(provenance),
+            **_provenance_properties(provenance, session.session_type),
             **_text_stamp(g, thread_vid, thread.title),
         }
 
         graph_traversal = (
             g.merge_v({"thread_id": thread.id, "scope": session.scope, T.label: "Thread"})
             .option(Merge.on_create, {T.id: thread_vid, "thread_id": thread.id, **properties})
-            .option(Merge.on_match, properties)
+            .option(
+                Merge.on_match,
+                _on_match_for(g, session, thread_vid, properties, keep_text=True),
+            )
         )
         _iterate(graph_traversal, "upsert Thread", thread_vid)
 
@@ -820,6 +933,21 @@ def _write_thread_refs(
                 ref.id,
                 session.scope,
             )
+            continue
+
+        # An autonomous run may continue an attended thread but not move it: the status
+        # of a thread in the operator's queue is not an unattended run's to change. The
+        # CONTINUES edge still records that the run worked on it. (A0248, cites-as-live)
+        if (
+            session.session_type is SessionType.AUTONOMOUS
+            and _held_session_type(g, thread_vid) is not SessionType.AUTONOMOUS
+        ):
+            logger.info(
+                "thread_ref '%s' names an attended thread; an autonomous session "
+                "continues it without changing its status",
+                ref.id,
+            )
+            _ensure_edge(g, session_vid, thread_vid, "CONTINUES")
             continue
 
         graph_traversal = g.V(thread_vid).has_label("Thread").property("status", ref.status.value)
@@ -897,36 +1025,13 @@ def write_knowledge(g: GraphTraversalSource, batch, *, gate: Gate) -> str:
         entity_vids[entity.name] = entity_vid
 
     # Chunks before claims, so the anchor edge has something to point at.
-    chunk_vids: dict[int, str] = {}
-    previous_vid = ""
-    for chunk in batch.chunks:
-        chunk_vid = vid("Chunk", chunk.local_id(source.content_hash), batch.scope)
-        chunk_properties = {
-            "text": chunk.text,
-            "ordinal": chunk.ordinal,
-            "start": chunk.start,
-            "end": chunk.end,
-            "scope": batch.scope,
-            **_provenance_properties(chunk.provenance or provenance),
-        }
-        graph_traversal = (
-            g.merge_v({T.id: chunk_vid, T.label: "Chunk"})
-            .option(Merge.on_create, {T.id: chunk_vid, **chunk_properties})
-            .option(Merge.on_match, chunk_properties)
-        )
-        _iterate(graph_traversal, "upsert Chunk", chunk_vid)
-        chunk_vids[chunk.ordinal] = chunk_vid
+    chunk_vids = write_chunks(
+        g, batch.chunks,
+        source_vid=source_vid, content_hash=source.content_hash, scope=batch.scope,
+        provenance=provenance, entity_vids=entity_vids,
+    )
 
-        # Same floor the claims get, and the reason reaching a chunk is
-        # provenance-mediated rather than provenance-free.
-        _ensure_edge(g, chunk_vid, source_vid, "DERIVED_FROM")
-        if previous_vid:
-            _ensure_edge(g, previous_vid, chunk_vid, "ADJACENT_IN_TEXT")
-        previous_vid = chunk_vid
-        for name in chunk.about:
-            if name in entity_vids:
-                _ensure_edge(g, chunk_vid, entity_vids[name], "ABOUT")
-
+    anchors: dict[str, str] = {}
     for index, claim in enumerate(batch.claims):
         claim_vid = vid("Claim", claim.content_id(), batch.scope)
         claim_properties = {
@@ -956,7 +1061,8 @@ def write_knowledge(g: GraphTraversalSource, batch, *, gate: Gate) -> str:
         # be found verbatim — an anchor that had to be guessed is worse than none.
         anchor = batch.anchors.get(index)
         if anchor is not None and anchor in chunk_vids:
-            _ensure_edge(g, claim_vid, chunk_vids[anchor], "ANCHORS")
+            anchors[claim_vid] = chunk_vids[anchor]
+    write_anchors(g, anchors)
 
     logger.info(
         "Wrote knowledge batch: %s (scope=%s, %d claims, %d entities, %d chunks)",
@@ -967,6 +1073,60 @@ def write_knowledge(g: GraphTraversalSource, batch, *, gate: Gate) -> str:
         len(batch.chunks),
     )
     return source_vid
+
+
+def write_chunks(
+    g: GraphTraversalSource,
+    chunks: list[Chunk],
+    *,
+    source_vid: str,
+    content_hash: str,
+    scope: str,
+    provenance: Provenance,
+    entity_vids: Mapping[str, str],
+) -> dict[int, str]:
+    """Write a document's verbatim chunks beside its Source; return ordinal -> vertex ID.
+
+    Each chunk is DERIVED_FROM the Source, ADJACENT_IN_TEXT to the one before it, and
+    ABOUT whichever of `entity_vids` it names. Merged on vertex ID, so re-writing a
+    document's chunks repairs a partial write rather than duplicating it.
+    """
+    chunk_vids: dict[int, str] = {}
+    previous_vid = ""
+    for chunk in chunks:
+        chunk_vid = vid("Chunk", chunk.local_id(content_hash), scope)
+        chunk_properties = {
+            "text": chunk.text,
+            "ordinal": chunk.ordinal,
+            "start": chunk.start,
+            "end": chunk.end,
+            "scope": scope,
+            **_provenance_properties(chunk.provenance or provenance),
+        }
+        graph_traversal = (
+            g.merge_v({T.id: chunk_vid, T.label: "Chunk"})
+            .option(Merge.on_create, {T.id: chunk_vid, **chunk_properties})
+            .option(Merge.on_match, chunk_properties)
+        )
+        _iterate(graph_traversal, "upsert Chunk", chunk_vid)
+        chunk_vids[chunk.ordinal] = chunk_vid
+
+        # Same floor the claims get, and the reason reaching a chunk is
+        # provenance-mediated rather than provenance-free.
+        _ensure_edge(g, chunk_vid, source_vid, "DERIVED_FROM")
+        if previous_vid:
+            _ensure_edge(g, previous_vid, chunk_vid, "ADJACENT_IN_TEXT")
+        previous_vid = chunk_vid
+        for name in chunk.about:
+            if name in entity_vids:
+                _ensure_edge(g, chunk_vid, entity_vids[name], "ABOUT")
+    return chunk_vids
+
+
+def write_anchors(g: GraphTraversalSource, anchors: Mapping[str, str]) -> None:
+    """Claim -[ANCHORS]-> Chunk, for each claim vertex ID mapped to the chunk it quotes."""
+    for claim_vid, chunk_vid in anchors.items():
+        _ensure_edge(g, claim_vid, chunk_vid, "ANCHORS")
 
 
 def _article_heads(g: GraphTraversalSource, scope: str, origin: str) -> list[str]:
@@ -1136,6 +1296,52 @@ def write_thread_close(
     )
     _iterate(graph_traversal, "close Thread", thread_vid)
     return agent_vid
+
+
+class NotPromotable(ValueError):
+    """A promotion named a thread that is absent or was not opened by an autonomous run."""
+
+
+def check_promotable(g: GraphTraversalSource, thread_vid: str) -> None:
+    """Raise `NotPromotable` unless `thread_vid` is a Thread an autonomous run opened.
+
+    An attended thread is already in the operator's queue, so there is nothing to
+    promote — and a promotion row naming one would record an act that changed nothing.
+    """
+    if not g.V(thread_vid).has_label("Thread").has_next():
+        raise NotPromotable(f"no Thread `{thread_vid}` in the graph")
+    if _held_session_type(g, thread_vid) is not SessionType.AUTONOMOUS:
+        raise NotPromotable(
+            f"`{thread_vid}` was opened by an attended session; it is already in the "
+            "operator's queue"
+        )
+
+
+def write_thread_promotion(
+    g: GraphTraversalSource,
+    thread_vid: str,
+    *,
+    promoted_at: str,
+    promotion_ref: str,
+    surface: str,
+) -> None:
+    """Move an autonomous thread into the operator's queue.
+
+    Sets `promoted_at`, `promotion_ref` and `promotion_surface` on the Thread and
+    nothing else: its tier and its `session_type` stay as written, so promotion changes
+    where the thread is listed and never what it is trusted as. Idempotent — a repeat
+    writes the same three values. Refuses a thread that is absent or attended
+    (`check_promotable`).
+    """
+    check_promotable(g, thread_vid)
+    graph_traversal = (
+        g.V(thread_vid)
+        .has_label("Thread")
+        .property("promoted_at", promoted_at)
+        .property("promotion_ref", promotion_ref)
+        .property("promotion_surface", surface)
+    )
+    _iterate(graph_traversal, "promote Thread", thread_vid)
 
 
 def write_trace(

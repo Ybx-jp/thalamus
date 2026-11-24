@@ -41,6 +41,13 @@ none
 - 2026-09-24T01:16:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/harness/ingest.py § "ingest" =sha256:0cd38c5a1abe29a5d5b4e56ae067ebd54f3f140abc2cba44854cd623b3f8697c
   note: Only the arguments to build_chunks and anchor_citations changed; preflight and the unconditional extraction pass are untouched, so the assertion is unaffected.
+- 2026-10-18T13:51:40-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/ingest.py § "ingest" =sha256:0cd38c5a1abe29a5d5b4e56ae067ebd54f3f140abc2cba44854cd623b3f8697c
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T13:55:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-ingest/src/thalamus_ingest/ingest.py § "ingest" =sha256:0cd38c5a1abe29a5d5b4e56ae067ebd54f3f140abc2cba44854cd623b3f8697c
+  note: harness/ingest.py moved into the thalamus-ingest plugin package as thalamus_ingest/ingest.py with ingest() unchanged; it still runs the extraction pass before returning, whatever the caller does next, so the assertion is unaffected
 
 ## References
 

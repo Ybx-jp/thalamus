@@ -45,7 +45,7 @@ on:
   # the set of commits where its verdict can differ from the last one's.
   pull_request:
     paths:
-      - "src/thalamus/console/static/**"
+      - "packages/thalamus-console/src/thalamus_console/static/**"
       - ".github/workflows/contrast-dom.yml"
       - ".github/workflows/contrast-dom-driver.mjs"
 

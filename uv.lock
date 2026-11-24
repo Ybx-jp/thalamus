@@ -10,6 +10,16 @@ resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'win32'",
 ]
 
+[manifest]
+members = [
+    "thalamus-arch",
+    "thalamus-console",
+    "thalamus-ingest",
+    "thalamus-measure",
+    "thalamus-memory",
+    "thalamus-reflex",
+]
+
 [[package]]
 name = "aenum"
 version = "3.1.17"
@@ -2941,15 +2951,70 @@ wheels = [
 ]
 
 [[package]]
+name = "thalamus-arch"
+source = { editable = "packages/thalamus-arch" }
+dependencies = [
+    { name = "pluggy" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pluggy", specifier = ">=1.5" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
+name = "thalamus-console"
+source = { editable = "packages/thalamus-console" }
+dependencies = [
+    { name = "thalamus-memory" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "thalamus-memory", editable = "." }]
+
+[[package]]
+name = "thalamus-ingest"
+source = { editable = "packages/thalamus-ingest" }
+dependencies = [
+    { name = "pypdf" },
+    { name = "thalamus-memory" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pypdf", specifier = ">=5.0" },
+    { name = "thalamus-memory", editable = "." },
+]
+
+[[package]]
+name = "thalamus-measure"
+source = { editable = "packages/thalamus-measure" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "gremlinpython" },
+    { name = "thalamus-memory" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.139.0" },
+    { name = "gremlinpython", specifier = ">=3.7,<3.8" },
+    { name = "thalamus-memory", editable = "." },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.51.0" },
+]
+
+[[package]]
 name = "thalamus-memory"
 source = { editable = "." }
 dependencies = [
-    { name = "fastapi" },
     { name = "fastmcp" },
     { name = "gremlinpython" },
+    { name = "pluggy" },
     { name = "pydantic" },
     { name = "pyyaml" },
-    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.optional-dependencies]
@@ -2974,21 +3039,26 @@ nli = [
     { name = "torch" },
     { name = "transformers" },
 ]
-pdf = [
-    { name = "pypdf" },
+
+[package.dev-dependencies]
+plugins = [
+    { name = "thalamus-arch" },
+    { name = "thalamus-console" },
+    { name = "thalamus-ingest" },
+    { name = "thalamus-measure" },
+    { name = "thalamus-reflex" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "claims-ledger", marker = "extra == 'dev'", specifier = ">=0.0.4" },
-    { name = "fastapi", specifier = ">=0.139.0" },
     { name = "fastmcp", specifier = ">=3.4.0" },
     { name = "gremlinpython", specifier = ">=3.7,<3.8" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.1" },
     { name = "numpy", marker = "extra == 'frames'", specifier = ">=2.1" },
     { name = "pillow", marker = "extra == 'frames'", specifier = ">=10.0" },
+    { name = "pluggy", specifier = ">=1.5" },
     { name = "pydantic", specifier = ">=2.0" },
-    { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=5.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6" },
@@ -2999,9 +3069,33 @@ requires-dist = [
     { name = "torch", marker = "extra == 'nli'", specifier = ">=2.5" },
     { name = "transformers", marker = "extra == 'nli'", specifier = ">=4.46" },
     { name = "ty", marker = "extra == 'dev'", specifier = "==0.0.74" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.51.0" },
 ]
-provides-extras = ["dev", "frames", "nli", "pdf"]
+provides-extras = ["dev", "frames", "nli"]
+
+[package.metadata.requires-dev]
+plugins = [
+    { name = "thalamus-arch", editable = "packages/thalamus-arch" },
+    { name = "thalamus-console", editable = "packages/thalamus-console" },
+    { name = "thalamus-ingest", editable = "packages/thalamus-ingest" },
+    { name = "thalamus-measure", editable = "packages/thalamus-measure" },
+    { name = "thalamus-reflex", editable = "packages/thalamus-reflex" },
+]
+
+[[package]]
+name = "thalamus-reflex"
+source = { editable = "packages/thalamus-reflex" }
+dependencies = [
+    { name = "fastmcp" },
+    { name = "gremlinpython" },
+    { name = "thalamus-memory" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastmcp", specifier = ">=3.4.0" },
+    { name = "gremlinpython", specifier = ">=3.7,<3.8" },
+    { name = "thalamus-memory", editable = "." },
+]
 
 [[package]]
 name = "threadpoolctl"

@@ -38,4 +38,4 @@ The CLI reference's row for the flag says it disables session persistence so tha
 
 ## References
 
-- src/thalamus/harness/reflex_channel.py · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/reflex_channel.py · standing · cites-as-live

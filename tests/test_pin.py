@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 from thalamus.contract.manifest import available_scopes, load_manifest
-from thalamus.console import rooms, windows
-from thalamus.console.windows import spawn
+from thalamus_console import rooms, windows
+from thalamus_console.windows import spawn
 from thalamus.harness import pin
 from thalamus.harness.pin import (
     agent_name,
@@ -43,7 +43,7 @@ def _argv_only(monkeypatch):
     cannot answer it, and these tests are not asking. The confirmation is exercised
     against a live tmux server in tests/test_spawn_settle.py.
     """
-    monkeypatch.setattr("thalamus.console.windows.confirm_started", lambda *a, **kw: None)
+    monkeypatch.setattr("thalamus_console.windows.confirm_started", lambda *a, **kw: None)
 
 
 def test_agent_definition_is_derived_from_the_manifest():
@@ -97,7 +97,7 @@ def test_write_all_agents_writes_every_expert_into_the_dir(tmp_path):
 def test_spawn_rejects_a_nonexistent_directory(tmp_path, monkeypatch):
     """spawn's cwd becomes the window's working dir — a bad path must fail loudly
     before any tmux window is created, not silently open somewhere wrong."""
-    monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus_console.windows.shutil.which", lambda _: "/usr/bin/tmux")
 
     with pytest.raises(ValueError, match="not a directory"):
         spawn("literature", tmp_path / "does-not-exist", base=REPO_CONFIG)
@@ -119,9 +119,9 @@ def test_spawn_into_an_absent_session_leaves_no_shell_placeholder(tmp_path, monk
         rc = 1 if "has-session" in cmd else 0
         return subprocess.CompletedProcess(cmd, rc, stdout="", stderr="")
 
-    monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus_console.windows.shutil.which", lambda _: "/usr/bin/tmux")
     monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
-    monkeypatch.setattr("thalamus.console.windows.subprocess.run", fake_run)
+    monkeypatch.setattr("thalamus_console.windows.subprocess.run", fake_run)
     _argv_only(monkeypatch)
 
     spawn("literature", tmp_path, base=REPO_CONFIG)
@@ -162,8 +162,8 @@ def _fake_tmux(monkeypatch, *, session_exists=True, present=(), window_id="@1"):
                              for i, name in enumerate(present))
         return subprocess.CompletedProcess(cmd, code, stdout=stdout, stderr="")
 
-    monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
-    monkeypatch.setattr("thalamus.console.windows.subprocess.run", fake_run)
+    monkeypatch.setattr("thalamus_console.windows.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus_console.windows.subprocess.run", fake_run)
     monkeypatch.delenv("TMUX", raising=False)
     monkeypatch.delenv("THALAMUS_ROOM", raising=False)
     return calls
@@ -188,7 +188,7 @@ def test_ensure_anchor_confirms_the_window_it_opens(tmp_path, monkeypatch, capsy
     """
     calls = _fake_tmux(monkeypatch, present=["architect"])
     confirmed: list[str] = []
-    monkeypatch.setattr("thalamus.console.windows.confirm_started",
+    monkeypatch.setattr("thalamus_console.windows.confirm_started",
                         lambda window_id, *a, **kw: confirmed.append(window_id))
 
     windows.ensure_anchor(tmp_path, session="fake-console", base=REPO_CONFIG)
@@ -213,7 +213,7 @@ def test_ensure_anchor_leaves_a_session_already_holding_main_alone(
     drives the same fake with `main` absent and sees it opened, is this one's control.
     """
     calls = _fake_tmux(monkeypatch, present=[pin.MAIN_SCOPE, "architect"])
-    monkeypatch.setattr("thalamus.console.windows.confirm_started", lambda *a, **kw: None)
+    monkeypatch.setattr("thalamus_console.windows.confirm_started", lambda *a, **kw: None)
 
     windows.ensure_anchor(tmp_path, session="fake-console", base=REPO_CONFIG)
 
@@ -236,7 +236,7 @@ def test_ensure_anchor_creates_a_missing_session_with_main_as_its_first_window(
     leave a shell there for the life of the tmux server.
     """
     calls = _fake_tmux(monkeypatch, session_exists=False)
-    monkeypatch.setattr("thalamus.console.windows.confirm_started", lambda *a, **kw: None)
+    monkeypatch.setattr("thalamus_console.windows.confirm_started", lambda *a, **kw: None)
 
     windows.ensure_anchor(tmp_path, session="fake-console", base=REPO_CONFIG)
 
@@ -260,7 +260,7 @@ def test_an_anchor_that_dies_raises_naming_it_and_quoting_its_pane(
                                  "(exit 127) before it could be called started — "
                                  "it printed: claude: not found")
 
-    monkeypatch.setattr("thalamus.console.windows.confirm_started", fake_confirm)
+    monkeypatch.setattr("thalamus_console.windows.confirm_started", fake_confirm)
 
     with pytest.raises(windows.WindowDied) as death:
         windows.ensure_anchor(tmp_path, session="fake-console", base=REPO_CONFIG)
@@ -503,10 +503,10 @@ def test_a_room_rides_the_argv_so_it_survives_a_recycle(tmp_path, monkeypatch):
         calls.append(cmd)
         return subprocess.CompletedProcess(cmd, 1 if "has-session" in cmd else 0, stdout="", stderr="")
 
-    monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus_console.windows.shutil.which", lambda _: "/usr/bin/tmux")
     monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
-    monkeypatch.setattr("thalamus.console.windows.subprocess.run", fake_run)
-    monkeypatch.setattr("thalamus.console.rooms.ensure_room",
+    monkeypatch.setattr("thalamus_console.windows.subprocess.run", fake_run)
+    monkeypatch.setattr("thalamus_console.rooms.ensure_room",
                         lambda room, host=None, harness="claude": None)
     _argv_only(monkeypatch)
     monkeypatch.setenv("THALAMUS_ROOM", "alpha")
@@ -560,9 +560,9 @@ def test_a_deliberate_config_dir_override_survives_a_roomless_launch(tmp_path, m
     the operator chose.
     """
     calls: list[list[str]] = []
-    monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus_console.windows.shutil.which", lambda _: "/usr/bin/tmux")
     monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
-    monkeypatch.setattr("thalamus.console.windows.subprocess.run",
+    monkeypatch.setattr("thalamus_console.windows.subprocess.run",
                         lambda cmd, *a, **kw: (calls.append(cmd), subprocess.CompletedProcess(
                             cmd, 1 if "has-session" in cmd else 0, stdout="", stderr=""))[1])
     _argv_only(monkeypatch)
@@ -1105,9 +1105,9 @@ def test_every_roster_window_is_held_at_the_shipped_geometry(tmp_path, monkeypat
         stdout = "@7\n@9\n" if "list-windows" in cmd and "#{window_id}" in cmd else ""
         return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
 
-    monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus_console.windows.shutil.which", lambda _: "/usr/bin/tmux")
     monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
-    monkeypatch.setattr("thalamus.console.windows.subprocess.run", fake_run)
+    monkeypatch.setattr("thalamus_console.windows.subprocess.run", fake_run)
     _argv_only(monkeypatch)
 
     spawn("literature", tmp_path, base=REPO_CONFIG)

@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import re
 import sys
 import time
@@ -14,13 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-import uvicorn
 import yaml
 
-from thalamus import __version__
-from thalamus.substrate.schema import CloseDisposition, SessionGraph, ThreadClose
+from thalamus import __version__, plugins
+from thalamus.substrate.schema import CloseDisposition, SessionGraph, SessionType, ThreadClose
 from thalamus.archive import archive_dir
-from thalamus.console.server import DEFAULT_PORT as CONSOLE_PORT
 from thalamus.contract.conformance import (
     ContractViolation,
     check_session,
@@ -28,26 +25,20 @@ from thalamus.contract.conformance import (
 )
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.eval import snapshots
-from thalamus.eval.profile import DEFAULT_REPEAT as PROFILE_REPEAT
-from thalamus.eval.withholding import DRAWS as WITHHOLD_DRAWS
 from thalamus.harness import (
     agents,
     codex_transcripts,
     cursor_transcripts,
     extractor_policy,
     extraction,
+    transcript_format,
     transcripts,
 )
 from thalamus.harness import closes as closes_mod
+from thalamus.harness import promotions as promotions_mod
 from thalamus.harness import quick as quick_mod
 from thalamus.harness.bootstrap import bootstrap_project
-from thalamus.console.ceremonies import (
-    CEREMONY_KINDS,
-    COMPARATOR_ARMS,
-    RESOLUTION_OUTCOMES,
-)
 from thalamus.harness import pin
-from thalamus.console.windows import ROSTER_SESSION
 from thalamus.harness.pin import resolve_forked_from, resolve_room
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot, snapshot_quietly
 from thalamus.substrate.writer import (
@@ -56,18 +47,6 @@ from thalamus.substrate.writer import (
     close_connection,
     connect,
 )
-
-ROOM_FLAG_HELP = (
-    "Launch into this room — a private config dir (~/.thalamus/rooms/<room>/) that "
-    "partitions peer discovery, so members see only each other. Created on first "
-    "use. Default: $THALAMUS_ROOM, else no room."
-)
-
-ARCH_REPO_HELP = (
-    "Repo to measure. Defaults to the checkout this CLI is installed from, not the "
-    "current directory — `arch/model.yaml` belongs to a repository."
-)
-
 
 def main():
     """CLI entry point.
@@ -86,7 +65,7 @@ def main():
 def _main():
     parser = argparse.ArgumentParser(
         description="Thalamus — federated graph memory for coding agents",
-        epilog="One-shot graph repairs (backfill-chunks, audit-artifacts, "
+        epilog="One-shot graph repairs (audit-artifacts, "
                "repair-projects, derive-artifact-paths, retire-scans, "
                "retire-sources, repair-claim-addresses) are not listed here: they migrate an "
                "existing graph and a new one can never need them. Each answers "
@@ -232,6 +211,17 @@ def _main():
         "context, so it derives from that session rather than corroborating it.",
     )
     extract_parser.add_argument(
+        "--session-type",
+        default=None,
+        choices=["attended", "autonomous"],
+        help="Whether the operator was present. Default: each session's own pin-ledger "
+        "row (its recorded type, else its entrypoint: a headless `-p` run is "
+        "autonomous), else attended. An autonomous session's nodes are written at "
+        "tier 2 and its threads stay out of the operator's queue until promoted. A "
+        "session already in the graph keeps the type it was written under; re-writing "
+        "it as the other is refused.",
+    )
+    extract_parser.add_argument(
         "--model",
         default=None,
         # `argv()` refuses on a row that is not spawned, so how a harness is reached
@@ -270,57 +260,6 @@ def _main():
         help="Write to the graph. Without it, extraction runs and is reported but not persisted.",
     )
 
-    # Ingest command — curated feed v0, manual-first
-    ingest_parser = subparsers.add_parser(
-        "ingest", help="Ingest one document into an expert's knowledge subgraph"
-    )
-    ingest_parser.add_argument("location", help="URL (allowlist-gated) or local file path")
-    ingest_parser.add_argument(
-        # Required, not defaulted. Every expert scope procures documents, and a
-        # default sends a document nobody named to `literature` — where it is not wrong
-        # enough to notice, since the literature consultant serves every scope anyway.
-        # A named-but-unknown scope still fails at `load_manifest`, which lists the experts.
-        "--scope", required=True,
-        help="Expert scope; needs a manifest in config/experts/",
-    )
-    ingest_parser.add_argument("--feed", default="manual", help="Feed identity (default: manual)")
-    ingest_parser.add_argument(
-        "--model", default=None,
-        help="Extraction model. Defaults to the harness's own (see --harness)."
-    )
-    ingest_parser.add_argument(
-        "--harness", choices=agents.HARNESSES, default=None,
-        help="Which coding-agent CLI runs the extraction pass. Ingestion has no "
-        "harness of its own — this picks whichever CLI the machine actually has. "
-        "Default: the console's ingestion setting, else its distillation setting "
-        "(~/.thalamus/extractor/policy.json), else claude.",
-    )
-    ingest_parser.add_argument("--title", default="", help="Override the extracted title")
-    ingest_parser.add_argument(
-        "--url", default=DEFAULT_URL,
-        help="Gremlin endpoint (ws:// or wss://). The document to ingest is the "
-        "positional argument, not this.",
-    )
-    ingest_parser.add_argument(
-        "--check",
-        action="store_true",
-        help="Verify the source and stop before the model call: same fetch, same "
-        "User-Agent, same redirects, same allowlist gate, same text extraction. "
-        "Reports the final origin, content-type, title and the opening text.",
-    )
-    ingest_parser.add_argument(
-        "--refetch",
-        action="store_true",
-        help="Ask the address again instead of ingesting the bytes a recent --check "
-        "verified. Without it, a check within the last day supplies the bytes, so what "
-        "is written is what was checked.",
-    )
-    ingest_parser.add_argument(
-        "--write",
-        action="store_true",
-        help="Write to the graph. Without it, extraction runs and is reported but not persisted.",
-    )
-
     delegate_parser = subparsers.add_parser(
         "delegate",
         help="Run bounded expert work through the executor fixed in its manifest",
@@ -348,83 +287,6 @@ def _main():
              "model call, no output file.",
     )
 
-    # Reflex command — the PostToolUse memory reflex's worker (harness/reflex.py)
-    reflex_parser = subparsers.add_parser(
-        "reflex",
-        help="Serve memory against a failed Bash result; the reflex.sh hook's worker. "
-        "Prints the digest to inject, or nothing.",
-    )
-    reflex_parser.add_argument(
-        "--session-id", default="",
-        help="The session that ran the command (required except with --work/--sweep)",
-    )
-    reflex_parser.add_argument(
-        "--response-file", type=Path, default=None,
-        help="File holding the command's stdout then stderr, as the model saw them "
-        "(required to fire or shadow)",
-    )
-    reflex_parser.add_argument(
-        "--transcript", default="",
-        help="The session's transcript path, from the hook payload; an agentic job "
-        "builds its excerpt from it",
-    )
-    reflex_parser.add_argument(
-        "--tool-use-id", default="",
-        help="The id of the call that fired, from the hook payload; an agentic job "
-        "keeps that call's result in its excerpt and measures delivery depth from it",
-    )
-    reflex_parser.add_argument(
-        "--work", action="store_true",
-        help="Run the agentic plan's queued jobs and exit when none remain — the "
-        "detached worker the trigger starts (harness/reflex_worker.py)",
-    )
-    reflex_parser.add_argument(
-        "--job-tools", type=Path, default=None, metavar="DIR",
-        help="Serve one claude-channel job's vocabulary over MCP stdio, relaying each "
-        "call to the worker through DIR's socket — what the job's `claude -p` starts "
-        "(harness/reflex_channel.py)",
-    )
-    reflex_parser.add_argument(
-        "--deliver", action="store_true",
-        help="Print the digests ready for this session and agent, oldest first, and "
-        "record their delivery — the carrier's delivery half",
-    )
-    reflex_parser.add_argument(
-        "--reflex-dir", type=Path, default=None,
-        help="Reflex ledger and queue dir for --work, --deliver and --sweep "
-        "(default: ~/.thalamus/reflex)",
-    )
-    reflex_parser.add_argument(
-        "--sweep", action="store_true",
-        help="Record and clear queue state no worker or carrier will reach: jobs of a "
-        "dead worker, results and jobs of ended sessions",
-    )
-    reflex_parser.add_argument(
-        "--scope", default=MAIN_SCOPE,
-        help="Scope to retrieve in — the pin, resolved by the hook (default: main)",
-    )
-    reflex_parser.add_argument(
-        "--agent-id", default="",
-        help="The subagent that ran the command, empty for the session itself; part "
-        "of the dedup key because subagents share their parent's session id",
-    )
-    reflex_parser.add_argument("--agent-type", default="", help="The subagent's type, recorded in the trace")
-    reflex_parser.add_argument("--cwd", default="", help="Working directory, recorded in the trace")
-    reflex_parser.add_argument(
-        "--tool-name", default="Bash", help="The tool whose result fired the reflex (default: Bash)"
-    )
-    reflex_parser.add_argument(
-        "--event", default="",
-        help="The hook event that ran the reflex — PostToolUse (exit 0) or "
-        "PostToolUseFailure (non-zero exit) — recorded in the ledger and the trace",
-    )
-    reflex_parser.add_argument(
-        "--shadow", action="store_true",
-        help="The output did not read as a failure: record what it would have anchored "
-        "on under ~/.thalamus/reflex/shadow/, with no graph read and no output",
-    )
-    reflex_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-
     # Contract command — the federation boundary, audited
     contract_parser = subparsers.add_parser(
         "contract", help="Federation-contract operations against the live graph"
@@ -442,121 +304,27 @@ def _main():
         "Reads no graph and makes no model call; needs the CLIs on PATH.",
     )
     contract_check_parser.add_argument(
+        "--transcripts", action="store_true",
+        help="Check every Claude Code transcript under ~/.claude/projects, and every "
+        "session the archive holds twice, against what distillation's readers assume "
+        "of the format. Reads no graph and makes no model call.",
+    )
+    contract_check_parser.add_argument(
         "--experts", action="store_true",
         help="Print the boundaries in force for every expert scope, resolved. Reads "
         "no graph: the manifests and the expert capability default are the whole answer.",
     )
 
-    # The architect's instrument. Reads code, writes a git-tracked model and
-    # findings — never metrics — into the `architect` scope.
-    arch_parser = subparsers.add_parser(
-        "arch", help="The architect's structural instrument over a repo's imports"
-    )
-    arch_sub = arch_parser.add_subparsers(dest="arch_command")
-
-    arch_scan_parser = arch_sub.add_parser(
-        "scan",
-        help="Measure the import graph and regenerate arch/model.yaml "
-        "(dry-run unless --write)",
-    )
-    arch_scan_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
-    arch_scan_parser.add_argument(
-        "--import-depth", choices=["all", "module-level"], default="",
-        help="Override the model file's declared policy. Changes the policy digest, so "
-        "the scan lands in a different lineage — which is the point.",
-    )
-    arch_scan_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    arch_scan_parser.add_argument(
-        "--write", action="store_true",
-        help="Write the model file. Without it, the scan runs and is reported but "
-        "nothing is persisted.",
-    )
-    arch_scan_parser.add_argument(
-        "--check", action="store_true",
-        help="Exit 1 if the committed model file does not match a fresh scan. The "
-        "staleness gate: measures, compares, writes nothing.",
-    )
-
-    arch_show_parser = arch_sub.add_parser(
-        "show", help="Print the current model: declared policy, layers, rules, last scan"
-    )
-    arch_show_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
-
-    arch_diff_parser = arch_sub.add_parser(
-        "diff",
-        help="Compare the working tree's structure against another commit — recompute "
-        "both sides rather than trusting a stored number",
-    )
-    arch_diff_parser.add_argument("against", help="Commit-ish to compare against")
-    arch_diff_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
-
-    arch_rules_parser = arch_sub.add_parser(
-        "rules", help="Check the measured edge list against the declared design rules"
-    )
-    arch_rules_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
-    arch_rules_parser.add_argument(
-        "--gate", action="store_true",
-        help="Exit nonzero on a finding the model does not accept. 1 = a violation or "
-        "unplaced module not declared in `accepted`; 2 = an `accepted` entry that no "
-        "longer happens and should be deleted.",
-    )
-
-    arch_dead_parser = arch_sub.add_parser(
-        "dead",
-        help="Definitions under the source roots that nothing outside the test roots "
-        "refers to, and modules nothing imports",
-    )
-    arch_dead_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
-    arch_dead_parser.add_argument(
-        "--gate", action="store_true",
-        help="Exit nonzero on a finding the model does not exempt. 1 = a reported "
-        "definition or orphan module; 2 = an exemption that no longer matches anything.",
-    )
-    arch_dead_parser.add_argument(
-        "--limits", action="store_true",
-        help="Print what the census could not see — runtime name lookup, names reached "
-        "through a string, star re-exports, unparsed files.",
-    )
-
-    arch_refs_parser = arch_sub.add_parser(
-        "refs",
-        help="Names a comment points at that the tree no longer holds (report only)",
-    )
-    arch_refs_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
-    arch_refs_parser.add_argument(
-        "--limits", action="store_true",
-        help="Print what the recognizer did not consume — candidate tokens no form "
-        "matched, files it could not read, and the references a sentence asserts the "
-        "absence of.",
-    )
-
-    arch_growth_parser = arch_sub.add_parser(
+    growth_parser = subparsers.add_parser(
         "growth",
         help="What this system accumulates, and what nothing refers to (read-only)",
     )
-    arch_growth_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
-    arch_growth_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-
-    # Chunk backfill — co-indexing for documents ingested before chunks existed.
-    # Model-free by construction: chunking reads the retained bytes, so this costs
-    # compute and nothing else, and it is safe to re-run.
-    backfill_parser = subparsers.add_parser(
-        "backfill-chunks",
-        description="Build co-indexed Chunk vertices for already-ingested documents.",
+    growth_parser.add_argument(
+        "--repo", default=None,
+        help="Checkout whose eval worktrees are audited. Defaults to the checkout this "
+        "CLI runs from, else the current directory.",
     )
-    backfill_parser.add_argument(
-        "--scope", default="", help="Limit to one expert scope (default: every scope)"
-    )
-    backfill_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    backfill_parser.add_argument(
-        "--write", action="store_true",
-        help="Write to the graph. Without it, the work is reported but not persisted.",
-    )
-    backfill_parser.add_argument(
-        "--force", action="store_true",
-        help="Re-process Sources that already have chunks. Writes are idempotent "
-        "(merge on vertex id), so this repairs a partial run rather than duplicating.",
-    )
+    growth_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
     audit_artifacts_parser = subparsers.add_parser(
         "audit-artifacts",
@@ -688,9 +456,11 @@ def _main():
         "being discarded is already known-bad.",
     )
 
-    # Eval command — layer 1 of the eval loop
+    # Eval command — layer 1 of the eval loop. Core lands the trace tap and prices it;
+    # the reports over what landed are thalamus-measure's, added through `groups`.
     eval_parser = subparsers.add_parser(
-        "eval", help="Eval loop v0: land retrieval traces in the graph and report used-vs-ignored"
+        "eval", help="The eval loop: land retrieval traces in the graph, price what memory "
+        "costs, and the reports installed plugins add"
     )
     eval_sub = eval_parser.add_subparsers(dest="eval_command")
 
@@ -709,53 +479,6 @@ def _main():
         help="Write to the graph. Without it, sync runs and is reported but not persisted.",
     )
 
-    eval_report_parser = eval_sub.add_parser(
-        "report", help="Per-scope retrieval-utility numbers from landed traces"
-    )
-    eval_report_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    eval_report_parser.add_argument(
-        "--scope", default=MAIN_SCOPE, help="Scope to report on (default: main)"
-    )
-    eval_report_parser.add_argument(
-        "--top", type=int, default=5, help="How many most-ignored nodes to list"
-    )
-    eval_report_parser.add_argument(
-        "--since",
-        default=None,
-        help="Only count traces at or after this ISO date/datetime (UTC), e.g. 2026-07-18",
-    )
-    eval_report_parser.add_argument(
-        "--until",
-        default=None,
-        help="Only count traces at or before this ISO date/datetime (UTC); a bare date "
-        "covers the whole day",
-    )
-
-    eval_uses_parser = eval_sub.add_parser(
-        "uses",
-        help="Attribution subgraphs: who cited what, whether it compounds, and what "
-        "the served stamp can speak about",
-    )
-    eval_uses_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    eval_uses_parser.add_argument(
-        "--scope",
-        default=None,
-        help="Narrow to subgraphs rooted in this scope (default: every scope — an "
-        "attribution subgraph may reach another scope's knowledge, and filtering by "
-        "the target would hide exactly those edges)",
-    )
-    eval_uses_parser.add_argument(
-        "--since",
-        default=None,
-        help="Only count sessions at or after this ISO date/datetime (UTC)",
-    )
-    eval_uses_parser.add_argument(
-        "--until",
-        default=None,
-        help="Only count sessions at or before this ISO date/datetime (UTC); a bare "
-        "date covers the whole day",
-    )
-
     eval_cost_parser = eval_sub.add_parser(
         "cost",
         help="Token-cost attribution from local records: interactive vs extract vs "
@@ -770,92 +493,6 @@ def _main():
     eval_cost_parser.add_argument(
         "--traces", type=Path, default=None, help="Trace tap directory (default: ~/.thalamus/traces)"
     )
-    eval_cost_parser.add_argument(
-        "--by-occasion", action="store_true", dest="by_occasion",
-        help="Attribute room members' burn to the ceremony occasion it happened "
-             "inside, with each room's out-of-occasion burn beside it",
-    )
-
-    eval_pins_parser = eval_sub.add_parser(
-        "pins",
-        help="Pin-quality routing signal: per-expert pinned vs consulted utility "
-        "from priced traces (the pin or the expert — the data says which)",
-    )
-    eval_pins_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    eval_pins_parser.add_argument(
-        "--pins-file", type=Path, default=None, help="Pin ledger (default: ~/.thalamus/pins/pins.jsonl)"
-    )
-
-    eval_gremlin_parser = eval_sub.add_parser(
-        "gremlin",
-        help="Gremlin fluency metrics: guard rescue rate, rejection classes, recipe reuse",
-    )
-    eval_gremlin_parser.add_argument(
-        "--traces", type=Path, default=None, help="Trace tap dir (default: ~/.thalamus/traces)"
-    )
-    eval_gremlin_parser.add_argument(
-        "--guards", type=Path, default=None, help="Guard event dir (default: ~/.thalamus/guards)"
-    )
-
-    eval_recipes_parser = eval_sub.add_parser(
-        "recipes",
-        help="Smoke-run every stored gremlin recipe read-only (rolling freshness signal)",
-    )
-    eval_recipes_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    eval_recipes_parser.add_argument(
-        "--staged", action="store_true",
-        help="Show queries the PostToolUse hook staged for RECIPES.md instead of "
-             "smoke-running the store",
-    )
-
-    eval_profile_parser = eval_sub.add_parser(
-        "profile",
-        help="Gremlin query cost: what each traversal shape costs in wall time, and "
-        "where a single query spends it step by step",
-    )
-    eval_profile_parser.add_argument(
-        "--profiles", type=Path, default=None,
-        help="Span ledger directory (default: ~/.thalamus/profiles)",
-    )
-    eval_profile_parser.add_argument(
-        "--top", type=int, default=10, help="How many costliest shapes to list"
-    )
-    eval_profile_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    eval_profile_parser.add_argument(
-        "--query",
-        default="",
-        help="Step-profile one read-only gremlin-lang traversal instead of reading the "
-        "ledger. Server-side per-step metrics via TinkerPop's profile(); profiling "
-        "impedes the traversal, so read the steps against each other.",
-    )
-    eval_profile_parser.add_argument(
-        "--corpus",
-        action="store_true",
-        help="Step-profile every gremlin-lang recipe the skills store, slowest first",
-    )
-    eval_profile_parser.add_argument(
-        "--repeat", type=int, default=None,
-        help=f"Timed runs per query for --query/--corpus (default: {PROFILE_REPEAT})",
-    )
-
-    eval_withholding_parser = eval_sub.add_parser(
-        "withholding",
-        help="The randomized-withholding ledger as an outcome: do withheld nodes come back?",
-    )
-    eval_withholding_parser.add_argument(
-        "--url", default=DEFAULT_URL, help="Gremlin endpoint"
-    )
-    eval_withholding_parser.add_argument(
-        "--scope", default="main",
-        help="Scope to analyse (default: main, 80%% of the corpus). "
-             "Pass '' for the pooled exploratory read across every scope.",
-    )
-    eval_withholding_parser.add_argument(
-        "--draws", type=int, default=WITHHOLD_DRAWS,
-        help=f"Permutation draws (default: {WITHHOLD_DRAWS}); the attainable "
-             "two-sided p floor is 1/(draws+1)",
-    )
-
     eval_conditioning_parser = eval_sub.add_parser(
         "conditioning",
         help="Per-firing behavioral join: did each injected reminder change behavior?",
@@ -867,41 +504,6 @@ def _main():
     eval_conditioning_parser.add_argument(
         "--traces", type=Path, default=None, help="Trace tap dir (default: ~/.thalamus/traces)"
     )
-
-    eval_reflex_parser = eval_sub.add_parser(
-        "reflex",
-        help="The memory reflex read by arm: qualifying failures, what was served, "
-        "and the lexical and citation used-verdicts on what landed",
-    )
-    eval_reflex_parser.add_argument(
-        "--reflex", type=Path, default=None,
-        help="Reflex ledger dir (default: ~/.thalamus/reflex)",
-    )
-    eval_reflex_parser.add_argument(
-        "--traces", type=Path, default=None, help="Trace tap dir (default: ~/.thalamus/traces)"
-    )
-    eval_reflex_parser.add_argument(
-        "--url", default=DEFAULT_URL,
-        help="Gremlin endpoint for the verdict half; the ledger half renders without it",
-    )
-
-    eval_vocabulary_parser = eval_sub.add_parser(
-        "vocabulary",
-        help="Replay real reflex anchor sets through every retrieval-vocabulary tool "
-        "and report what each returns: rows, characters and time per call, and per "
-        "anchor set the totals a job cap has to sit under",
-    )
-    eval_vocabulary_parser.add_argument(
-        "--reflex", type=Path, default=None,
-        help="Reflex ledger dir the anchor sets come from (default: ~/.thalamus/reflex)",
-    )
-    eval_vocabulary_parser.add_argument(
-        "--limit", type=int, default=40, help="Most recent distinct anchor sets to replay"
-    )
-    eval_vocabulary_parser.add_argument(
-        "--scope", default=MAIN_SCOPE, help="Scope to retrieve in (default: main)"
-    )
-    eval_vocabulary_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
     # Pin commands — "the process is the pin"; spawn is the console's
     init_parser = subparsers.add_parser(
@@ -981,24 +583,7 @@ def _main():
         "pin", help="Launch a session pinned to an expert scope"
     )
     pin_parser.add_argument("scope", help="Expert scope (a config/experts manifest, or `main`)")
-    pin_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
     pin_parser.add_argument(
-        "--harness", choices=agents.LAUNCHABLE, default="claude", help="Which CLI to pin (default: claude). The charter rides `--agent` on claude and `--profile` on codex; `cursor` has no carrier for one, so its pin routes and is bounded without it — see contract/pinning.py for what `pinned` covers on each. codex and cursor both take the scope as an argv `env` prefix as well, which is what survives `respawn-window` (on codex `--profile` restores the charter but tells the hooks nothing). Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
-    )
-
-    spawn_parser = subparsers.add_parser(
-        "spawn", help="Open one on-demand pinned tmux window (a chosen scope + directory)"
-    )
-    spawn_parser.add_argument("scope", help="Expert scope (a config/experts manifest, or `main`)")
-    spawn_parser.add_argument(
-        "--dir", type=Path, default=None,
-        help="Working directory for the session (default: the thalamus repo)"
-    )
-    spawn_parser.add_argument(
-        "--session", default="thalamus", help="tmux session to open the window in"
-    )
-    spawn_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
-    spawn_parser.add_argument(
         "--harness", choices=agents.LAUNCHABLE, default="claude", help="Which CLI to pin (default: claude). The charter rides `--agent` on claude and `--profile` on codex; `cursor` has no carrier for one, so its pin routes and is bounded without it — see contract/pinning.py for what `pinned` covers on each. codex and cursor both take the scope as an argv `env` prefix as well, which is what survives `respawn-window` (on codex `--profile` restores the charter but tells the hooks nothing). Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
     )
 
@@ -1051,18 +636,6 @@ def _main():
         "--parent", required=True, help="Session id the fork was resumed from"
     )
 
-    room_parser = subparsers.add_parser(
-        "room", help="Rooms: the collaborations sessions are launched into"
-    )
-    room_sub = room_parser.add_subparsers(dest="room_command")
-    room_sub.add_parser("list", help="Every room that has a config dir")
-    room_show = room_sub.add_parser("show", help="What one room's config dir holds")
-    room_show.add_argument("room", help="Room name")
-    room_create = room_sub.add_parser(
-        "create", help="Provision a room's config dir without launching anything"
-    )
-    room_create.add_argument("room", help="Room name (lowercase letters, digits, hyphens)")
-
     # Thread closing. `propose` writes a ledger row and nothing to the graph; `approve`
     # writes the row and then the edge. The split is the whole mechanism: an agent may
     # propose, only the operator approves, and a pending proposal never becomes a vertex
@@ -1092,7 +665,9 @@ def _main():
     preset_remove.add_argument("name")
 
     thread_parser = subparsers.add_parser(
-        "thread", help="Close threads: propose, approve, and audit the close ledger"
+        "thread",
+        help="Close threads (propose, approve, audit the close ledger), and promote "
+             "autonomous runs' threads into your queue",
     )
     thread_sub = thread_parser.add_subparsers(dest="thread_command")
 
@@ -1143,291 +718,68 @@ def _main():
     )
     thread_audit.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
-    # Ceremony ledger — the room lifecycle's capture layer. Every verb here writes a
-    # row that cannot be reconstructed after the fact, which is why they exist
-    # before any of the lifecycle they record.
-    ceremony_parser = subparsers.add_parser(
-        "ceremony", help="The ceremony ledger: occasions, skips, deliverables, assignments"
+    thread_autonomous = thread_sub.add_parser(
+        "autonomous",
+        help="Threads autonomous runs opened that are awaiting promotion into your queue",
     )
-    ceremony_sub = ceremony_parser.add_subparsers(dest="ceremony_command")
+    thread_autonomous.add_argument("--scope", default=MAIN_SCOPE, help="Scope to list")
+    thread_autonomous.add_argument("--project", default="", help="Only this project")
+    thread_autonomous.add_argument("--limit", type=int, default=20, help="At most this many")
+    thread_autonomous.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
-    ceremony_start = ceremony_sub.add_parser(
-        "start", help="Open an occasion — written at start so an abort still leaves a row"
+    thread_promote = thread_sub.add_parser(
+        "promote",
+        help="Move an autonomous run's thread into your queue (its trust is unchanged)",
     )
-    ceremony_start.add_argument("room", help="Room the ceremony is held in")
-    ceremony_start.add_argument("kind", choices=CEREMONY_KINDS, help="Which ceremony")
-    ceremony_start.add_argument(
-        "--scope", action="append", default=[], dest="scopes",
-        help="A participating scope; repeat for each member",
+    thread_promote.add_argument("thread_id", help="Thread id, unqualified")
+    thread_promote.add_argument("--scope", default=MAIN_SCOPE, help="Scope it lives in")
+    thread_promote.add_argument(
+        "--surface", default="cli", choices=list(promotions_mod.SURFACES),
+        help="Where the promotion was given",
     )
-    ceremony_start.add_argument(
-        "--deliverable", action="append", default=[], dest="deliverables",
-        help="A deliverable id this occasion concerns; repeat as needed",
+    thread_promote.add_argument(
+        "--evidence", default="",
+        help="What kind of evidence exists that the operator promoted it. Defaults to "
+             "the surface's own (cli:tty)",
     )
-    ceremony_start.add_argument(
-        "--arm", default="",
-        help="The arm this occasion realizes. Must match a prior assignment — the "
-             "audit reports a disagreement rather than resolving it",
-    )
-    ceremony_start.add_argument("--prereg", default="", help="Pre-registration id")
+    thread_promote.add_argument("--notes", default="", help="Operator's own words")
+    thread_promote.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
-    ceremony_end = ceremony_sub.add_parser("end", help="Close an occasion (appends, never mutates)")
-    ceremony_end.add_argument("occasion", help="Occasion id, e.g. alpha:review:1")
-    ceremony_end.add_argument(
-        "--outcome", default="", help="How it ended — never how well it went"
+    preflight_parser = subparsers.add_parser(
+        "preflight",
+        help="Check a session is armed as its pin and job promise: tools, hooks, "
+             "guards, budget, write path",
     )
-
-    ceremony_skip = ceremony_sub.add_parser(
-        "skip", help="Record a ceremony that did NOT happen — the ablation is only "
-                     "readable if a skip writes"
+    preflight_parser.add_argument("--session-id", required=True, help="The session to check")
+    preflight_parser.add_argument(
+        "--transcript", default="", help="Its transcript, where the tool surface is recorded"
     )
-    ceremony_skip.add_argument("room", help="Room the ceremony was due in")
-    ceremony_skip.add_argument("kind", choices=CEREMONY_KINDS, help="Which ceremony")
-    ceremony_skip.add_argument("--reason", default="", help="Free text; the row is the datum")
-
-    ceremony_mint = ceremony_sub.add_parser(
-        "mint", help="Mint a deliverable's permanent id, carried across every revision"
+    preflight_parser.add_argument("--scope", default=MAIN_SCOPE, help="Its pinned scope")
+    preflight_parser.add_argument(
+        "--session-type", required=True, choices=["attended", "autonomous"],
+        help="What it runs as. An autonomous session's preflight aborts on any failure; "
+             "an attended one's reports",
     )
-    ceremony_mint.add_argument("room", help="Room the deliverable belongs to")
-    ceremony_mint.add_argument("title", help="What it is; the id is derived once and then fixed")
-    ceremony_mint.add_argument("--owner", default="", help="Owning scope")
-    ceremony_mint.add_argument("--occasion", default="", help="Occasion that minted it")
-
-    ceremony_revise = ceremony_sub.add_parser(
-        "revise", help="Attach a revision to an existing deliverable id"
+    preflight_parser.add_argument(
+        "--project-dir", default="", help="The project whose settings files it loads"
     )
-    ceremony_revise.add_argument("deliverable", help="Deliverable id")
-    ceremony_revise.add_argument(
-        "--artifact", default="", help="What names this revision — a path, commit, or vertex id"
+    preflight_parser.add_argument(
+        "--phase", default="first-tool-call", choices=["session-start", "first-tool-call"],
+        help="When it runs. At session-start the tool surface is not yet recorded and is "
+             "not checked; the first-tool-call run checks it and repeats nothing the "
+             "session-start run already reported",
     )
-    ceremony_revise.add_argument("--occasion", default="", help="Occasion that produced it")
-    ceremony_revise.add_argument("--author", default="", help="Authoring scope")
-
-    ceremony_assign = ceremony_sub.add_parser(
-        "assign",
-        help="Deal deliverables to arms from a seed, BEFORE the ceremony runs — "
-             "unrecorded in advance, the reference distribution does not exist",
-    )
-    ceremony_assign.add_argument("room", help="Room; also the block permutation is restricted to")
-    ceremony_assign.add_argument("kind", choices=CEREMONY_KINDS, help="Which ceremony")
-    ceremony_assign.add_argument(
-        "--unit", action="append", default=[], dest="units", required=True,
-        help="A deliverable id to assign; repeat for each",
-    )
-    ceremony_assign.add_argument(
-        "--arm", action="append", default=[], dest="arms", required=True,
-        help="An arm name; repeat. Pair each with a --count in the same order",
-    )
-    ceremony_assign.add_argument(
-        "--count", action="append", type=int, default=[], dest="counts", required=True,
-        help="How many units that arm takes; must sum to the unit count",
-    )
-    ceremony_assign.add_argument(
-        "--seed", type=int, required=True, help="The seed the deal is replayable from"
-    )
-    ceremony_assign.add_argument("--prereg", default="", help="Pre-registration id")
-
-    # Items 5-7 — the forecast, its resolution, and the unit the room is read against.
-    ceremony_commit = ceremony_sub.add_parser(
-        "commit",
-        help="Record a forecast about a deliverable — what will be true, and by when",
-    )
-    ceremony_commit.add_argument("room", help="Room making the commitment")
-    ceremony_commit.add_argument("deliverable", help="Deliverable id the forecast is about")
-    ceremony_commit.add_argument("text", help="What is being committed to")
-    ceremony_commit.add_argument("--owner", default="", help="Owning scope")
-    ceremony_commit.add_argument(
-        "--artifact", default="", dest="predicted",
-        help="What should exist if this came true — a path, a commit, a vertex id",
-    )
-    ceremony_commit.add_argument(
-        "--resolve-by", default="", dest="resolve_by",
-        help="The horizon tooling resolves this at (YYYY-MM-DD)",
-    )
-    ceremony_commit.add_argument("--occasion", default="", help="Occasion that committed it")
-
-    ceremony_resolve = ceremony_sub.add_parser(
-        "resolve",
-        help="Record what became of a commitment. Run by tooling — a resolver who sat "
-             "in the room is a finding, not a shortcut",
-    )
-    ceremony_resolve.add_argument("deliverable", help="Deliverable id being resolved")
-    ceremony_resolve.add_argument(
-        "outcome", choices=RESOLUTION_OUTCOMES, help="How the forecast came out"
-    )
-    ceremony_resolve.add_argument(
-        "--resolver", required=True, help="What did the checking (a tool, a job)"
-    )
-    ceremony_resolve.add_argument(
-        "--evidence", required=True,
-        help="What it checked — a path, a commit, a vertex id",
-    )
-    ceremony_resolve.add_argument("--room", default="", help="Room, when not derivable")
-    ceremony_resolve.add_argument("--occasion", default="", help="Occasion that resolved it")
-
-    ceremony_comparator = ceremony_sub.add_parser(
-        "comparator",
-        help="Name the out-of-room unit this room is read against, while it still "
-             "counts — one chosen after the outcomes are visible has absorbed them",
-    )
-    ceremony_comparator.add_argument("room", help="Room being compared")
-    ceremony_comparator.add_argument(
-        "arm", choices=COMPARATOR_ARMS, help="Which out-of-room arm"
-    )
-    ceremony_comparator.add_argument(
-        "reference", help="The unit itself — a session id, a ticket id"
-    )
-    ceremony_comparator.add_argument(
-        "--basis", default="", help="Why it is comparable"
+    preflight_parser.add_argument(
+        "--hook", action="store_true",
+        help="Print the hook's JSON output (SessionStart's or PreToolUse's, by --phase) "
+             "and record the result, instead of the report",
     )
 
-    ceremony_sub.add_parser(
-        "outstanding", help="Commitments with no resolution yet, oldest first"
-    )
-
-    ceremony_ack = ceremony_sub.add_parser(
-        "ack",
-        help="Accept a permanent finding so the audit's exit code stops reporting it. "
-             "The ledger is untouched and the finding is still printed",
-    )
-    ceremony_ack.add_argument(
-        "finding", help="Exact `<category>:<item>` key as `audit` prints it"
-    )
-    ceremony_ack.add_argument(
-        "--reason", required=True, help="Why this one is permanent and understood"
-    )
-
-    # Dispatch — delivery mechanics. A separate verb rather than a loop over
-    # send-keys because `waiting` must be refused, not handled carefully.
-    dispatch_parser = subparsers.add_parser(
-        "dispatch", help="Deliver a message to live room members, refusing on `waiting`"
-    )
-    dispatch_parser.add_argument("room", help="Room whose members are addressed")
-    dispatch_parser.add_argument(
-        "message", nargs="?", default="",
-        help="What to send. Omit when building an announcement with --task",
-    )
-    dispatch_parser.add_argument(
-        "--to", action="append", default=[], dest="scopes",
-        help="Restrict to this scope; repeat. Default: every live member",
-    )
-    dispatch_parser.add_argument(
-        "--sender", default="",
-        help="Who is dispatching (default: this process's scope). Inside a room this "
-             "may only name the session's own scope — the sender is established by "
-             "the process there, not asserted",
-    )
-    dispatch_parser.add_argument(
-        "--operator", action="store_true",
-        help="Dispatch into a room this session is not in. Refused by default: a "
-             "member reaching another room is the one direction a room's config root "
-             "does not bound",
-    )
-    dispatch_parser.add_argument(
-        "--partial", action="store_true",
-        help="Deliver to the reachable members anyway, recording who missed it. "
-             "Without this, one undeliverable target refuses the whole fan-out, "
-             "because a partial announcement makes silence ambiguous between a "
-             "decline and never having been asked",
-    )
-    dispatch_parser.add_argument(
-        "--dry-run", action="store_true",
-        help="Pre-flight only: report what would land, send nothing, write no rows",
-    )
-    dispatch_parser.add_argument(
-        "--no-submit", action="store_true",
-        help="Type the text without the following Enter",
-    )
-    announce = dispatch_parser.add_argument_group(
-        "Contract Net announcement", "All four slots are mandatory together"
-    )
-    announce.add_argument("--task", default="", help="Task abstraction")
-    announce.add_argument("--eligibility", default="", help="Who this is for")
-    announce.add_argument("--bid", default="", help="What a bid must contain")
-    announce.add_argument("--expires", default="", help="Expiration; silence past it is a timeout")
-
-    ceremony_sub.add_parser("show", help="The ledger room by room, with the audit under it")
-    ceremony_audit = ceremony_sub.add_parser(
-        "audit", help="Read the ledger against its own obligations; exits 1 on any "
-                      "finding that has not been acknowledged"
-    )
-    ceremony_audit.add_argument(
-        "--strict", action="store_true",
-        help="Ignore acknowledgements entirely — exits 1 on every finding the ledger "
-             "holds, which is what the ledger actually says",
-    )
-
-    # Console command — the operator surface onto the tmux roster, drivable from a phone
-    console_parser = subparsers.add_parser(
-        "console",
-        help="Serve the console: drive the pinned tmux roster from a browser",
-    )
-    console_parser.add_argument(
-        "--host", default="127.0.0.1",
-        help="Bind address (default: localhost — the console has no auth of its own)"
-    )
-    console_parser.add_argument(
-        "--port", type=int, default=CONSOLE_PORT, help=f"Port (default: {CONSOLE_PORT})"
-    )
-    console_parser.add_argument(
-        "--session", default=ROSTER_SESSION,
-        help=f"tmux session to drive (default: {ROSTER_SESSION})"
-    )
-    console_parser.add_argument(
-        "--project-root", type=Path, default=None,
-        help="The checkout roster sync runs against (default: the one this CLI is in)"
-    )
-    console_parser.add_argument(
-        "--dir", type=Path, action="append", default=[], metavar="PATH",
-        help="Offer this directory in the spawn picker, starred (repeatable; "
-             "default: the project root)"
-    )
-    console_parser.add_argument(
-        "--scan", type=Path, action="append", default=[], metavar="ROOT",
-        help="Offer every git repo one level under ROOT in the spawn picker "
-             "(repeatable; default: the project root's parent)"
-    )
-    console_parser.add_argument(
-        "--service", action="append", default=[], metavar="UNIT",
-        help="A unit the admin sheet may restart — a systemd `--user` unit on Linux, "
-             "a launchd label on macOS (repeatable; "
-             "default: none, which hides the section)"
-    )
-    console_parser.add_argument(
-        "--frames", type=Path, default=None, metavar="PATH",
-        help="Frame-theme definitions for the desktop client, e.g. "
-             "$WEZTERM_CONFIG_DIR/frames.lua (default: none — no frame themes)"
-    )
-    # A console reached at the host the browser addressed needs none of these: the
-    # request's own `Host` is the comparison. This is for a reverse proxy that
-    # rewrites `Host` to the upstream (nginx does unless told
-    # `proxy_set_header Host $host`), which makes the browser's `Origin` unmatchable
-    # against anything the request still carries.
-    console_parser.add_argument(
-        "--allow-origin", action="append", default=[], metavar="ORIGIN",
-        dest="allow_origin",
-        help="Also accept writes from this origin, e.g. https://console.example.com "
-             "(repeatable; default: none — only the origin the request was addressed "
-             "to is accepted)"
-    )
-    console_parser.add_argument(
-        "--fetch-interval", type=float, default=10.0, metavar="MINUTES",
-        help="How often to fetch the checkout's remote so the console knows whether "
-             "it is behind (default: 10; 0 disables, and the count then only reflects "
-             "the last fetch somebody ran)"
-    )
-
-    # Pulse command — the live telemetry dashboard
-    pulse_parser = subparsers.add_parser(
-        "pulse",
-        help="Serve the live telemetry dashboard over the eval loop's measurements",
-    )
-    pulse_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    pulse_parser.add_argument(
-        "--host", default="127.0.0.1", help="Bind address (default: localhost)"
-    )
-    pulse_parser.add_argument(
-        "--port", type=int, default=8379, help="Port (default: 8379; /pulse via tailscale serve)"
+    # Plugins add theirs after core's, so a name core already uses is refused as that
+    # plugin's failure rather than shadowing the core command.
+    plugins.loaded().register_commands(
+        subparsers, groups={"eval": eval_sub},
+        commands={"pin": pin_parser, "eval cost": eval_cost_parser},
     )
 
     args = parser.parse_args()
@@ -1441,7 +793,9 @@ def _main():
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    if args.command == "write":
+    if run := getattr(args, "plugin_run", None):
+        run(args)
+    elif args.command == "write":
         _cmd_write(args)
     elif args.command == "validate":
         _cmd_validate(args)
@@ -1451,14 +805,10 @@ def _main():
         _cmd_bootstrap(args)
     elif args.command == "extract":
         _cmd_extract(args)
-    elif args.command == "ingest":
-        _cmd_ingest(args)
     elif args.command == "delegate":
         _cmd_delegate(args)
     elif args.command == "contract":
         _cmd_contract(args, contract_parser)
-    elif args.command == "backfill-chunks":
-        _cmd_backfill_chunks(args)
     elif args.command == "audit-artifacts":
         _cmd_audit_artifacts(args)
     elif args.command == "repair-projects":
@@ -1477,8 +827,6 @@ def _main():
         _cmd_snapshot(args)
     elif args.command == "eval":
         _cmd_eval(args, eval_parser)
-    elif args.command == "reflex":
-        _cmd_reflex(args)
     elif args.command == "init":
         _cmd_init(args)
     elif args.command == "status":
@@ -1487,28 +835,49 @@ def _main():
         _cmd_rescope(args)
     elif args.command == "pin":
         _cmd_pin(args)
-    elif args.command == "spawn":
-        _cmd_spawn(args)
     elif args.command == "quick":
         _cmd_quick(args, quick_parser)
-    elif args.command == "room":
-        _cmd_room(args, parser)
     elif args.command == "preset":
         _cmd_preset(args, preset_parser)
     elif args.command == "thread":
         _cmd_thread(args, thread_parser)
-    elif args.command == "ceremony":
-        _cmd_ceremony(args, parser)
-    elif args.command == "dispatch":
-        _cmd_dispatch(args)
-    elif args.command == "console":
-        _cmd_console(args)
-    elif args.command == "pulse":
-        _cmd_pulse(args)
-    elif args.command == "arch":
-        _cmd_arch(args, arch_parser)
+    elif args.command == "preflight":
+        _cmd_preflight(args)
+    elif args.command == "growth":
+        _cmd_growth(args)
     else:
         parser.print_help()
+        sys.exit(1)
+
+
+def _cmd_preflight(args):
+    """Run the session preflight (harness/preflight.py) and record the result.
+
+    `--hook` is the hooks' form: it prints only the hook's JSON and exits 0 whatever it
+    found, because the decision is carried in that JSON. Without it, a readable report,
+    exiting 1 when the preflight failed.
+    """
+    from thalamus.harness import preflight
+
+    phase = getattr(args, "phase", preflight.FIRST_TOOL_CALL)
+    report = preflight.run(
+        args.session_id, args.scope, SessionType(args.session_type),
+        transcript=Path(args.transcript) if args.transcript else None,
+        project_dir=args.project_dir, phase=phase,
+    )
+    preflight.record(report)
+    if args.hook:
+        told = (preflight.told_at_start(args.session_id)
+                if phase == preflight.FIRST_TOOL_CALL else set())
+        print(json.dumps(preflight.hook_output(report, told)))
+        return
+    for check in report.checks:
+        mark = {True: "ok  ", False: "FAIL", None: "?   "}[check.ok]
+        print(f"{mark} {check.name}: {check.detail}")
+    verdict = "passed" if report.passed else (
+        "failed — the run aborts" if report.aborts else "failed — reported to the session")
+    print(f"\npreflight {verdict} ({report.session_type})")
+    if not report.passed:
         sys.exit(1)
 
 
@@ -2179,6 +1548,14 @@ def _cmd_extract(args):
             forked_from = args.forked_from if args.forked_from is not None else (
                 launched.get("forked_from") or env_forked_from
             )
+            # Flag, then the ledger, then attended — and not this shell's environment,
+            # which describes the re-extraction rather than the launch. The session-end
+            # path always finds a ledger row, written at session start with the type
+            # resolved there; a session with no row predates the field and was attended.
+            session_type = (
+                SessionType(args.session_type) if getattr(args, "session_type", None)
+                else pin.ledger_session_type(launched) or SessionType.ATTENDED
+            )
 
             entry, secrets = transcripts.retain(facts.path)
             # This is the path that runs at every session end. The scan reports and
@@ -2186,6 +1563,19 @@ def _cmd_extract(args):
             # scanning at all — `report_secrets` is the consumer, on stderr and in
             # ~/.thalamus/logs/secret-scan.log.
             report_secrets(secrets, f"session {facts.session_id[:8]} transcript")
+            # The first session a changed Claude Code release writes is checked as it
+            # is distilled, so the release is caught by the first transcript it
+            # writes; codex and Cursor transcripts have no rules yet.
+            if args.harness == "claude":
+                try:
+                    format_report = transcript_format.check_transcript(facts.path)
+                except OSError:
+                    # The bytes are already retained; a check that cannot reread them
+                    # has nothing to report and no business ending the distillation.
+                    format_report = None
+                if format_report is not None:
+                    transcript_format.report_findings(
+                        format_report, f"session {facts.session_id[:8]}")
             # A Cursor session's ingress evidence lives outside its transcript, so the
             # transcript alone would not reach what the floor judged.
             transcripts.retain_ingress_receipt(facts)
@@ -2197,7 +1587,7 @@ def _cmd_extract(args):
                 scope=scope,
                 room=room,
                 forked_from=forked_from,
-            )
+            ).model_copy(update={"session_type": session_type})
 
             # The reference feed, read here rather than inside extraction: the
             # served set comes from the eval tap, and the harness layer does not
@@ -2223,6 +1613,7 @@ def _cmd_extract(args):
                     open_threads=_open_threads(graph, args.scope, facts.project),
                     known_claims=_known_claims(graph, args.scope, facts.project),
                     served_nodes=served,
+                    autonomous=session_type is SessionType.AUTONOMOUS,
                 )
 
             try:
@@ -2298,6 +1689,7 @@ def _cmd_extract(args):
                 f"{len(session.claims()):>2} claims  {len(session.threads)} threads  "
                 f"{len(session.thread_refs)} refs"
                 + (f"  {floored} ingress-floored" if floored else "")
+                + ("  autonomous" if session.session_type is SessionType.AUTONOMOUS else "")
             )
             if args.write:
                 try:
@@ -2334,6 +1726,11 @@ def _cmd_extract(args):
     )
     if not args.write:
         print("DRY RUN — nothing written to the graph. Re-run with --write to persist.")
+    # A session that failed is a failed run, whatever the others did: session-end.sh
+    # and a job runner learn of it from the status, and records it where the operator
+    # reads failures. Exiting 0 here left a refused write reported nowhere.
+    if failed:
+        sys.exit(1)
 
 
 def _session_has_claims(graph, session_vid: str) -> bool:
@@ -2367,54 +1764,6 @@ def _open_threads(graph, scope: str, project: str) -> list[dict]:
         }
         for row in rows
     ]
-
-
-_PREFLIGHT_EXCERPT = 400
-
-
-def _report_preflight(args, ingest_mod):
-    """`thalamus ingest <doc> --scope <s> --check` — everything short of the model call.
-
-    Deliberately not a reimplementation of the checks: it calls `ingest.preflight`, the
-    same function `ingest()` calls, so the check and the ingest cannot disagree about
-    which host served the bytes or whether the allowlist admits it. A prose procedure
-    could not hold that parity — the `curl` incantation it replaces went through three
-    revisions in one day, each against a measurement, and still stopped a redirect hop
-    short of `urlopen` and sent a different User-Agent.
-
-    Exits non-zero on refusal, because this is what a batch script gates on.
-    """
-    try:
-        checked = ingest_mod.preflight(args.location, scope=args.scope, fresh=True)
-    except ingest_mod.IngestError as e:
-        print(f"CHECK FAILED: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Requested:    {checked.requested}")
-    print(f"Served by:    {checked.origin}" + ("  (redirected)" if checked.redirected else ""))
-    # A local path is not allowlisted and never was — hand-feeding a file *is* the
-    # curation decision, so the gate does not consult the manifest at all. Reporting a
-    # pass here would claim the manifest admitted something it never saw.
-    if checked.origin.startswith(("http://", "https://")):
-        print(f"Allowlisted:  yes — `{args.scope}` admits this origin")
-    else:
-        print("Allowlisted:  n/a — a local file is hand-fed, which is the curation decision")
-    print(f"Content-Type: {checked.content_type or '(none reported)'}")
-    print(f"Retained:     {checked.entry.uri} ({checked.entry.byte_size:,} bytes)")
-    print(f"Text:         {len(checked.text):,} chars")
-    # The title is what the check exists to confirm, and it is the one thing a HEAD
-    # request cannot answer. When the bytes do not carry one — a PDF whose producer left
-    # the metadata field empty or filled it with a temp filename — the opening text is
-    # the answer, so it is printed either way rather than only on the failure.
-    print(f"Title:        {checked.title or '(none in the document metadata)'}")
-    excerpt = checked.text[:_PREFLIGHT_EXCERPT]
-    print(f"\nOpening {len(excerpt):,} chars, as the extractor would read them:\n  {excerpt}")
-    print(
-        "\nCHECKED — nothing extracted, no model called. This is the ingest path up to "
-        "the model,\nso a --write run within the day ingests these exact bytes rather "
-        "than asking again."
-    )
-
 
 
 def _cmd_delegate(args):
@@ -2453,73 +1802,6 @@ def _cmd_delegate(args):
     )
     print(f"{args.scope} -> {result.harness}/{result.model} ({counts}) -> {result.output}")
 
-def _cmd_reflex(args):
-    """The hook's worker: everything it prints is injected, so it prints the digest or nothing."""
-    from thalamus.harness import reflex_worker
-    from thalamus.harness.reflex import fire, reflex_dir, shadow
-
-    if getattr(args, "job_tools", None):
-        from thalamus.harness.reflex_channel import serve_tools
-
-        serve_tools(args.job_tools)
-        return
-    if args.work:
-        reflex_worker.work(
-            reflex_dir(args.reflex_dir),
-            connect_graph=lambda: connect(args.url),
-            close_graph=close_connection,
-        )
-        return
-    if args.sweep:
-        counts = reflex_worker.sweep(reflex_dir(args.reflex_dir))
-        print(", ".join(f"{count} {outcome}" for outcome, count in counts.items()))
-        return
-    if not args.session_id:
-        print("reflex: --session-id is required", file=sys.stderr)
-        sys.exit(2)
-    if args.deliver:
-        digest = reflex_worker.deliver(
-            reflex_dir(args.reflex_dir), session_id=args.session_id, agent_id=args.agent_id,
-            event=args.event,
-        )
-        if digest:
-            print(digest)
-        return
-    if args.response_file is None:
-        print("reflex: --response-file is required", file=sys.stderr)
-        sys.exit(2)
-    try:
-        observed = args.response_file.read_text(encoding="utf-8", errors="replace")
-    except OSError as exc:
-        print(f"reflex: {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    if args.shadow:
-        shadow(session_id=args.session_id, observed=observed,
-               agent_id=args.agent_id, event=args.event)
-        return
-
-    graph = connect(args.url)
-    try:
-        digest = fire(
-            graph,
-            session_id=args.session_id,
-            observed=observed,
-            scope=args.scope,
-            agent_id=args.agent_id,
-            agent_type=args.agent_type,
-            cwd=args.cwd,
-            tool_name=args.tool_name,
-            event=args.event,
-            transcript=args.transcript,
-            tool_use_id=args.tool_use_id,
-            worker_url=args.url if args.url != DEFAULT_URL else "",
-        )
-    finally:
-        close_connection(graph)
-    if digest:
-        print(digest)
-
 
 def _report_delegation_plan(prepared) -> None:
     """What `--check` says: the arithmetic, whoever it favours.
@@ -2542,228 +1824,6 @@ def _report_delegation_plan(prepared) -> None:
         f"{path.name} {size:,}"
         for path, size in sorted(prepared.sizes, key=lambda row: -row[1])
     ))
-
-
-def _cmd_ingest(args):
-    from urllib.parse import urlparse
-
-    from thalamus.contract.conformance import check_knowledge
-    from thalamus.contract.manifest import load_manifest
-    from thalamus.harness import extraction as extraction_mod
-    from thalamus.harness import ingest as ingest_mod
-    from thalamus.contract.conformance import write_knowledge_checked
-
-    if args.check and args.write:
-        print(
-            "--check and --write are opposites: --check stops before the model call, "
-            "--write runs it and persists the result.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    # `--url` is the Gremlin endpoint on all four subcommands that carry it, and on
-    # this one the positional argument is normally a URL too — so `--url <document>`
-    # reads as the flag that names the document. It is accepted, and it points the
-    # graph write at the document's host. Validated here, ahead of the fetch, the
-    # archive write and the extraction pass, all three of which used to complete
-    # before the error arrived as a connection failure against the paper's host.
-    if urlparse(args.url).scheme not in ("ws", "wss"):
-        print(
-            f"--url is the Gremlin endpoint (ws:// or wss://), and got `{args.url}`.\n"
-            f"The document to ingest is the positional argument:\n"
-            f"  thalamus ingest {args.url} --scope {args.scope}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    try:
-        manifest = load_manifest(args.scope)
-    except (FileNotFoundError, ValueError) as e:
-        print(str(e), file=sys.stderr)
-        sys.exit(1)
-
-    if args.check:
-        _report_preflight(args, ingest_mod)
-        return
-
-    # Advisory, like the known-claims feed: an unreachable graph degrades to an
-    # ingest with no entity vocabulary, never a failed ingest — *unless* the run
-    # intends to write, in which case the endpoint has to answer before the model is
-    # billed. An endpoint that is merely down otherwise costs a whole extraction pass
-    # and reports it at the write, after the only irreversible spend on the path.
-    known_entities: list[dict] = []
-    try:
-        from thalamus.substrate.reader import knowledge_entities
-
-        graph = connect(args.url)
-        try:
-            known_entities = knowledge_entities(graph, args.scope)
-        finally:
-            close_connection(graph)
-    except Exception as e:
-        if args.write:
-            print(
-                f"Graph endpoint unreachable at {args.url}: {e}\n"
-                "Nothing was fetched and no model was called. --write needs the "
-                "endpoint the write lands on; re-run without it to extract and report "
-                "only.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
-    # Ingestion is resolved as its own pass, not as a second reader of the
-    # distillation setting. A paper is one model call per chunk, so an ingest can cost
-    # what a day of distillation does — which is the spend worth moving on its own,
-    # rather than only as a side effect of a decision about SessionEnd.
-    extractor = extractor_policy.resolve(
-        pass_="ingest", harness=args.harness or "", model=args.model or ""
-    )
-    # Printed before the call, not with the results: it names what is about to be
-    # billed, and a chunked document bills it once per chunk. It is also the only place
-    # a completed ingest says what extracted it — a Source vertex carries the document's
-    # provenance, not the extractor's.
-    print(f"Extractor: {extractor.harness}/{extractor.model} — {extractor.reason}")
-    try:
-        batch, run, digest = ingest_mod.ingest(
-            args.location,
-            scope=args.scope,
-            feed=args.feed,
-            model=extractor.model,
-            harness=extractor.harness,
-            title=args.title,
-            known_entities=known_entities,
-            refetch=args.refetch,
-        )
-    except (ingest_mod.IngestError, extraction_mod.ExtractionError) as e:
-        print(f"Ingest failed: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    if digest.verified_at is not None:
-        stamp = digest.verified_at.strftime("%Y-%m-%d %H:%M UTC")
-        print(
-            f"Bytes:    the ones --check verified at {stamp}, not a fresh request — "
-            f"so what is\n          written is what was checked. --refetch asks the "
-            f"address again."
-        )
-    print(f"Retained: {batch.source.uri} ({batch.source.byte_size:,} bytes)")
-    if digest.chunks > 1:
-        read = digest.chunks - len(digest.failed_chunks)
-        print(
-            f"Read: {digest.text_chars:,} chars of text in full, "
-            f"across {digest.chunks} chunked extraction passes"
-        )
-        if digest.failed_chunks:
-            print(
-                f"\n  ⚠ {len(digest.failed_chunks)} of {digest.chunks} passes failed to "
-                f"parse (chunk{'s' if len(digest.failed_chunks) > 1 else ''} "
-                f"{', '.join(str(n) for n in digest.failed_chunks)}).\n"
-                f"    The claims below come from the other {read}; those chunks' text "
-                f"is archived but uncovered.\n"
-                f"    Re-running costs no refetch.",
-                file=sys.stderr,
-            )
-    else:
-        print(
-            f"Read: {digest.text_chars:,} chars of text, "
-            f"{digest.coverage:.0%} of it within the {digest.budget:,}-char digest budget"
-        )
-    if digest.truncated:
-        print(
-            f"\n  ⚠ TRUNCATED — {digest.discarded:,} chars past the budget were never "
-            f"seen by the extractor.\n"
-            f"    The claims below come from the opening {digest.budget:,} chars; the "
-            f"tail is invisible,\n"
-            f"    not thinly covered. If a specific mechanism has to be citable, feed "
-            f"that section as\n"
-            f"    its own file.",
-            file=sys.stderr,
-        )
-    if digest.dropped_refs or digest.dropped_entities:
-        lines = []
-        if digest.dropped_refs:
-            lines.append(
-                f"    {len(digest.dropped_refs)} entity reference"
-                f"{'s' if len(digest.dropped_refs) > 1 else ''} dropped from claims — "
-                f"declared nowhere, and unknown to this scope:\n"
-                f"      {', '.join(repr(n) for n in digest.dropped_refs)}"
-            )
-        if digest.dropped_entities:
-            lines.append(
-                f"    {len(digest.dropped_entities)} entit"
-                f"{'ies' if len(digest.dropped_entities) > 1 else 'y'} dropped — "
-                f"no claim is about them:\n"
-                f"      {', '.join(repr(n) for n in digest.dropped_entities)}"
-            )
-        print(
-            "\n  ⚠ The extraction's entity graph did not close; it was narrowed, not "
-            "rejected.\n" + "\n".join(lines) + "\n"
-            "    The claims themselves are intact — only these edges are absent.",
-            file=sys.stderr,
-        )
-    if digest.repaired_kinds:
-        print(
-            f"\n  Repaired {len(digest.repaired_kinds)} claim kind"
-            f"{'s' if len(digest.repaired_kinds) > 1 else ''} onto the `{args.scope}` "
-            f"manifest's declared set — spelling only, no judgement:",
-            file=sys.stderr,
-        )
-        for _index, was, now in digest.repaired_kinds:
-            print(f"    {was} → {now}", file=sys.stderr)
-    if digest.rejected_claims:
-        from thalamus.archive import REJECT_LOG
-
-        print(
-            f"\n  ⚠ {len(digest.rejected_claims)} claim"
-            f"{'s' if len(digest.rejected_claims) > 1 else ''} left the batch; the rest "
-            f"is intact.\n"
-            f"    The extraction is already paid for, so these are retained rather than "
-            f"discarded:\n      {REJECT_LOG}",
-            file=sys.stderr,
-        )
-        for rejection in digest.rejected_claims:
-            print(
-                f"    [{rejection.triage}] {rejection.reason}\n"
-                f"      {rejection.description[:110]}",
-                file=sys.stderr,
-            )
-        if any(r.triage == "ambiguous" for r in digest.rejected_claims):
-            print(
-                "    Ambiguous is a decision, not a defect: no rule can retype these "
-                "without\n    asserting something the document may not support.",
-                file=sys.stderr,
-            )
-    priced = f"${run.cost_usd:.2f}" if run.cost_usd is not None else "cost not reported"
-    print(f"Extracted: {len(batch.claims)} claims, {len(batch.entities)} entities "
-          f"({priced})")
-    print(f"  {batch.source.title}")
-    if batch.chunks:
-        anchored = len(batch.anchors)
-        print(
-            f"Co-indexed: {len(batch.chunks)} verbatim chunks, "
-            f"{anchored}/{len(batch.claims)} claims anchored to the passage they quote"
-        )
-    for claim in batch.claims:
-        print(f"  - [{claim.kind.split('/')[-1]}] {claim.description[:90]}")
-
-    issues = [*check_knowledge(batch), *manifest.check_batch(batch)]
-    if issues:
-        print("\nREJECTED — the batch does not satisfy the contract:", file=sys.stderr)
-        for issue in issues:
-            print(f"  - {issue}", file=sys.stderr)
-        print("The fetch is archived; fix and re-run without refetching cost.", file=sys.stderr)
-        sys.exit(1)
-
-    if not args.write:
-        print("\nDRY RUN — nothing written to the graph. Re-run with --write to persist.")
-        return
-
-    graph = connect(args.url)
-    try:
-        source_vid = write_knowledge_checked(graph, batch, manifest)
-        _persist(graph)
-        print(f"\nWritten into scope `{batch.scope}`: {source_vid}")
-    finally:
-        close_connection(graph)
 
 
 def _cmd_derive_artifact_paths(args):
@@ -2845,7 +1905,7 @@ def _cmd_retire_scans(args):
         if retirement.uncited_blobs:
             print(
                 f"\n{len(retirement.uncited_blobs)} archived blob(s) become uncited. "
-                "Bytes are kept; `thalamus arch growth` ranks unreferenced stock."
+                "Bytes are kept; `thalamus growth` ranks unreferenced stock."
             )
 
         if not args.write:
@@ -3078,130 +2138,6 @@ def _cmd_audit_artifacts(args):
         close_connection(graph)
 
 
-def _cmd_backfill_chunks(args):
-    """Co-index documents that were ingested before chunks existed.
-
-    Needs no model: a chunk is a slice of retained bytes, and the entity vocabulary it
-    tags itself with is already in the graph. So this is a rebuild, not a re-extraction
-    — which is the property that makes chunk geometry a dial rather than a commitment.
-    Claims, entities and Sources are left exactly as they are.
-    """
-    from pathlib import Path
-
-    from gremlin_python.process.graph_traversal import __
-    from gremlin_python.process.traversal import Merge, T
-
-    from thalamus.contract.ontology import vid
-    from thalamus.harness import ingest as ingest_mod
-    from thalamus.harness.ingest import anchor_citations, build_chunks
-    from thalamus.substrate.schema import Entity, Provenance, Tier
-    from thalamus.substrate.writer import _ensure_edge, _iterate, _provenance_properties
-
-    graph = connect(args.url)
-    try:
-        query = graph.V().has_label("Source").has("kind", "article")
-        if args.scope:
-            query = query.has("scope", args.scope)
-        rows = (
-            query.project("vid", "scope", "hash", "uri", "title", "chunks")
-            .by(T.id).by("scope").by("content_hash").by("uri").by("title")
-            .by(__.in_("DERIVED_FROM").has_label("Chunk").count())
-            .to_list()
-        )
-
-        planned = 0
-        skipped_existing = 0
-        missing_bytes = 0
-        for row in rows:
-            if row["chunks"] and not args.force:
-                skipped_existing += 1
-                continue
-            digest = str(row["uri"] or "").replace("archive://", "")
-            hits = list(Path.home().glob(f".thalamus/archive/{digest[:2]}/{digest}.*"))
-            if not hits:
-                missing_bytes += 1
-                continue
-            try:
-                text = ingest_mod.to_text(hits[0].read_bytes())
-            except Exception as exc:  # a PDF or unreadable payload — say so, skip it
-                print(f"  skip {row['title'][:50]}: {exc}", file=sys.stderr)
-                continue
-
-            scope = row["scope"]
-            # The claim's vertex ID travels with its citation — without it the anchor
-            # can be computed and printed but never written, which is the whole point
-            # of the edge. (It was, in the first run of this command.)
-            claims = (
-                graph.V(row["vid"]).in_("DERIVED_FROM").has_label("Claim")
-                .project("vid", "citation").by(T.id).by(
-                    __.coalesce(__.values("citation"), __.constant(""))
-                ).to_list()
-            )
-            entity_names = [
-                str(name[0] if isinstance(name, list) else name)
-                for name in graph.V().has_label("Entity").has("scope", scope)
-                .values("name").to_list()
-            ]
-
-            cited = [str(c.get("citation") or "") for c in claims]
-            chunks = build_chunks(text, entity_names)
-            anchored = anchor_citations(chunks, cited)
-            planned += len(chunks)
-            print(f"  {row['title'][:52]:<54} {len(chunks):>4} chunks  "
-                  f"{len(anchored)}/{len(cited)} anchored  [{scope}]")
-
-            if not args.write:
-                continue
-
-            entity_vids = {
-                name: vid("Entity", Entity(name=name).slug(), scope) for name in entity_names
-            }
-            previous = ""
-            for chunk in chunks:
-                chunk_vid = vid("Chunk", chunk.local_id(row["hash"]), scope)
-                properties = {
-                    "text": chunk.text, "ordinal": chunk.ordinal,
-                    "start": chunk.start, "end": chunk.end, "scope": scope,
-                    **_provenance_properties(
-                        Provenance(tier=Tier.CURATED, source=str(row["uri"] or ""))
-                    ),
-                }
-                _iterate(
-                    graph.merge_v({T.id: chunk_vid, T.label: "Chunk"})
-                    .option(Merge.on_create, {T.id: chunk_vid, **properties})
-                    .option(Merge.on_match, properties),
-                    "upsert Chunk", chunk_vid,
-                )
-                _ensure_edge(graph, chunk_vid, row["vid"], "DERIVED_FROM")
-                if previous:
-                    _ensure_edge(graph, previous, chunk_vid, "ADJACENT_IN_TEXT")
-                previous = chunk_vid
-                for name in chunk.about:
-                    if name in entity_vids:
-                        _ensure_edge(graph, chunk_vid, entity_vids[name], "ABOUT")
-
-            # The anchor edges, written last because they need every chunk to exist.
-            ordinal_vids = {
-                c.ordinal: vid("Chunk", c.local_id(row["hash"]), scope) for c in chunks
-            }
-            for claim_index, ordinal in anchored.items():
-                if ordinal in ordinal_vids:
-                    _ensure_edge(
-                        graph, str(claims[claim_index]["vid"]),
-                        ordinal_vids[ordinal], "ANCHORS",
-                    )
-
-        print(f"\n{len(rows)} article Sources: {planned:,} chunks "
-              f"({skipped_existing} already chunked, {missing_bytes} missing bytes)")
-        if args.write:
-            _persist(graph)
-            print("Written.")
-        else:
-            print("DRY RUN — nothing written. Re-run with --write to persist.")
-    finally:
-        close_connection(graph)
-
-
 # What each `thalamus graph` verb runs after `docker compose -f <compose file>`. `down`
 # is not here: with `-v` it deletes the graph's volume, which is the operator's memory,
 # and a verb that sits one flag away from that is not one this command offers.
@@ -3310,7 +2246,6 @@ def _report_capabilities():
     from thalamus.contract.boundaries import check_boundaries
     from thalamus.contract.pinning import check_pinning
     from thalamus.contract.probes import check_capabilities
-    from thalamus.console.room_capabilities import check_rooms
 
     # Two kinds of declaration, one report. A flag row says what a CLI accepts; a
     # boundary row says what actually binds on a harness — and the second is the one
@@ -3321,11 +2256,9 @@ def _report_capabilities():
              for row, outcome, detail in check_boundaries()]
     rows += [(f"{row.label} [{row.state.value}]", outcome, detail)
              for row, outcome, detail in check_pinning()]
-    # A third subject: what a dispatcher can establish about a member before writing to
-    # it. Kept out of the pinning rows because a pinned session and an addressable room
-    # member are different claims, and the record that carried both reported one wrongly.
-    rows += [(f"{row.label} [{row.state.value}]", outcome, detail)
-             for row, outcome, detail in check_rooms()]
+    # Then each plugin's own subjects — the console's is what a dispatcher can establish
+    # about a room member before writing to it.
+    rows += plugins.loaded().capability_rows()
 
     drift = [r for r in rows if r[1] == "drift"]
     malformed = [r for r in rows if r[1] == "malformed"]
@@ -3348,6 +2281,51 @@ def _report_capabilities():
               "The unchecked rows are not evidence of anything.")
         return
     print("Capability declarations OK — every one re-asked and confirmed.")
+
+
+def _report_transcript_format():
+    """Check the transcripts on disk against the readers' assumptions, denominators shown.
+
+    Per version, because a finding is a fact about a release: the version a finding
+    first appears in is the one whose changelog says what moved. Any finding, in a
+    transcript or a snapshot pair, exits 1 (A0230, cites-as-live).
+    """
+    files = [path for paths in transcripts.discover().values() for path in paths]
+    by_version: dict[str, int] = {}
+    findings: list[transcript_format.Finding] = []
+    flagged = 0
+    for path in files:
+        report = transcript_format.check_transcript(path)
+        for version in report.versions or {"(no version)"}:
+            by_version[version] = by_version.get(version, 0) + 1
+        if report.findings:
+            flagged += 1
+            print(f"  ✗ {path}")
+            for line in transcript_format.summarise(report.findings):
+                print(f"      {line}")
+            findings += report.findings
+    pairs, broken = transcript_format.check_snapshots()
+    for line in broken:
+        print(f"  ✗ compaction: {line}")
+
+    newest = sorted(by_version, key=_version_key)[-3:]
+    print(f"\nChecked {len(files)} transcript(s) against {len(transcript_format.RULES)} "
+          f"rule(s); newest versions seen: {', '.join(newest) or 'none'}. "
+          f"Compared {pairs} pair(s) of archived snapshots of one session.")
+    if findings or broken:
+        print(f"{flagged} transcript(s) and {len(broken)} snapshot pair(s) break an "
+              "assumption distillation reads them by. Decide what each changed field "
+              "means, then change the reader or the rule's measured set in "
+              "harness/transcript_format.py.", file=sys.stderr)
+        sys.exit(1)
+    if not files:
+        print("No transcripts to check — this is not evidence of anything.")
+        return
+    print("Transcript format OK — every rule holds on every transcript.")
+
+
+def _version_key(version: str) -> tuple:
+    return tuple(int(part) if part.isdigit() else -1 for part in version.split("."))
 
 
 def _report_expert_boundaries():
@@ -3387,212 +2365,30 @@ def _report_expert_boundaries():
           "`thalamus contract check --capabilities`.")
 
 
-def _cmd_arch(args, arch_parser):
-    """The architect's instrument. Reads code; writes a model file and findings."""
-    command = getattr(args, "arch_command", None)
-    if command not in {"scan", "show", "diff", "rules", "growth", "dead", "refs"}:
-        arch_parser.print_help()
-        sys.exit(1)
-
-    import dataclasses
-    import subprocess
-    import tempfile
-    from pathlib import Path
-
-    from thalamus.arch import findings as arch_findings
-    from thalamus.arch import model as arch_model
-    from thalamus.arch import routes as arch_routes
-    from thalamus.arch.extractor import scan_repo
-    from thalamus.arch.metrics import measure
-
-    def _scan(target):
-        """One scan under both declared channels.
-
-        Every subcommand goes through this, `diff` included: measuring one side with the
-        route channel on and the other with it off would compare two extractors, which
-        is the error the policy digest exists to make impossible.
-        """
-        extracted = arch_routes.extract_routes(target, model.routes)
-        return arch_routes.merge(scan_repo(target, policy), extracted), extracted
-
-    # The repository, not the cwd. `arch/model.yaml` is a file in a checkout, and
-    # resolving it against wherever the operator is standing made `thalamus arch` a
-    # command that reported an empty model — no layers, no rules, every module
-    # unplaced — from any directory but the repo root.
-    repo = Path(args.repo).resolve() if args.repo else arch_model.REPO_ROOT
-    model = arch_model.load(repo / arch_model.MODEL_PATH)
-    policy = model.policy
-    if getattr(args, "import_depth", ""):
-        policy = dataclasses.replace(policy, import_depth=args.import_depth)
-
-    if command == "show":
-        _arch_show(repo, model)
-        return
-
-    if command == "growth":
-        _arch_growth(args, repo)
-        return
-
-    graph, route_graph = _scan(repo)
-    metrics = measure(graph)
-
-    if command == "rules":
-        _arch_rules(model, graph, gate=getattr(args, "gate", False))
-        return
-
-    if command == "dead":
-        _arch_dead(args, repo, graph)
-        return
-
-    if command == "refs":
-        _arch_refs(args, repo)
-        return
-
-    if command == "diff":
-        with tempfile.TemporaryDirectory(prefix="thalamus-arch-") as tmp:
-            checkout = Path(tmp) / "tree"
-            result = subprocess.run(
-                ["git", "-C", str(repo), "worktree", "add", "--detach", str(checkout), args.against],
-                capture_output=True, text=True, check=False,
-            )
-            if result.returncode != 0:
-                print(f"Cannot check out {args.against}: {result.stderr.strip()}", file=sys.stderr)
-                sys.exit(1)
-            try:
-                # Both sides are recomputed under one policy. Reading the stored number
-                # off the other commit's model file would compare a measurement against
-                # a report, which is the mistake `diff` exists to prevent.
-                other = measure(_scan(checkout)[0])
-            finally:
-                subprocess.run(
-                    ["git", "-C", str(repo), "worktree", "remove", "--force", str(checkout)],
-                    capture_output=True, text=True, check=False,
-                )
-        _arch_diff(args.against, other, metrics)
-        return
-
-    # scan
-    text, derived, metrics = arch_model.build(repo, graph, model)
-    dirty = arch_model.dirty_paths(repo, policy)
-    found = arch_findings.findings(graph, metrics, model) + arch_findings.route_findings(
-        route_graph
-    )
-
-    print(f"Scan {derived['scan']}")
-    print(f"  policy      import_depth={policy.import_depth} resolve={policy.resolve} "
-          f"digest={policy.digest()[:7]}")
-    if model.routes.enabled:
-        print(f"  routes      {len(route_graph.called())} called, "
-              f"{len(route_graph.defined())} defined, match={model.routes.match} "
-              f"digest={model.routes.digest()[:7]}")
-    print(f"  modules     {metrics.modules}")
-    print(f"  edges       {metrics.dependencies} counted of {len(graph.edges)} recorded")
-    print(f"  propagation {metrics.propagation_cost * 100:.2f}%")
-    print(f"  cycles      {len(metrics.cycles)} ({metrics.modules_in_cycles} modules)")
-    for cycle in metrics.cycles:
-        print(f"                {' <-> '.join(cycle)}")
-    print(f"  findings    {len(found)}")
-    for finding in found:
-        print(f"                {finding.description}")
-
-    # The growth headline rides along because the series costs nothing to read — every
-    # vertex already carries `ingested_at`. Best-effort: a scan is a local operation and
-    # must not start failing because the graph server is down.
-    try:
-        from thalamus.arch import growth as arch_growth
-        from thalamus.substrate.writer import close_connection, connect
-
-        graph_connection = connect(args.url)
-        try:
-            rate = arch_growth.headline(graph_connection)
-        finally:
-            close_connection(graph_connection)
-        if rate is not None:
-            for line in rate.lines():
-                print(f"  {line}")
-    except Exception:
-        print("  growth      graph unreachable — run `thalamus arch growth` for the series")
-
-    if dirty:
-        # The walk read the working tree; the scan id names HEAD. With a dirty tree
-        # those are different codebases, and the model file would record a measurement
-        # of a commit that never contained it — the one falsehood git cannot correct
-        # later, because the file will be committed alongside the code it misdescribes.
-        print(f"\n{len(dirty)} uncommitted file(s) under the scanned roots:")
-        for path in dirty[:10]:
-            print(f"  {path}")
-        if len(dirty) > 10:
-            print(f"  … and {len(dirty) - 10} more")
-
-    if getattr(args, "check", False):
-        # The staleness gate. The committed model is a measurement of a tree; once the
-        # code moves past it, `arch show` reports numbers for a tree that no longer
-        # exists and nothing says so.
-        #
-        # It compares the *measurement* and not the whole file, because `scan` and
-        # `commit` name the tree that was measured and necessarily lag by one: writing
-        # the model and committing it moves HEAD, so a fresh scan's stamp can never
-        # equal the stamp inside the file that commit created. Comparing the text would
-        # make this gate impossible to satisfy rather than merely hard.
-        model_path = repo / arch_model.MODEL_PATH
-        committed = arch_model.load(model_path).derived if model_path.exists() else {}
-        measured = {k: v for k, v in derived.items() if k not in ("scan", "commit")}
-        stored = {k: v for k, v in committed.items() if k not in ("scan", "commit")}
-        if stored == measured:
-            print("\nModel file matches a fresh scan.")
-            return
-        drifted = sorted(
-            key for key in set(stored) | set(measured) if stored.get(key) != measured.get(key)
-        )
-        print(
-            f"\nStale: `arch/model.yaml` no longer matches a fresh scan — "
-            f"{', '.join(drifted) or 'no measured key'} differ(s). Run "
-            "`thalamus arch scan --write` and commit the result.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    if not args.write:
-        print("\nDry run. Re-run with --write to regenerate the model file.")
-        return
-
-    if dirty:
-        print(
-            "\nRefusing to write: the scan id names a commit the working tree does not "
-            "match. Commit or stash the files above, then re-run.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    model_path = repo / arch_model.MODEL_PATH
-    model_path.parent.mkdir(parents=True, exist_ok=True)
-    model_path.write_text(text, encoding="utf-8")
-    print(f"\nWrote {model_path.relative_to(repo)}")
-    print("Commit it — the file is the record, and git is what dates it to this tree.")
-
-
-def _arch_growth(args, repo) -> None:
+def _cmd_growth(args) -> None:
     """Stock first, then rate. Reads only — nothing here writes to the graph.
 
     The order is the finding: a trend statistic scores a flat 894MB as the healthiest
     surface on the box, so what nothing refers to is reported before how fast anything
     is growing.
     """
-    from thalamus.arch import growth as arch_growth
+    from thalamus import growth
+    from thalamus.contract.paths import CHECKOUT
     from thalamus.substrate.writer import close_connection, connect
 
+    repo = Path(args.repo).resolve() if args.repo else (CHECKOUT or Path.cwd())
     graph = connect(args.url)
     try:
-        audit = arch_growth.stock_audit(graph, repo)
-        print(f"Unreferenced stock — {arch_growth.human_bytes(audit.total_bytes)} total")
+        audit = growth.stock_audit(graph, repo)
+        print(f"Unreferenced stock — {growth.human_bytes(audit.total_bytes)} total")
         if not audit.orphans:
             print("  nothing on disk is unreferenced")
         for orphan in audit.ranked():
-            print(f"  {arch_growth.human_bytes(orphan.bytes):>8}  [{orphan.kind}] {orphan.path}")
+            print(f"  {growth.human_bytes(orphan.bytes):>8}  [{orphan.kind}] {orphan.path}")
             print(f"            {orphan.note}")
 
         print()
-        found = arch_growth.headline(graph)
+        found = growth.headline(graph)
         if found is None:
             print("growth      no series yet — the graph holds fewer than two dated days")
             return
@@ -3604,226 +2400,6 @@ def _arch_growth(args, repo) -> None:
         )
     finally:
         close_connection(graph)
-
-
-def _arch_show(repo, model) -> None:
-    """Print the authored half and what the last scan measured."""
-    print(f"repo         {model.repo or '(unset)'}")
-    print(f"root_commit  {model.root_commit or '(unset)'}")
-    print(f"policy       import_depth={model.policy.import_depth} "
-          f"resolve={model.policy.resolve} roots={list(model.policy.roots)} "
-          f"digest={model.policy.digest()[:7]}")
-    print(f"layers       {len(model.layers)}")
-    for layer in model.layers:
-        print(f"               {layer.name}: {', '.join(layer.includes) or '(nothing)'}")
-    print(f"rules        {len(model.rules)}")
-    for rule in model.rules:
-        print(f"               {rule.layer} -> {', '.join(rule.may_depend_on) or '(nothing)'}")
-    print(f"seams        {len(model.seams)}")
-    print(f"rejected     {len(model.rejected_refactors)} recorded refactor(s)")
-    if model.derived:
-        metrics = model.derived.get("metrics", {})
-        print(f"last scan    {model.derived.get('scan', '(none)')}")
-        print(f"               {metrics.get('modules', '?')} modules, "
-              f"{metrics.get('dependencies', '?')} dependencies, "
-              f"propagation {metrics.get('propagation_cost', '?')}%")
-    else:
-        print("last scan    (never scanned)")
-
-
-def _arch_rules(model, graph, gate: bool = False) -> None:
-    """Check the measured edges against the declared rules.
-
-    The report is the same either way: every violation prints, accepted or not, because
-    an architect reading this wants the design's real shape and not the subset that is
-    still news. `--gate` adds a verdict on top of that report rather than filtering it.
-    """
-    if not model.layers:
-        print(
-            f"No layers declared, so the partition places none of {len(graph.modules)} "
-            "scanned modules. Declaring them is the architect's work — an empty "
-            "partition reports nothing rather than passing."
-        )
-        if gate:
-            sys.exit(1)
-        return
-    unplaced = model.unplaced(graph)
-    violations = model.violations(graph)
-    result = model.gate(graph)
-    accepted_keys = {entry.key for entry in result.accepted_hits}
-
-    def mark(key) -> str:
-        return "accepted " if key in accepted_keys else "NEW      "
-
-    print(f"{len(graph.modules)} modules, {len(unplaced)} unplaced by the declared partition")
-    for module in unplaced[:20]:
-        print(f"  {mark((module, ''))} unplaced  {module}")
-    print(f"{len(violations)} rule violation(s), {len(result.accepted_hits)} accepted")
-    for violation in violations:
-        print(f"  {mark((violation.from_path, violation.to_path))} {violation.describe()}")
-    for entry in result.stale:
-        print(f"  STALE     accepted and no longer measured: {entry.describe()}")
-    if not unplaced and not violations:
-        print("The declared model and the measured graph agree.")
-
-    if not gate:
-        return
-    code = result.exit_code
-    if code == 1:
-        print(
-            f"\nGate: {len(result.new_violations)} violation(s) and "
-            f"{len(result.new_unplaced)} unplaced module(s) the model does not accept. "
-            "Fix the edge, or declare it in `accepted` with the reason it stands.",
-            file=sys.stderr,
-        )
-    elif code == 2:
-        print(
-            f"\nGate: {len(result.stale)} `accepted` entry/entries no longer happen. "
-            "Delete them — an exception that has stopped firing describes a design that "
-            "moved.",
-            file=sys.stderr,
-        )
-    sys.exit(code)
-
-
-def _dead_policy(repo):
-    """The declared census policy, read straight off the model file.
-
-    Read here rather than hung off `ArchModel` because `deadends` imports `findings`,
-    which imports `model` — putting the policy on the model would close that into a
-    cycle. `regenerate` preserves the authored half byte for byte, so a hand-declared
-    block survives every scan.
-    """
-    from thalamus.arch import model as arch_model
-    from thalamus.arch.deadends import DeadEndPolicy
-
-    path = repo / arch_model.MODEL_PATH
-    document = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
-    return DeadEndPolicy.from_block((document or {}).get("deadends") or {})
-
-
-def _refs_policy(repo):
-    """The declared reference policy, read straight off the model file.
-
-    Read here rather than hung off `ArchModel` for the reason `_dead_policy` is:
-    `references` imports `findings`, which imports `model`, so putting the policy on
-    the model would close that into a cycle.
-    """
-    from thalamus.arch import model as arch_model
-    from thalamus.arch.references import ReferencePolicy
-
-    path = repo / arch_model.MODEL_PATH
-    document = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
-    return ReferencePolicy.from_block((document or {}).get("references") or {})
-
-
-def _arch_refs(args, repo) -> None:
-    """Report references in comment prose that the tree no longer resolves.
-
-    No `--gate`, deliberately, and the absence is the design rather than an oversight:
-    this channel's precision has not been measured, and an unmeasured checker that
-    acts leaves no record of the calls it got wrong.
-    """
-    from thalamus.arch import references as arch_references
-
-    policy = _refs_policy(repo)
-    if not policy.enabled:
-        print(
-            "The reference channel is off. Enable it in `arch/model.yaml` under "
-            "`references: enabled: true` — a census nobody declared is a census "
-            "nobody can read the exceptions of."
-        )
-        return
-
-    print(arch_references.render(arch_references.census(repo, policy), limits=args.limits))
-
-
-def _arch_dead(args, repo, graph) -> None:
-    """Report definitions nothing outside the test roots refers to.
-
-    The report states what was measured and never that a symbol is unused: the census
-    resolves identifiers, and `--limits` lists every mechanism that could hide a caller
-    from it. `--gate` adds a verdict without narrowing that report.
-    """
-    from thalamus.arch import deadends as arch_deadends
-
-    policy = _dead_policy(repo)
-    if not policy.enabled:
-        print(
-            "The dead-end channel is off. Enable it in `arch/model.yaml` under "
-            "`deadends: enabled: true` — a census nobody declared is a census nobody "
-            "can read the exceptions of."
-        )
-        return
-
-    report = arch_deadends.scan(repo, graph, policy)
-    matched = {
-        (e.definition.path, e.definition.qualname)
-        for e in report.exempted
-        if e.rule == arch_deadends.RULE_DECLARED
-    }
-
-    # Reported through `deadend_findings` rather than off the report's lists directly:
-    # the finding is where the hedging lives. "No reference outside the test roots was
-    # found" is refutable by pointing at one; "unused" is a verdict a static census is
-    # not entitled to, given what `limits` says it cannot see.
-    for finding in arch_deadends.deadend_findings(report):
-        print(f"  {finding.description}")
-    print(
-        f"{len(report.test_only)} test-only, {len(report.orphans)} orphan module(s), "
-        f"{len(report.exempted)} exempted, {len(report.silenced)} reached only from a "
-        f"non-Python caller"
-    )
-    for entry in report.silenced:
-        print(f"  reached    {entry.describe()}")
-
-    stale = [entry for entry in policy.exemptions if (entry.path, entry.symbol) not in matched]
-    for entry in stale:
-        print(f"  STALE      exemption matches nothing: {entry.path} {entry.symbol}")
-
-    if args.limits or not (report.test_only or report.orphans):
-        print(f"{len(report.limits)} stated limit(s) on the census's reach")
-        for limit in report.limits:
-            print(f"  limit      {limit}")
-
-    if not report.test_only and not report.orphans and not stale:
-        print("Every definition under the source roots is referenced outside the tests.")
-
-    if not args.gate:
-        return
-    if report.test_only or report.orphans:
-        print(
-            f"\nGate: {len(report.test_only) + len(report.orphans)} finding(s) the model "
-            "does not exempt. Wire the definition to a caller, delete it, or add an "
-            "`exemptions` entry under `deadends` with the reason it stands.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    if stale:
-        print(
-            f"\nGate: {len(stale)} exemption(s) match nothing. Delete them — an "
-            "exemption for a symbol that is now referenced, or gone, describes a tree "
-            "that moved.",
-            file=sys.stderr,
-        )
-        sys.exit(2)
-
-
-def _arch_diff(against: str, other, current) -> None:
-    """Report both sides recomputed, never a stored number against a fresh one."""
-    print(f"{'':13} {against[:12]:>12}  {'working tree':>12}")
-    print(f"{'modules':13} {other.modules:>12}  {current.modules:>12}")
-    print(f"{'dependencies':13} {other.dependencies:>12}  {current.dependencies:>12}")
-    print(f"{'propagation':13} {other.propagation_cost * 100:>11.2f}%  "
-          f"{current.propagation_cost * 100:>11.2f}%")
-    print(f"{'cycles':13} {len(other.cycles):>12}  {len(current.cycles):>12}")
-
-    gone = set(other.cycles) - set(current.cycles)
-    fresh = set(current.cycles) - set(other.cycles)
-    for cycle in sorted(fresh):
-        print(f"  new cycle      {' <-> '.join(cycle)}")
-    for cycle in sorted(gone):
-        print(f"  cycle resolved {' <-> '.join(cycle)}")
 
 
 def _collapse_advisories(issues: list[str]) -> list[str]:
@@ -3859,6 +2435,10 @@ def _cmd_contract(args, contract_parser):
     # unrunnable in exactly the situation it is for — a fresh box being wired up.
     if getattr(args, "capabilities", False):
         _report_capabilities()
+        return
+
+    if getattr(args, "transcripts", False):
+        _report_transcript_format()
         return
 
     if getattr(args, "experts", False):
@@ -3912,37 +2492,6 @@ def _cmd_eval(args, eval_parser):
         print(outcome.summary())
         if not args.write:
             print("DRY RUN — nothing written to the graph. Re-run with --write to persist.")
-    elif getattr(args, "eval_command", None) == "report":
-        from thalamus.eval.report import scope_report
-
-        graph = connect(args.url)
-        try:
-            print(
-                scope_report(
-                    graph,
-                    scope=args.scope,
-                    top=args.top,
-                    since=args.since,
-                    until=args.until,
-                ).render()
-            )
-        finally:
-            close_connection(graph)
-    elif getattr(args, "eval_command", None) == "uses":
-        from thalamus.eval.uses import uses_report
-
-        graph = connect(args.url)
-        try:
-            print(
-                uses_report(
-                    graph,
-                    scope=args.scope,
-                    since=args.since,
-                    until=args.until,
-                ).render()
-            )
-        finally:
-            close_connection(graph)
     elif getattr(args, "eval_command", None) == "cost":
         from datetime import date, timedelta
 
@@ -3952,51 +2501,8 @@ def _cmd_eval(args, eval_parser):
             date.fromisoformat(args.since) if args.since else date.today() - timedelta(days=14)
         )
         project_dir = (args.project_dir or Path.cwd()).resolve()
-        if args.by_occasion:
-            from thalamus.console.occasion_cost import occasion_burn
-
-            print(occasion_burn(since).render())
-        else:
+        if not plugins.loaded().claim_command("eval cost", args):
             print(cost_report(project_dir, since, traces_base=args.traces).render())
-    elif getattr(args, "eval_command", None) == "gremlin":
-        from thalamus.eval.gremlin import gremlin_report
-
-        print(gremlin_report(traces_base=args.traces, guards_base=args.guards).render())
-    elif getattr(args, "eval_command", None) == "recipes":
-        from thalamus.eval.gremlin import render_smoke, render_staged, smoke_recipes, staged_recipes
-
-        if args.staged:
-            print(render_staged(staged_recipes()))
-            return
-        results = smoke_recipes(args.url)
-        print(render_smoke(results))
-        if any(not r.ok for r in results):
-            sys.exit(1)
-    elif getattr(args, "eval_command", None) == "profile":
-        from thalamus.eval.profile import (
-            profile_corpus,
-            profile_query,
-            profile_report,
-            render_corpus,
-            render_query_profile,
-        )
-
-        repeat = args.repeat if args.repeat is not None else PROFILE_REPEAT
-        if args.query:
-            print(render_query_profile(profile_query(args.url, args.query, repeat=repeat)))
-        elif args.corpus:
-            print(render_corpus(profile_corpus(args.url, repeat=repeat)))
-        else:
-            print(profile_report(base=args.profiles, top=args.top).render(top=args.top))
-    elif getattr(args, "eval_command", None) == "withholding":
-        from thalamus.eval.withholding import recurrence_report
-
-        graph = connect(args.url)
-        try:
-            print(recurrence_report(
-                graph, scope=args.scope, draws=args.draws).render())
-        finally:
-            close_connection(graph)
     elif getattr(args, "eval_command", None) == "conditioning":
         from thalamus.eval.conditioning import conditioning_report
 
@@ -4005,47 +2511,6 @@ def _cmd_eval(args, eval_parser):
                 conditioning_base=args.conditioning, traces_base=args.traces
             ).render()
         )
-    elif getattr(args, "eval_command", None) == "reflex":
-        from thalamus.eval.reflex import reflex_report
-
-        # The ledger half never needs the graph; the verdict half says so when it
-        # cannot have it, rather than turning a report into a connection error.
-        try:
-            graph = connect(args.url)
-        except GraphUnavailable:
-            graph = None
-        try:
-            print(reflex_report(
-                reflex_base=args.reflex, traces_base=args.traces, g=graph
-            ).render())
-        finally:
-            if graph is not None:
-                close_connection(graph)
-    elif getattr(args, "eval_command", None) == "vocabulary":
-        from thalamus.contract.manifest import available_scopes
-        from thalamus.eval.vocabulary import anchor_sets, measure
-
-        sets = anchor_sets(args.reflex, args.limit)
-        graph = connect(args.url)
-        try:
-            knowledge = [s for s in available_scopes() if s != args.scope]
-            print(measure(graph, sets, args.scope, knowledge).render())
-        finally:
-            close_connection(graph)
-    elif getattr(args, "eval_command", None) == "pins":
-        from thalamus.contract.manifest import available_scopes
-        from thalamus.eval.cost import load_engaged, load_pins
-        from thalamus.eval.pins import pin_report
-
-        graph = connect(args.url)
-        try:
-            report = pin_report(
-                graph, load_pins(args.pins_file), available_scopes(),
-                engaged=load_engaged(args.pins_file),
-            )
-        finally:
-            close_connection(graph)
-        print(report.render())
     else:
         eval_parser.print_help()
         sys.exit(1)
@@ -4212,30 +2677,12 @@ def _cmd_pin(args):
     project_dir = default_project_dir()
 
     try:
-        # A room, or a surrounding tmux to open a window in, is the console's to
-        # handle; otherwise this terminal becomes the pinned session.
-        if args.room or os.environ.get("TMUX"):
-            from thalamus.console.windows import launch
-            launch(args.scope, project_dir, room=args.room, harness=args.harness)
-        else:
+        # A plugin may open the session elsewhere — the console, in a room or a tmux
+        # window; otherwise this terminal becomes the pinned session.
+        if not plugins.loaded().claim_command("pin", args):
             pin.launch(args.scope, project_dir, harness=args.harness)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         print(f"Pin failed: {e}", file=sys.stderr)
-        sys.exit(1)
-
-
-def _cmd_spawn(args):
-    import subprocess
-
-    from thalamus.contract.paths import default_project_dir
-    from thalamus.console.windows import spawn
-
-    cwd = args.dir if args.dir is not None else default_project_dir()
-    try:
-        spawn(args.scope, cwd, session=args.session, room=args.room,
-              harness=args.harness)
-    except (FileNotFoundError, ValueError, RuntimeError, subprocess.CalledProcessError) as e:
-        print(f"Spawn failed: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -4345,63 +2792,6 @@ def _cmd_quick(args, parser):
     print(f"— {result.close_report}")
     if not result.accepted:
         sys.exit(1)
-
-
-def _cmd_room(args, parser):
-    from thalamus.console import rooms
-    from thalamus.harness import pin
-
-    if args.room_command == "create":
-        try:
-            config = rooms.ensure_room(args.room)
-        except (ValueError, RuntimeError) as e:
-            print(f"Room failed: {e}", file=sys.stderr)
-            sys.exit(1)
-        print(f"Room `{args.room}` ready at {config}")
-        return
-
-    if args.room_command == "show":
-        config = pin.room_config_dir(args.room)
-        if not config.is_dir():
-            print(f"No room `{args.room}` — `thalamus room create {args.room}` makes one.",
-                  file=sys.stderr)
-            sys.exit(1)
-        print(f"Room `{args.room}` — {config}")
-        sessions = sorted((config / "sessions").glob("*.json")) \
-            if (config / "sessions").is_dir() else []
-        print(f"  live members: {len(sessions)}")
-        transcripts_dir = config / "projects"
-        count = len(list(transcripts_dir.glob("*/*.jsonl"))) if transcripts_dir.is_dir() else 0
-        print(f"  transcripts:  {count} (distilled from here, not ~/.claude/projects)")
-        host = rooms.host_config_dir()
-        for name in rooms.ROOM_LINKED:
-            link = config / name
-            if link.is_symlink():
-                state = "→ " + str(link.readlink())
-            elif not (host / name).exists():
-                # Nothing to borrow. Reported plainly rather than as a fault: an
-                # operator with no `commands/` should not be told a room is broken.
-                state = f"— none at {host / name}"
-            else:
-                state = "MISSING" if not link.exists() else "not a link (stale copy)"
-            print(f"  {name:22} {state}")
-        copied = config / rooms.ROOM_COPIED
-        print(f"  {rooms.ROOM_COPIED:22} {'copy' if copied.is_file() else 'MISSING'}")
-        return
-
-    if args.room_command == "list":
-        names = rooms.rooms()
-        if not names:
-            print("No rooms. `thalamus spawn <scope> --room <name>` opens one.")
-            return
-        for name in names:
-            config = pin.room_config_dir(name)
-            live = len(list((config / "sessions").glob("*.json"))) \
-                if (config / "sessions").is_dir() else 0
-            print(f"{name:20} {live} live member(s)   {config}")
-        return
-
-    parser.parse_args(["room", "--help"])
 
 
 def _print_codex_projection() -> None:
@@ -4521,7 +2911,7 @@ def _cmd_preset(args, parser):
 
 
 def _cmd_thread(args, parser):
-    """Propose, approve, reject and audit thread closes.
+    """Propose, approve, reject and audit thread closes; list and promote autonomous threads.
 
     `propose` never touches the graph and `approve` writes the ledger row before the
     edge — so a crash between them leaves a visible, repairable gap rather than a close
@@ -4627,6 +3017,65 @@ def _cmd_thread(args, parser):
         print("Every agent-written close is backed by an approval row.")
         return
 
+    if command == "autonomous":
+        from thalamus.substrate.reader import recall_open_threads
+
+        graph = connect(args.url)
+        try:
+            results = recall_open_threads(
+                graph, args.project or None, args.limit, args.scope, autonomous=True
+            )
+        finally:
+            close_connection(graph)
+        if not results:
+            print(f"No autonomous threads awaiting promotion in scope {args.scope}.")
+            return
+        for result in results:
+            print(f"{args.scope}:{result.thread_id}  [{result.status}]  {result.title}")
+            print(f"    {result.description}")
+            if result.spawned_by:
+                print(f"    opened in {result.spawned_by}")
+        print(f"\nPromote one into your queue with:\n"
+              f"  thalamus thread promote <id> --scope {args.scope}")
+        return
+
+    if command == "promote":
+        from thalamus.substrate.writer import (
+            NotPromotable,
+            check_promotable,
+            write_thread_promotion,
+        )
+
+        thread_vid = vid("Thread", args.thread_id, args.scope)
+        graph = connect(args.url)
+        try:
+            # The graph is checked before the ledger row is written, so a promotion of
+            # a thread that is not there, or not an autonomous run's, leaves no row.
+            try:
+                check_promotable(graph, thread_vid)
+            except NotPromotable as exc:
+                print(f"Not promoted: {exc}", file=sys.stderr)
+                sys.exit(1)
+            row, created = promotions_mod.promote(
+                args.thread_id, args.scope, args.surface,
+                approver_evidence=args.evidence, notes=args.notes,
+            )
+            # A repeat writes no row but rewrites the same properties, which is how a
+            # graph write that failed after its row landed is repaired.
+            write_thread_promotion(
+                graph, thread_vid,
+                promoted_at=row["ts"], promotion_ref=row["ref"], surface=row["surface"],
+            )
+            _persist(graph)
+        finally:
+            close_connection(graph)
+        if not created:
+            print(f"{args.scope}:{args.thread_id} was already promoted ({row['ref']}); "
+                  "properties rewritten")
+        print(f"promoted {args.scope}:{args.thread_id} into the operator's queue "
+              f"({row['ref']}). It keeps its tier and its autonomous marker.")
+        return
+
     parser.parse_args(["--help"])
 
 
@@ -4647,272 +3096,6 @@ def _agent_closes(graph) -> list[dict]:
         .by(__.coalesce(__.values("approval_ref"), __.constant("")))
         .to_list()
     ]
-
-
-def _cmd_ceremony(args, parser):
-    from thalamus.console import ceremonies
-
-    try:
-        if args.ceremony_command == "start":
-            row = ceremonies.start(
-                args.room,
-                args.kind,
-                participant_scopes=args.scopes,
-                deliverable_ids=args.deliverables,
-                arm=args.arm,
-                prereg_id=args.prereg,
-            )
-            # The id is printed alone on the last line so a caller can capture it
-            # without parsing: every later row about this occasion is keyed on it,
-            # including the session record item 8 puts it on.
-            print(f"Occasion open — {row['ceremony_kind']} in `{row['room']}`, "
-                  f"{len(row['participant_scopes'])} participant(s)")
-            print(row["occasion_id"])
-            return
-
-        if args.ceremony_command == "end":
-            row = ceremonies.end(args.occasion, outcome=args.outcome)
-            print(f"Occasion {row['occasion_id']} closed at {row['ts_end']}")
-            return
-
-        if args.ceremony_command == "skip":
-            row = ceremonies.skip(args.room, args.kind, reason=args.reason)
-            print(f"Non-occurrence recorded — {row['occasion_id']}")
-            return
-
-        if args.ceremony_command == "mint":
-            row = ceremonies.mint_deliverable(
-                args.room, args.title, owner_scope=args.owner, occasion=args.occasion
-            )
-            print(f"Deliverable minted — {row['title']}")
-            print(row["deliverable_id"])
-            return
-
-        if args.ceremony_command == "revise":
-            row = ceremonies.record_revision(
-                args.deliverable,
-                artifact=args.artifact,
-                occasion=args.occasion,
-                author_scope=args.author,
-            )
-            print(f"Revision recorded on {row['deliverable_id']}")
-            return
-
-        if args.ceremony_command == "assign":
-            row = ceremonies.record_assignment(
-                args.room,
-                args.kind,
-                args.units,
-                args.arms,
-                args.counts,
-                args.seed,
-                prereg_id=args.prereg,
-            )
-            print(f"Assignment written for `{row['room']}` {row['ceremony_kind']} — "
-                  f"seed {row['assignment_seed']}, procedure {row['procedure']}, "
-                  f"{row['space']} possible assignment(s)")
-            for unit, arm in sorted(row["assignment"].items()):
-                print(f"  {unit:32} {arm}")
-            if row["space"] > 0:
-                # The floor is a property of the design and knowable now, which is the
-                # only time it is still free to change.
-                print(f"  smallest attainable p from this block alone: {1 / row['space']:.3f}")
-            return
-
-        if args.ceremony_command == "commit":
-            row = ceremonies.commit(
-                args.room,
-                args.deliverable,
-                args.text,
-                owner_scope=args.owner,
-                predicted_artifact=args.predicted,
-                resolve_by=args.resolve_by,
-                occasion=args.occasion,
-            )
-            print(f"Commitment recorded on {row['deliverable_id']}")
-            if not row["predicted_artifact"] or not row["resolve_by"]:
-                # Not refused: a forecast the room cannot yet make concrete is still
-                # better recorded than dropped. But an unresolvable one is a sentence
-                # about intent, and tooling cannot resolve what was never predicted.
-                print("  warning: no predicted artifact or no horizon — nothing can "
-                      "resolve this later", file=sys.stderr)
-            return
-
-        if args.ceremony_command == "resolve":
-            row = ceremonies.resolve(
-                args.deliverable,
-                args.outcome,
-                resolver=args.resolver,
-                evidence=args.evidence,
-                room=args.room,
-                occasion=args.occasion,
-            )
-            print(f"{row['deliverable_id']} resolved {row['outcome']} "
-                  f"by `{row['resolver']}` ({row['evidence']})")
-            return
-
-        if args.ceremony_command == "ack":
-            row = ceremonies.acknowledge(args.finding, reason=args.reason)
-            print(f"Acknowledged {row['finding']} — {row['reason']}")
-            print("The ledger is unchanged; `ceremony audit --strict` still fails on it.")
-            return
-
-        if args.ceremony_command == "comparator":
-            row = ceremonies.record_comparator(
-                args.room, args.arm, args.reference, basis=args.basis
-            )
-            print(f"Comparator for `{row['room']}` — {row['arm']} arm, {row['reference']}")
-            return
-    except ValueError as e:
-        print(f"Ceremony failed: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    if args.ceremony_command == "show":
-        print(ceremonies.render())
-        return
-
-    if args.ceremony_command == "outstanding":
-        rows = ceremonies.outstanding()
-        if not rows:
-            print("No commitment is awaiting resolution.")
-            return
-        print(f"{len(rows)} commitment(s) awaiting resolution:")
-        for row in rows:
-            horizon = row.get("resolve_by") or "no horizon"
-            print(f"  {row['deliverable_id']:32} by {horizon:12} "
-                  f"{row.get('commitment_text', '')}")
-        return
-
-    if args.ceremony_command == "audit":
-        report = ceremonies.audit()
-        seen = {} if args.strict else ceremonies.load_acknowledged()
-        print(report.note(seen))
-        # The exit code reads acknowledgements; `clean()` never does. An acknowledged
-        # finding is one the operator has read and accepted as permanent, not one the
-        # ledger has stopped holding — `--strict` shows the undischarged truth.
-        if report.unacknowledged(seen):
-            sys.exit(1)
-        return
-
-    parser.parse_args(["ceremony", "--help"])
-
-
-def _cmd_dispatch(args):
-    from thalamus.console import dispatch as dispatch_mod
-
-    # Deliberately NOT defaulted to `resolve_pin()` here. `dispatch.authenticate`
-    # establishes the sender from the calling process and refuses a member that names
-    # another scope — and it can only tell an assertion from a default if the empty
-    # case reaches it. Resolving a default at this layer made every caller look like
-    # one that had asserted.
-    slots = (args.task, args.eligibility, args.bid, args.expires)
-    sender = args.sender
-
-    try:
-        sender, _ = dispatch_mod.authenticate(args.room, sender,
-                                              operator=args.operator)
-        if any(slots):
-            if args.message:
-                print(
-                    "Pass a message or the four announcement slots, not both — a "
-                    "message beside a formatted announcement is a second, unstructured "
-                    "channel the eligibility slot cannot be read from.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            text = dispatch_mod.announcement(*slots, sender=sender)
-        else:
-            text = args.message
-
-        result = dispatch_mod.dispatch(
-            args.room,
-            text,
-            sender=sender,
-            operator=args.operator,
-            scopes=args.scopes,
-            partial=args.partial,
-            dry_run=args.dry_run,
-            submit=not args.no_submit,
-        )
-    except dispatch_mod.DispatchRefused as e:
-        print(f"Dispatch refused: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    print(result.note())
-    # A fan-out that reached nobody is not a successful no-op: the caller asked for
-    # delivery and got none, and a zero exit would report the opposite.
-    if not args.dry_run and not result.performed:
-        sys.exit(1)
-
-
-
-
-def _cmd_pulse(args):
-    from thalamus.pulse.web import create_pulse_app
-
-    print(f"Thalamus Pulse: http://{args.host}:{args.port}")
-    print("Press Ctrl+C to stop.")
-    uvicorn.run(
-        create_pulse_app(url=args.url),
-        host=args.host,
-        port=args.port,
-        log_level="warning",
-    )
-
-
-def _cmd_console(args):
-    import shutil
-    import subprocess
-
-    from thalamus.console.server import FAVORITES_STORE, Config, PortInUse, serve
-    from thalamus.console import tmux
-    from thalamus.contract.paths import default_project_dir
-
-    if not shutil.which("tmux"):
-        print("The console needs tmux — it drives the pinned roster's windows.",
-              file=sys.stderr)
-        sys.exit(1)
-
-    cfg = Config(
-        session=args.session,
-        project_root=args.project_root or default_project_dir(),
-        favorites=args.dir,
-        scan_roots=args.scan,
-        # Named here rather than defaulted inside Config: this is a path on this
-        # operator's box, and it is `thalamus console` that knows it is serving that
-        # box (A0151, cites-as-live).
-        favorites_store=FAVORITES_STORE,
-        services=args.service,
-        frames_file=args.frames,
-        fetch_interval_s=max(0.0, args.fetch_interval) * 60,
-        allowed_origins=args.allow_origin,
-    )
-    if subprocess.run(tmux.argv("has-session", "-t", cfg.session),
-                      capture_output=True).returncode != 0:
-        # Only a missing session is created. An existing one is bridged as it stands:
-        # `--session` may name any tmux session, and the console adds nothing to one
-        # it did not create until the operator asks (roster sync, ＋).
-        from thalamus.console.windows import WindowDied, ensure_anchor
-
-        try:
-            ensure_anchor(Path(cfg.project_root), session=cfg.session)
-        except (ValueError, RuntimeError, subprocess.CalledProcessError) as e:
-            # Serve anyway: the console showing an empty roster and a working spawn
-            # button is a better answer than a refusal the operator reads on a phone.
-            print(f"! could not open `main` in tmux session `{cfg.session}`: {e}",
-                  file=sys.stderr)
-            # A window whose command never execs prints nothing, so there is no
-            # epitaph to quote and the cause is almost always the binary.
-            if isinstance(e, WindowDied):
-                print(f"Check that `{agents.cli_for('claude').binary} --version` works "
-                      "on this process's PATH.", file=sys.stderr)
-    try:
-        serve(cfg, host=args.host, port=args.port)
-    except PortInUse as e:
-        print(str(e), file=sys.stderr)
-        sys.exit(1)
-
-
 
 
 def _load_file(path: Path) -> dict:

@@ -57,7 +57,7 @@ def run() -> Finding | None:
     import tempfile
     from pathlib import Path
 
-    from thalamus.harness import agentic, reflex_queue, reflex_worker  # noqa: PLC0415
+    from thalamus_reflex import agentic, reflex_queue, reflex_worker  # noqa: PLC0415
     from thalamus.harness.agents import cli_for  # noqa: PLC0415
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -131,7 +131,7 @@ def run() -> Finding | None:
                 "job never got the chance to look"
             ),
             witness=f"outcome={outcome!r} elapsed={elapsed:.2f}s",
-            site="src/thalamus/harness/reflex_worker.py::run_job",
+            site="packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py::run_job",
         )
     if outcome != "timeout":
         return Finding(
@@ -141,7 +141,7 @@ def run() -> Finding | None:
                 "deadline did not end as timeout"
             ),
             witness=f"outcome={outcome!r} elapsed={elapsed:.2f}s",
-            site="src/thalamus/harness/reflex_worker.py::run_job",
+            site="packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py::run_job",
         )
     # The clock's own deadline is 0.3s; anything near urlopen's 30s timeout would mean
     # SIGALRM never actually interrupted the blocked read and something else ended it.
@@ -155,7 +155,7 @@ def run() -> Finding | None:
                 "reflex_worker.py's own docstring rests the design on"
             ),
             witness=f"elapsed={elapsed:.2f}s deadline_seconds=0.3",
-            site="src/thalamus/harness/reflex_worker.py::_Clock",
+            site="packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py::_Clock",
         )
     return None
 

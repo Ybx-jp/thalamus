@@ -48,8 +48,15 @@ none
 - 2026-10-06T18:02:00-07:00 · corroborated · grade: argued · author: main
   evidence: code: src/thalamus/console/distill.py § "_classify" =sha256:d51bab4e9aae7e3b4c5cca6027a882673fa28cbf6155d75f7b3c651952210a5a
   note: the trace position now comes from _traceback_starts, which leaves out teardown noise printed under `Exception ignored` (A0215), so such noise below a clean summary is no longer read as a sync crash; a real traceback below a zero-failure summary is still reported as distilled with eval sync failed -- the assertion is unaffected
+- 2026-10-18T22:07:41-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/console/distill.py § "_classify" =sha256:d51bab4e9aae7e3b4c5cca6027a882673fa28cbf6155d75f7b3c651952210a5a
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T22:10:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: packages/thalamus-console/src/thalamus_console/distill.py § "_classify" =sha256:d51bab4e9aae7e3b4c5cca6027a882673fa28cbf6155d75f7b3c651952210a5a
+  note: src/thalamus/console/distill.py moved into the thalamus-console plugin package as distill.py with _classify unchanged, so the assertion is unaffected
 
 ## References
 
-- src/thalamus/console/distill.py · standing · cites-as-live
+- packages/thalamus-console/src/thalamus_console/distill.py · standing · cites-as-live
 - docs/console.md · standing · cites-as-live

@@ -33,8 +33,8 @@ checkout's development interpreter, not the range Thalamus installs into.
 ```bash
 uv run pytest                      # the suite must stay green (16 workers, ~50s)
 uv run pytest -n 0 tests/test_x.py # one file: skip the ~3s worker boot
-uv run ruff check src tests
-uv run ty check src                # no diagnostics
+uv run ruff check src packages tests
+uv run ty check src packages       # no diagnostics
 uv run thalamus arch rules --gate  # dependencies against the declared layers
 uv run thalamus arch scan --check  # the committed structural model must be current
 uv run thalamus arch dead --gate   # definitions nothing outside tests/ refers to
@@ -79,7 +79,7 @@ assume — the span is a command away:
 python -c "from claims_ledger import open_ledger
 from claims_ledger.schema import section_span, read_document
 k = open_ledger().config
-body, _ = read_document('src/thalamus/console/static/sw.js')
+body, _ = read_document('packages/thalamus-console/src/thalamus_console/static/sw.js')
 s, e = section_span(body, k, 'js', 'fetch')
 print(body[s:e])"
 ```
@@ -229,7 +229,8 @@ reports numbers for a tree that no longer exists.
 ### The console's JavaScript is tested
 
 `tests/js/*.test.mjs` run under node, driven by `tests/test_console_js.py` as part of
-the same pytest run. They lift functions out of `src/thalamus/console/static/app.js`
+the same pytest run. They lift functions out of
+`packages/thalamus-console/src/thalamus_console/static/app.js`
 **by name**, so renaming one breaks extraction loudly. That is the intended failure,
 not a flake — update the test alongside the rename.
 
@@ -242,24 +243,74 @@ src/thalamus/
   substrate/   storage kernel — schema, Gremlin writer, Gremlin reader, query span tap.
                Below the contract: knows nodes and edges, not experts or tiers
   contract/    the federation boundary — ontology, expert manifests, conformance
-  console/     the optional browser control plane: tmux windows, rooms, dispatch
   archive/     immutable content-addressed store for retained evidence
-  harness/     MCP server, hooks, skills, transcript bootstrap, ingest
-  eval/        trace tap, attribution, cost — the live-serving half of the eval loop.
+  harness/     MCP server, hooks, skills, transcript bootstrap
+  plugins.py   the extension points a plugin package registers through
+  eval/        trace tap, attribution, sync, cost — the live-serving half of the eval loop.
                The counterfactual harness (task battery, arms, oracle) is research
                instrumentation; it lives in the private thalamus-eval companion repo
-  arch/        the `architect` scope's instrument — a declared-policy import extractor
-               and the structural metrics computed over it, behind the three arch gates
-  pulse/       live telemetry dashboard
+  growth.py    what the memory store accumulates, and what nothing refers to — `thalamus growth`
+packages/      plugins — each its own distribution, depending on the core alone
+  thalamus-arch/     the structural gate — a declared-policy import extractor, its metrics and the three arch gates. Depends on nothing of thalamus; `thalamus-arch`, or `thalamus arch` beside the core
+  thalamus-console/  rooms and the console: tmux windows, `spawn`, `room`, `dispatch`, `ceremony`, `console`
+  thalamus-ingest/   curated ingestion: `thalamus ingest`, `thalamus backfill-chunks`
+  thalamus-measure/  the eval loop's reports and the dashboard: `eval report|uses|pins|withholding|gremlin|recipes|profile`, `thalamus pulse`
+  thalamus-reflex/   the memory reflex: its two hooks, `thalamus reflex`, `eval reflex|vocabulary`
 arch/          model.yaml — the committed architecture model the gates check against
 config/        expert manifests
 ledger/        the claims ledger — one entry per documented commitment, pinned to the
                section of source that keeps it true
 docs/          user documentation
 docker/        the confinement image a counterfactual arm runs inside
-tools/         frame-theme authoring scripts (`--extra frames`)
+tools/         frame-theme authoring scripts (`--extra frames`), the install-alone check
 tests/         pytest suite, plus tests/js and tests/qe
 ```
+
+### Plugins
+
+The repository is a uv workspace. The root `pyproject.toml` is the core,
+`thalamus-memory`; each directory under `packages/` is a plugin with its own
+`pyproject.toml` and `src/`, published as its own distribution and imported under a
+top-level name (`thalamus_ingest`). `uv sync` installs them all into one environment, so
+the suite and the gates see every package together.
+
+A plugin depends on the core and on no other plugin, and nothing in the core imports a
+plugin. `arch/model.yaml` gives each plugin a layer whose rule names only core layers,
+so `thalamus arch rules --gate` fails on either direction. What that gate cannot see is
+an import the plugin's own `pyproject.toml` does not declare, because the shared
+environment satisfies it; `tools/check-packages-install-alone.sh`, run as CI's
+`installs-alone` job, installs the core alone and each plugin with only the core, and
+imports every module the plugin ships.
+
+That pairing uses this checkout's core, which always has what a plugin imports. What it
+cannot see is a plugin importing a core name newer than the `thalamus-memory` floor it
+declares: a user who already has the core at that floor keeps it, and the import fails
+on their machine. `tools/check-plugin-floors.sh`, run as CI's `plugin-floors` job on
+every push and pull request, installs each plugin beside `thalamus-memory==<its floor>`
+from PyPI and imports every module again. A floor that names a pre-release is reported
+as waiting on the core rather than failed; the release workflow runs the same check
+with `--release`, where it fails.<!-- (A0244, cites-as-live) -->
+**When a plugin starts importing something the core on PyPI does not have, raise its
+floor in the same change** — to the core's development version, as §"Releasing"
+describes.
+
+`thalamus-arch` is the one package that depends on nothing of thalamus: its rule names
+no layer at all, and `installs-alone` also installs it by itself and checks that no
+`thalamus` came with it.<!-- (A0236, cites-as-live) --> It is a tool for any Python repository, with its own
+`thalamus-arch` command. Its `plugin.py` registers the same subcommands as `thalamus
+arch`, marked with a pluggy marker it builds for the `thalamus` group rather than
+core's `hookimpl`, so it imports nothing of the core.
+
+A plugin registers through hooks in `src/thalamus/plugins.py`, declared under the
+`thalamus` entry-point group: `register_commands` for subcommands, top-level or under
+the core's `eval`, and for options on a core command the core offers (`pin`, `eval
+cost`); `claim_command` to run that command itself when its options ask for it;
+`capability_rows` for rows in `contract check --capabilities`; and `register_hooks`
+for hook scripts, which `thalamus init` wires beside the core's. A hook script sits under its package's `hooks/<harness>/` and
+sources the core's `resolve-scope.sh` through the path `init` records in
+`~/.thalamus/hook-library`. A plugin's tests live in `tests/` beside the core's, so
+they run under the same isolation fixtures. A new extension point (MCP tools, skills)
+is added with the first plugin that needs it.
 
 The layering rule that matters: **`substrate/` sits below the contract.** It knows
 nodes and edges. It does not know what an expert is, what a trust tier means, or which
@@ -407,29 +458,62 @@ branches that both append to the same entry have no merge resolution that passes
 
 ## Releasing
 
-The core is published to PyPI as `thalamus-memory`; the import name and the CLI stay
-`thalamus`. A tag `vX.Y.Z` is the only thing that publishes.
+Every distribution in the workspace is its own PyPI project with its own version, and is
+released on its own. The core is published as `thalamus-memory`; the import name and the
+CLI stay `thalamus`. A tag is the only thing that publishes, and one tag publishes one
+distribution:<!-- (A0239, cites-as-live) -->
+
+| Tag | Publishes |
+|---|---|
+| `vX.Y.Z` | `thalamus-memory`, the core |
+| `<package>-vX.Y.Z`, e.g. `thalamus-arch-v0.1.0` | the package under `packages/<package>/` |
+
 `.github/workflows/release.yml` then:
 
-1. runs the graph-free gates;
-2. builds the wheel and the sdist, and checks them with `twine check --strict`;
-3. checks that the tag matches `thalamus --version`;
-4. installs each artifact into a clean environment outside the checkout and runs
-   `thalamus init` and `thalamus init --check` there against a fresh HOME;
-5. publishes through Trusted Publishing, and creates the GitHub Release.
+1. runs the graph-free gates over the whole workspace;
+2. builds that distribution's wheel and sdist, and checks them with `twine check
+   --strict`;
+3. checks that the tag matches the version in the wheel's metadata;
+4. installs each artifact into a clean environment outside the checkout and proves it
+   there:
+   - the core runs `thalamus init` and `thalamus init --check` against a fresh HOME;
+   - `thalamus-arch` installs with no thalamus, and runs `rules --gate` and `dead --gate`
+     over this repository;
+   - any other plugin resolves `thalamus-memory` from PyPI, not from the workspace,
+     imports every module it ships, and loads in `thalamus --help` with nothing on
+     stderr. A plugin whose `thalamus-memory` floor no published core meets fails here
+     rather than reaching the index uninstallable. It then does the same again with the
+     core pinned to the floor itself, so a floor below what the plugin imports fails too,
+     and so does a floor that still names a pre-release;
+5. publishes through Trusted Publishing, and creates the GitHub Release, with notes
+   starting from that distribution's previous tag.
 
-To cut a release, set `__version__` in `src/thalamus/__init__.py`, merge it, then tag
-that commit on `master` and push the tag.
+A manual run of the workflow from a branch builds and proves the distribution its
+`package` input names (default `thalamus-memory`) and publishes nothing.
 
-Two things have to exist before the first publish, and nothing in the repository
-creates them:
+To cut a release, set `__version__` in the distribution's `__init__.py`, merge it, then
+tag that commit on `master` and push the tag. **The core goes first** when a plugin
+needs a core newer than the one on PyPI. While that work is unreleased, the plugin's
+floor names the core's development version (`thalamus-memory>=0.1.2.dev0`); release the
+core, then raise the floor to that release (`>=0.1.2`), then tag the plugin. A plugin
+whose floor is still a development version fails its proof, because PyPI has no such
+core.
 
-- **A pending publisher on PyPI.** At <https://pypi.org/manage/account/publishing/>,
-  add project `thalamus-memory`, owner `Ybx-jp`, repository `thalamus`, workflow
-  `release.yml`, environment `pypi`. PyPI turns it into the project's own publisher on
-  the first successful upload.
-- **A `pypi` environment in this repository** (Settings → Environments). The publish job
-  runs under it.
+Each distribution publishes from a deployment environment of its own: `pypi` for the
+core, and `pypi-<package>` for a package (`pypi-thalamus-arch`). Its PyPI publisher names
+that environment, so PyPI refuses an upload of one project from another project's
+release run.<!-- (A0240, cites-as-live) -->
+GitHub creates the environment the first time the publish job names it.
+
+One thing has to exist before a distribution's first publish, and nothing in the
+repository creates it: **a pending publisher on PyPI.** At
+<https://pypi.org/manage/account/publishing/>, add the project name, owner `Ybx-jp`,
+repository `thalamus`, workflow `release.yml`, and that distribution's environment —
+project `thalamus-arch` with environment `pypi-thalamus-arch`, and so on. PyPI turns it
+into the project's own publisher on its first successful upload. PyPI accepts only one
+pending publisher per repository, workflow and environment across all project names,
+which a shared environment would hit on the second package. `thalamus-memory` already
+has its publisher, on environment `pypi`.
 
 ## Grounding new design
 

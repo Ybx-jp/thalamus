@@ -42,7 +42,14 @@ none
 - 2026-09-20T20:37:29-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/eval/uses.py § "_longest_chain" =sha256:4dac6633ea8c1a4e92657987a415c1ce5d7362efbf36334da2d9846cf16afb8d
   note: the citation marker inside this section now names the entry by id alone, under the `citation-slug` rule `claims-ledger.toml` sets for source files, and the docstring was rewrapped. The assertion is unaffected.
+- 2026-10-18T21:22:47-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/eval/uses.py § "_longest_chain" =sha256:4dac6633ea8c1a4e92657987a415c1ce5d7362efbf36334da2d9846cf16afb8d
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T21:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-measure/src/thalamus_measure/uses.py § "_longest_chain" =sha256:4dac6633ea8c1a4e92657987a415c1ce5d7362efbf36334da2d9846cf16afb8d
+  note: src/thalamus/eval/uses.py moved into the thalamus-measure plugin package as uses.py with _longest_chain unchanged, so the assertion is unaffected
 
 ## References
 
-- src/thalamus/eval/uses.py · standing · cites-as-live
+- packages/thalamus-measure/src/thalamus_measure/uses.py · standing · cites-as-live

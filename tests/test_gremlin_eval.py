@@ -1,7 +1,7 @@
 """
 Gremlin fluency metrics tests (eval-methodology consultation 918ddb8ddf094a29).
 
-Interfaces: thalamus.eval.gremlin (guard events, fingerprints, report, smoke),
+Interfaces: thalamus_measure.gremlin (guard events, fingerprints, report, smoke),
 thalamus.eval.traces (memory_query/bash_gremlin classification)
 Infrastructure: tmp_path JSONL taps and recipe files; no live graph
 Scope: the metrics that grade the fluency layer — rescue rate from guard
@@ -11,7 +11,7 @@ run's read-only refusal. Live execution is exercised live.
 
 import json
 
-from thalamus.eval.gremlin import (
+from thalamus_measure.gremlin import (
     SmokeResult,
     gremlin_report,
     is_recipe_derived,

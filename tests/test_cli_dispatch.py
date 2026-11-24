@@ -63,17 +63,32 @@ def _subcommands(parser: argparse.ArgumentParser) -> list[str]:
     raise AssertionError("the CLI declares no subcommands at all")
 
 
-def _dispatch(monkeypatch, command: str | None) -> list[str]:
+def _plugin_handler(parser: argparse.ArgumentParser | None, command: str | None):
+    """The `plugin_run` a plugin's subparser sets, or None for a core command."""
+    if parser is None or command is None:
+        return None
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return action.choices[command]._defaults.get("plugin_run")
+    return None
+
+
+def _dispatch(monkeypatch, command: str | None, parser=None) -> list[str]:
     """Run `_main`'s dispatch for `command`, returning the handlers it called.
 
     `parse_args` is replaced rather than intercepted, so the chain runs against a
-    namespace naming the command and nothing else — which is all the chain reads.
+    namespace naming the command and nothing else — which is all the chain reads. A
+    plugin's command carries one thing more, the `plugin_run` default its subparser
+    set, so it is read off the real parser and stubbed the way a `_cmd_*` is.
     """
+    called: list[str] = []
     namespace = argparse.Namespace(command=command, debug=False)
+    if handler := _plugin_handler(parser, command):
+        name = f"{handler.__module__}.{handler.__qualname__}"
+        namespace.plugin_run = lambda *a, _name=name, **k: called.append(_name)
     monkeypatch.setattr(argparse.ArgumentParser, "parse_args",
                         lambda self, *a, **k: namespace)
 
-    called: list[str] = []
     for name in dir(cli):
         if name.startswith("_cmd_"):
             monkeypatch.setattr(
@@ -107,7 +122,7 @@ def test_every_declared_subcommand_reaches_a_handler(built_parser, monkeypatch):
     unreached = []
     for command in _subcommands(built_parser):
         try:
-            called = _dispatch(monkeypatch, command)
+            called = _dispatch(monkeypatch, command, built_parser)
         except SystemExit:
             unreached.append(f"{command}: fell through to print_help and exited")
             continue
@@ -123,7 +138,7 @@ def test_each_subcommand_reaches_its_own_handler(built_parser, monkeypatch):
     handler satisfies it, and is how a copy-pasted `elif` branch goes wrong."""
     by_handler: dict[str, list[str]] = {}
     for command in _subcommands(built_parser):
-        (handler,) = _dispatch(monkeypatch, command)
+        (handler,) = _dispatch(monkeypatch, command, built_parser)
         by_handler.setdefault(handler, []).append(command)
 
     shared = {h: c for h, c in by_handler.items() if len(c) > 1}

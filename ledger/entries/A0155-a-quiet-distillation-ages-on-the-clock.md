@@ -55,8 +55,23 @@ none
 - 2026-09-29T22:14:00-07:00 · corroborated · grade: argued · author: main
   evidence: code: src/thalamus/console/distill.py § "DistillWatch" =sha256:5df063072c3dbcc724a87b4e6bdd8f89fb3b6ec6ae21b85dd2ad9bb119601958
   note: the ledger join is keyed by the full session id and by its eight-character prefix for legacy log names, and kill rows are matched against both name shapes; the clock-driven re-classification through _by_clock is unchanged -- the assertion is unaffected
+- 2026-10-18T22:07:41-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/console/distill.py § "_by_clock" =sha256:fc5617c26fd5ef0561065172d9039bb366038adbaced508924764e3bda0e9784
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T22:07:41-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/console/distill.py § "DistillWatch" =sha256:5df063072c3dbcc724a87b4e6bdd8f89fb3b6ec6ae21b85dd2ad9bb119601958
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T22:10:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-console/src/thalamus_console/distill.py § "_by_clock" =sha256:fc5617c26fd5ef0561065172d9039bb366038adbaced508924764e3bda0e9784
+  note: src/thalamus/console/distill.py moved into the thalamus-console plugin package as distill.py with _by_clock unchanged, so the assertion is unaffected
+- 2026-10-18T22:10:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-console/src/thalamus_console/distill.py § "DistillWatch" =sha256:5df063072c3dbcc724a87b4e6bdd8f89fb3b6ec6ae21b85dd2ad9bb119601958
+  note: src/thalamus/console/distill.py moved into the thalamus-console plugin package as distill.py with DistillWatch unchanged, so the assertion is unaffected
 
 ## References
 
-- src/thalamus/console/distill.py · standing · cites-as-live
+- packages/thalamus-console/src/thalamus_console/distill.py · standing · cites-as-live
 - docs/console.md · standing · cites-as-live

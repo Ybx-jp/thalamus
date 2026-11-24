@@ -34,7 +34,15 @@ none
 
 ## Verdicts
 
+- 2026-10-18T22:07:41-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/console/distill.py § "_last_run" =sha256:74766a72d8618685311585297dbe2baeb1a2dd31fed3d19289d78df27d0c1da9
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T22:10:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: packages/thalamus-console/src/thalamus_console/distill.py § "_last_run" =sha256:74766a72d8618685311585297dbe2baeb1a2dd31fed3d19289d78df27d0c1da9
+  note: src/thalamus/console/distill.py moved into the thalamus-console plugin package as distill.py with _last_run unchanged, so the assertion is unaffected
+
 ## References
 
-- src/thalamus/console/distill.py · standing · cites-as-live
+- packages/thalamus-console/src/thalamus_console/distill.py · standing · cites-as-live
 - docs/console.md · standing · cites-as-live

@@ -60,7 +60,7 @@ mutation cannot live in the case — it needs the real handler to be the broken 
 repeat it:
 
     from qe.cases import console_write_origin as case
-    from thalamus.console import server
+    from thalamus_console import server
     server.Handler._origin_ok = lambda self: True   # do_POST before 8b460c4
     case.run()
 
@@ -95,7 +95,7 @@ from pathlib import Path
 from ..model import Case, FailureClass, Finding, Substrate, Tier
 
 _REPO = Path(__file__).resolve().parents[3]
-_SERVER = _REPO / "src" / "thalamus" / "console" / "server.py"
+_SERVER = _REPO / "packages" / "thalamus-console" / "src" / "thalamus_console" / "server.py"
 
 # One window, in the eleven tab-separated fields `list-windows -F` prints and
 # `parse_windows` splits. The routes under test all resolve their target through it.
@@ -211,7 +211,7 @@ def _is_route_test(node: ast.AST) -> bool:
 
 
 def run() -> Finding | None:
-    from thalamus.console import server as console  # noqa: PLC0415
+    from thalamus_console import server as console  # noqa: PLC0415
 
     class _WithoutTheCheck(console.Handler):
         """`Handler` as it behaved before `8b460c4`: every POST accepted."""
@@ -267,7 +267,7 @@ def run() -> Finding | None:
                             "does not take the write back",
                     witness=f"POST {path} Origin={_ELSEWHERE} Content-Type=text/plain: "
                             f"status={status} (want 403), send-keys={writes or 'none'}",
-                    site="src/thalamus/console/server.py::Handler.do_POST",
+                    site="packages/thalamus-console/src/thalamus_console/server.py::Handler.do_POST",
                 )
 
     # The structural half: every POST route is behind the gate by position.
@@ -309,7 +309,7 @@ def run() -> Finding | None:
             witness=f"statement index of _origin_ok={gate}, of _body={reads_body}, "
                     f"of the first /api/ route={first_route}; behind it: "
                     f"{', '.join(after)}; {routes} route(s) dispatched in do_POST",
-            site="src/thalamus/console/server.py::Handler.do_POST",
+            site="packages/thalamus-console/src/thalamus_console/server.py::Handler.do_POST",
         )
 
     return None

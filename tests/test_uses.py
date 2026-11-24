@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from thalamus.eval import uses as uses_mod
-from thalamus.eval.uses import UsesReport, _longest_chain, _reach, uses_report
+from thalamus_measure import uses as uses_mod
+from thalamus_measure.uses import UsesReport, _longest_chain, _reach, uses_report
 
 
 def _session(vid, scope="main", ts="2026-09-03T04:58:06+00:00", reason_edges=0, offered=0):

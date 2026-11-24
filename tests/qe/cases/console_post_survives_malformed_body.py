@@ -158,7 +158,7 @@ from urllib.parse import quote
 from ..model import Case, FailureClass, Finding, Substrate, Tier
 
 _REPO = Path(__file__).resolve().parents[3]
-_SERVER = _REPO / "src" / "thalamus" / "console" / "server.py"
+_SERVER = _REPO / "packages" / "thalamus-console" / "src" / "thalamus_console" / "server.py"
 
 # Two windows: 0 is the anchor (lowest index, per `parse_windows`) and must never be
 # targeted by the concurrent-close probe; 1 is an ordinary window the probe can close.
@@ -456,7 +456,7 @@ def _concurrent_close(console, cfg) -> tuple[list[str], list[dict | None]]:
 
 
 def run() -> Finding | None:
-    from thalamus.console import server as console  # noqa: PLC0415
+    from thalamus_console import server as console  # noqa: PLC0415
 
     class _AlwaysRaises(console.Handler):
         """A handler that dies the way an unguarded `do_POST` dies."""
@@ -490,7 +490,7 @@ def run() -> Finding | None:
                     "claims rather than as the roomless server process",
             witness="ast walk of do_POST found a `.get(\"caller_room\", ...)` or "
                     "`[\"caller_room\"]` read",
-            site="src/thalamus/console/server.py::Handler.do_POST",
+            site="packages/thalamus-console/src/thalamus_console/server.py::Handler.do_POST",
         )
     if not _hardcodes_empty_caller_room(post_body):
         return Finding(
@@ -550,7 +550,7 @@ def run() -> Finding | None:
                             "on a header _body() is not supposed to read",
                     witness=f"/api/key, Content-Type: text/plain: answered {wrong_ct!r}, "
                             f"want 200",
-                    site="src/thalamus/console/server.py::Handler._body",
+                    site="packages/thalamus-console/src/thalamus_console/server.py::Handler._body",
                 )
 
             driven = [name for name, drivable in catalogue if drivable]
@@ -606,7 +606,7 @@ def run() -> Finding | None:
                                 "404, so the request is reaching a file the frames "
                                 "list never named",
                         witness=f"GET /frame/{name} answered {status!r}, want 404",
-                        site="src/thalamus/console/server.py::frame_bytes",
+                        site="packages/thalamus-console/src/thalamus_console/server.py::frame_bytes",
                     )
 
         # Concurrent writes to the same window: N simultaneous closes on one non-anchor
@@ -618,7 +618,7 @@ def run() -> Finding | None:
                 summary="a concurrent POST /api/close on a window already being closed "
                         "dropped the connection instead of answering",
                 witness=f"statuses: {statuses}",
-                site="src/thalamus/console/server.py::Handler.do_POST",
+                site="packages/thalamus-console/src/thalamus_console/server.py::Handler.do_POST",
             )
         starters = [b for b in bodies if b and b.get("already") is False]
         if len(starters) != 1:
@@ -631,7 +631,7 @@ def run() -> Finding | None:
                         "window",
                 witness=f"already=False count={len(starters)} of {len(bodies)}: "
                         f"{bodies}",
-                site="src/thalamus/console/server.py::Handler.do_POST (/api/close)",
+                site="packages/thalamus-console/src/thalamus_console/server.py::Handler.do_POST (/api/close)",
             )
 
         # COVERAGE: the undriven set is read out of the dispatch and must be exactly the
@@ -650,7 +650,7 @@ def run() -> Finding | None:
                         f"declared here: {sorted(_NOT_DRIVEN)}; "
                         f"newly undrivable: {sorted(undrivable - _NOT_DRIVEN)}; "
                         f"stale exemptions: {sorted(_NOT_DRIVEN - undrivable)}",
-                site="src/thalamus/console/server.py::Handler.do_POST",
+                site="packages/thalamus-console/src/thalamus_console/server.py::Handler.do_POST",
             )
 
         if dropped:
@@ -664,7 +664,7 @@ def run() -> Finding | None:
                 witness=f"{len(dropped)} of {total} probes "
                         f"dropped the connection: " + "; ".join(dropped[:6])
                         + (f"; …and {len(dropped) - 6} more" if len(dropped) > 6 else ""),
-                site="src/thalamus/console/server.py::Handler.do_POST",
+                site="packages/thalamus-console/src/thalamus_console/server.py::Handler.do_POST",
             )
     return None
 

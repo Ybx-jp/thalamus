@@ -1,4 +1,4 @@
-"""Free-form read-only Gremlin — the master plane's query instrument.
+"""Free-form read-only Gremlin — the graph's query instrument, for every pin.
 
 Lexical recall answers "what do I remember about X"; it cannot answer relational
 questions the schema was built to hold — provenance chains, exchange audits, the
@@ -10,22 +10,34 @@ traversal, the server enforces the floor.
 
 Security model, in layers:
 
-1. **The server parser is the sandbox.** The graph endpoint runs
-   GremlinLangScriptEngine — the gremlin-lang grammar, not Groovy. Closures and
-   arbitrary code are rejected at parse time (measured: `sideEffect{...}` fails
-   with a token recognition error). This layer is the server's, not ours.
-2. **The lexical guard enforces read-only.** Mutation and side-effect steps are
-   legal gremlin-lang, so they are denied here, token-wise, against a
-   whitespace-stripped lowercase view (nested `__.addV(...)` included). That
-   view is only as good as what it can read, so a floor runs ahead of it and
-   refuses the three ways a step name hides from a literal match — a comment
-   opened mid-token, a non-ASCII lookalike letter or paren, a zero-width
-   character between two letters. Refused rather than normalized: matching
-   against canonicalised hostile input moves the target to the canonicaliser.
-3. **The pin gates the surface.** Free-form traversals can reach any scope, so
-   the tool serves only main-pinned sessions — the master plane is where
-   cross-scope inspection lives. An expert pin gets a refusal naming
-   the consultation protocol instead. Scope is still never a tool parameter.
+1. **The server parser is the sandbox, because the request names it.** Every
+   submission carries `language: gremlin-lang`, so the server parses it with the
+   gremlin-lang grammar rather than evaluating it as a Groovy script. The
+   difference is the whole of this layer: left unnamed, the server's default
+   engine is gremlin-groovy, where a closure, a second statement after `;` and
+   arbitrary JVM code all run. TinkerPop's own reference says authorization over
+   script requests "is hardly feasible, because such requests get full access to
+   Gremlin Server's execution environment" (§Authorization), which is why the
+   language is not optional here.
+2. **The traversal source is the server's.** The submitted text's leading `g`
+   is replaced by `g.withStrategies(ReadOnlyStrategy, ...)`, so a mutating step
+   fails in the engine whatever spelling reached it. For a session pinned to an
+   expert scope the same source carries a `SubgraphStrategy` whose vertex
+   criterion is `readable_subgraph` — the line `recall()` draws — so every
+   `V()`, every edge walk and every aggregate sees only what that scope may
+   read. This is TinkerPop's "active authorization" mechanism (inject the
+   restricting strategies into the request), which the same reference conditions
+   on one thing: that the user cannot remove or modify them afterwards.
+3. **The lexical guard keeps layer 2 standing.** It refuses what would undo the
+   source — `withStrategies`, `withoutStrategies`, `withComputer`, a second
+   traversal root, a statement separator — and denies mutation and side-effect
+   steps token-wise against a whitespace-stripped lowercase view (nested
+   `__.addV(...)` included). That view is only as good as what it can read, so a
+   floor runs ahead of it and refuses the three ways a step name hides from a
+   literal match — a comment opened mid-token, a non-ASCII lookalike letter or
+   paren, a zero-width character between two letters. Refused rather than
+   normalized: matching against canonicalised hostile input moves the target to
+   the canonicaliser. Scope is never a tool parameter.
 4. **Caps, not trust.** Server-side evaluation timeout, bounded result count,
    bounded rendered size (cost-aware by construction).
 
@@ -39,11 +51,20 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Sequence
 
 from gremlin_python.driver.client import Client
 
-from thalamus.contract.ontology import CORE_EDGES, CORE_NODES
+from thalamus.contract.ontology import CORE_EDGES, CORE_NODES, GLOBAL_LABELS
 from thalamus.substrate import spans
+from thalamus.substrate.schema import SourceKind
+
+LANGUAGE = "gremlin-lang"
+# The script engine every submission names. Unnamed, Gremlin Server evaluates the text
+# with its default engine, gremlin-groovy, where `g.inject(1).map{...}` and `...; 6*7`
+# both run (measured against the 3.7.3 server this package ships). Named, both fail at
+# parse time, and the source `traversal_source` builds is read-only in the engine
+# (A0243, cites-as-live).
 
 QUERY_TIMEOUT_MS = 10_000
 MAX_RESULTS = 50
@@ -66,6 +87,16 @@ _DENIED_STEPS = (
     "io(",
     "call(",
     "program(",
+)
+
+# Source steps that would replace or remove the traversal source `traversal_source`
+# builds. A later `withStrategies(SubgraphStrategy(...))` replaces the confining one
+# (measured: a second SubgraphStrategy with `__.identity()` restored the full count),
+# and `withoutStrategies` removes it, so none of them may come from the caller.
+_SOURCE_STEPS = (
+    "withstrategies(",
+    "withoutstrategies(",
+    "withcomputer(",
 )
 
 # gremlin-python dialect, which this surface does not speak. The server takes
@@ -116,6 +147,13 @@ _SCOPED_PREFIXES = "|".join(
 _BARE_VID_RE = re.compile(rf"(?<!`)(scope:[^:`'\"\s]+:(?:{_SCOPED_PREFIXES}):[^`'\"\s,}}\]]+)")
 
 
+def _is_bare_word(text: str, index: int) -> bool:
+    """Whether the one character at `index` stands alone as an identifier."""
+    before = text[index - 1] if index > 0 else ""
+    after = text[index + 1] if index + 1 < len(text) else ""
+    return not (before.isalnum() or before == "_") and not (after.isalnum() or after == "_")
+
+
 def _lexical_floor(text: str) -> str | None:
     """Refuse text the denylist below cannot read. A rejection reason, or None.
 
@@ -151,6 +189,10 @@ def _lexical_floor(text: str) -> str | None:
     The graph holds text in any script and a query searching for it is ordinary,
     so `has('title','Café')` runs. Comments and backslashes outside a literal are
     refused outright; inside one a backslash escapes the next character.
+
+    The same scan, because it is the one that knows where a literal ends, refuses the
+    shapes that would run something beside the server's source: a `;`, a brace, or a
+    second bare `g` root. Inside a literal each of them is data.
 
     Two limits, stated because they are the ones that would bite:
 
@@ -198,6 +240,19 @@ def _lexical_floor(text: str) -> str | None:
                 "Rejected: a backslash outside a string literal. Escapes belong inside "
                 "quotes; outside them there is nothing legal for one to escape here."
             )
+        if char in ";{}":
+            return (
+                f"Rejected: {char!r} outside a string literal. This surface takes one "
+                "gremlin-lang traversal: no statement separator, and no closure — a "
+                "child traversal is written with `__.`, a map literal with `[k:v]`."
+            )
+        if char == "g" and index > 0 and _is_bare_word(text, index):
+            return (
+                "Rejected: a second traversal root (`g`) after the first. The server "
+                "runs every root it is sent and returns the last, and only the first "
+                "carries the read-only, scope-confined source; a child traversal is "
+                "written with `__.`."
+            )
         if not char.isascii():
             return (
                 f"Rejected: non-ASCII character {char!r} (U+{ord(char):04X}) outside a "
@@ -238,6 +293,14 @@ def validate_query(query: str) -> str | None:
                 "This surface is read-only; the graph is written by the distillation "
                 "pipeline after a session ends, not from inside one."
             )
+    for step in _SOURCE_STEPS:
+        if step in compact:
+            return (
+                f"Rejected: `{step.rstrip('(')}` changes the traversal source. The "
+                "server sets it — read-only, and for a pinned session confined to the "
+                "subgraph its scope may read — so start from `g.V()`, `g.E()` or "
+                "`g.inject()` and leave the source alone."
+            )
     for token in _PYTHON_DIALECT_TOKENS:
         if token in compact:
             return (
@@ -260,17 +323,101 @@ def backtick_vids(text: str) -> str:
     return _BARE_VID_RE.sub(r"`\1`", text)
 
 
-def run_query(url: str, query: str) -> str:
-    """Validate, execute with caps, and render one read-only traversal."""
+_SCOPE_NAME = re.compile(r"[a-z0-9][a-z0-9_-]*")
+
+
+def _scope_literal(scope: str) -> str:
+    """A scope name as a gremlin-lang string literal, or ValueError.
+
+    Scope names reach here from the pin and the manifest directory, never from the
+    caller, and are still checked: they are spliced into query text, and a name that
+    could close the quote would rewrite the confinement it is part of.
+    """
+    if not _SCOPE_NAME.fullmatch(scope):
+        raise ValueError(f"scope name {scope!r} is not a plain scope identifier")
+    return f"'{scope}'"
+
+
+def readable_subgraph(scope: str, knowledge_scopes: Sequence[str] = ()) -> str:
+    """The vertex criterion for what `scope` may read, as gremlin-lang text.
+
+    The line `recall()` and the vocabulary's `rows_for` draw, widened only by what
+    their renderings already serve: everything in the scope itself; the global nodes
+    (`Artifact`, `Agent`), which every scope's sessions touch; and from each knowledge
+    scope its knowledge subgraph — a Claim no Session contains, a Chunk, an Entity, an
+    article Source. `recall()` renders a knowledge claim with its Source's title and
+    origin and its Entities' names, so those two are already served; a transcript
+    Source, a Session, a Thread, a session-contained Claim, a Trace or an Exchange of
+    another scope is not.
+
+    The criterion is evaluated on the unrestricted graph (measured: a knowledge
+    scope's session-contained claim stays hidden even though its Session is outside
+    the subgraph), so `not(inE('CONTAINS'))` reads the real containment
+    (A0242, cites-as-live).
+    """
+    own = _scope_literal(scope)
+    labels = ", ".join(f"'{label}'" for label in sorted(GLOBAL_LABELS))
+    clauses = [f"__.has('scope', {own})", f"__.hasLabel({labels})"]
+    others = [_scope_literal(s) for s in dict.fromkeys(knowledge_scopes) if s != scope]
+    if others:
+        clauses.append(
+            f"__.and(__.has('scope', within({', '.join(others)})), __.or("
+            "__.hasLabel('Chunk', 'Entity'), "
+            f"__.and(__.hasLabel('Source'), __.has('kind', '{SourceKind.ARTICLE.value}')), "
+            "__.and(__.hasLabel('Claim'), __.not(__.inE('CONTAINS')))))"
+        )
+    return f"__.or({', '.join(clauses)})"
+
+
+def traversal_source(confine_to: tuple[str, Sequence[str]] | None = None) -> str:
+    """The traversal source a submitted query runs on, as gremlin-lang text.
+
+    Always read-only in the engine. With `confine_to` — a pinned scope and the
+    knowledge scopes it may read — also a `SubgraphStrategy` over `readable_subgraph`,
+    so `V()`, `E()`, every edge walk and every aggregate see that subgraph and nothing
+    else. Without it (the main pin), the whole graph.
+    """
+    strategies = ["ReadOnlyStrategy"]
+    if confine_to is not None:
+        scope, knowledge_scopes = confine_to
+        strategies.append(
+            f"new SubgraphStrategy(vertices: {readable_subgraph(scope, knowledge_scopes)})"
+        )
+    return f"g.withStrategies({', '.join(strategies)})"
+
+
+def sourced(query: str, confine_to: tuple[str, Sequence[str]] | None = None) -> str:
+    """A validated query with its leading `g` replaced by the server's source.
+
+    Only text `validate_query` passed may come here: that is what guarantees the one
+    root is the leading `g` and that nothing after it changes the source.
+    """
+    text = query.strip()
+    return traversal_source(confine_to) + text[1:]
+
+
+def run_query(
+    url: str, query: str, confine_to: tuple[str, Sequence[str]] | None = None
+) -> str:
+    """Validate, execute with caps, and render one read-only traversal.
+
+    `confine_to` is set by the server from the pin, never by the caller: a pinned
+    scope and the knowledge scopes it may read, or None for the main pin.
+    """
     rejection = validate_query(query)
     if rejection:
         return rejection
+    try:
+        text = sourced(query, confine_to)
+    except ValueError as exc:
+        return f"Query not run: the confinement for this pin could not be built ({exc})."
 
     client = Client(url, "g")
     started = time.perf_counter()
     try:
         result_set = client.submit(
-            query, request_options={"evaluationTimeout": QUERY_TIMEOUT_MS}
+            text,
+            request_options={"evaluationTimeout": QUERY_TIMEOUT_MS, "language": LANGUAGE},
         )
         rows = result_set.all().result()
     except Exception as exc:  # server-side parse/eval errors come back as text
@@ -298,7 +445,9 @@ def render_rows(rows: list) -> str:
     total = 0
     rendered_count = 0
     for row in shown:
-        line = _clip(json.dumps(row, default=str, ensure_ascii=False), _MAX_VALUE_CHARS)
+        line = _clip(
+            json.dumps(_json_keys(row), default=str, ensure_ascii=False), _MAX_VALUE_CHARS
+        )
         if total + len(line) > MAX_RENDERED_CHARS:
             break
         lines.append(backtick_vids(line))
@@ -324,6 +473,23 @@ def schema_summary() -> str:
         "every node carries scope/tier/source properties. "
         f"Edges: {edges}."
     )
+
+
+def _json_keys(value):
+    """`value` with every map key JSON can hold as-is, and every other key as its text.
+
+    `json.dumps(default=str)` converts values it cannot serialise but not keys, and a
+    `group()` keyed by a list, a vertex or a `T` token comes back as a dict whose keys
+    are tuples or elements — which raised instead of rendering (#384).
+    """
+    if isinstance(value, dict):
+        return {
+            (k if isinstance(k, str | int | float | bool) or k is None else str(k)): _json_keys(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, list | tuple | set):
+        return [_json_keys(v) for v in value]
+    return value
 
 
 def _clip(text: str, cap: int) -> str:

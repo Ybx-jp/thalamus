@@ -53,7 +53,7 @@ def _sessions(watch) -> list[str]:
 
 
 def _fixture(tmp: Path, mkdir: bool = True):
-    from thalamus.console.distill import DistillWatch
+    from thalamus_console.distill import DistillWatch
 
     logs = tmp / "logs"
     if mkdir:

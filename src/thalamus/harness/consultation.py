@@ -45,7 +45,8 @@ from thalamus.substrate.reader import (
     recall_open_threads,
     recall_recent,
 )
-from thalamus.substrate.schema import Provenance, Tier
+from thalamus.harness import pin
+from thalamus.substrate.schema import Provenance, SessionType, session_type_tier
 from thalamus.substrate.writer import close_exchange, write_exchange
 
 # Citations are backticked scoped vertex IDs, exactly as the reader renders them —
@@ -252,8 +253,8 @@ def refuse_reason(expert: str, question: str, from_scope: str) -> str | None:
     #
     # A lexical gate on the question was tried here first and removed. It rested on a
     # false premise — that the server cannot tell whether the asker retrieved. The
-    # measured limit is that the server cannot see its caller's *session id*; ticketed
-    # reads pass through `_granted_scope` in this same process and were always
+    # limit is that a call does not say which agent made it (the server's environment
+    # names only the session that launched it); ticketed reads pass through `_granted_scope` in this same process and were always
     # countable. Gating on `question_kind` instead would have refused honest lookups
     # and admitted any question containing the word "schema".
     if expert not in available_scopes():
@@ -271,6 +272,7 @@ def open_exchange(
     protocol: str = "ticket",
     brief_refs: list[str] | None = None,
     extra: dict[str, object] | None = None,
+    session_type: SessionType | None = None,
 ) -> tuple[str, str]:
     """Mint the ticket and write the open exchange in one act. Returns (ticket, vid).
 
@@ -278,15 +280,21 @@ def open_exchange(
     consultation is impossible by construction, and a quick exchange is a multi-agent
     collaboration step, which is inside the definition of execution provenance
     (arXiv 2606.04990) rather than an exception to it.
+
+    The exchange carries the asking session's type, resolved from the process when
+    not given (`pin.process_session_type`), and that type's tier: an autonomous run's
+    consultation is held at tier 2 like everything else it writes. (A0255, cites-as-live)
     """
     ticket = mint_ticket()
     vertex_id = exchange_vid(ticket)
     now = datetime.now(timezone.utc)
-    # First-party by construction: a consultation is the agent's own lived experience.
-    # No session id is available here (the MCP server cannot see its caller);
-    # eval sync lands the Session -[CONSULTS]-> edge from the ticket in the traces.
+    # The agent's own lived experience, so first-party for an attended session; an
+    # autonomous one's is held a tier below, as its distilled memory is. The caller's
+    # session is not named on the call, so eval sync lands the Session -[CONSULTS]->
+    # edge from the ticket in the traces.
+    asking = session_type or pin.process_session_type()
     provenance = Provenance(
-        tier=Tier.FIRST_PARTY, source=f"consultation:{from_scope}", ingested_at=now
+        tier=session_type_tier(asking), source=f"consultation:{from_scope}", ingested_at=now
     )
     write_exchange(
         g,
@@ -318,6 +326,7 @@ def open_exchange(
             "tier": int(provenance.tier),
             "source": provenance.source,
             "ingested_at": provenance.ingested_at.isoformat(),
+            "session_type": asking.value,
             **(extra or {}),
         },
         brief_refs=brief_refs,

@@ -191,6 +191,23 @@ def _stub_manifests(monkeypatch, scopes=("literature",)):
     monkeypatch.setattr(consultation, "load_manifest", lambda scope: manifest)
 
 
+def test_an_autonomous_run_consults_at_tier_two(monkeypatch, tmp_path):
+    """An exchange minted for an autonomous run is held at tier 2 and marked, as the
+    rest of what that run writes is (#394). The MCP server finds the session it serves
+    from the environment Claude Code starts it with."""
+    _stub_manifests(monkeypatch)
+    _stub_brief(monkeypatch)
+    monkeypatch.setattr(consultation.pin, "PINS_FILE", tmp_path / "pins.jsonl")
+    monkeypatch.setenv("CLAUDE_CODE_ENTRYPOINT", "sdk-cli")
+    graph = FakeGraph()
+
+    consult_request(graph, "literature", "How is provenance floored?", "main")
+
+    written = graph.merged_vertices[0]["on_create"]
+    assert written["tier"] == 2
+    assert written["session_type"] == "autonomous"
+
+
 def test_minting_a_ticket_writes_the_exchange_record(monkeypatch):
     """
     Scenario: A main-pinned session consults the literature expert
@@ -219,6 +236,7 @@ def test_minting_a_ticket_writes_the_exchange_record(monkeypatch):
     assert written["from_scope"] == "main"
     # Verifies: provenance is stamped, not asked for
     assert written["tier"] == 1
+    assert written["session_type"] == "attended"
     assert written["source"] == "consultation:main"
     assert written["ingested_at"]
     # Verifies: consultation routes through main, never expert-to-expert

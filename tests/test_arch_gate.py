@@ -1,6 +1,6 @@
 """The gate over the structural model — what CI acts on, as opposed to what it prints.
 
-Interfaces: thalamus.arch.model (Accepted, GateResult, ArchModel.gate, load, render).
+Interfaces: thalamus_arch.model (Accepted, GateResult, ArchModel.gate, load, render).
 
 The distinction under test is that `rules` reports every violation while `gate` sorts
 them into new, accepted and stale. A gate that filtered the report would hide the
@@ -13,8 +13,10 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from thalamus.arch.extractor import DependencyEdge, DependencyGraph
-from thalamus.arch.model import Accepted, ArchModel, Layer, Rule, load, render
+from thalamus_arch.extractor import DependencyEdge, DependencyGraph
+from thalamus_arch.model import Accepted, ArchModel, Layer, Rule, load, render
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _graph(*pairs: tuple[str, str]) -> DependencyGraph:
@@ -120,11 +122,11 @@ def test_this_repo_gates_green():
     Not a tautology: it fails if a violation is added without a declared reason, and
     equally if one of the four accepted edges is fixed and its entry left behind.
     """
-    from thalamus.arch import model as arch_model
-    from thalamus.arch import routes as arch_routes
-    from thalamus.arch.extractor import scan_repo
+    from thalamus_arch import model as arch_model
+    from thalamus_arch import routes as arch_routes
+    from thalamus_arch.extractor import scan_repo
 
-    repo = arch_model.REPO_ROOT
+    repo = REPO_ROOT
     model = load(repo / arch_model.MODEL_PATH)
     graph = arch_routes.merge(
         scan_repo(repo, model.policy), arch_routes.extract_routes(repo, model.routes)
@@ -139,9 +141,9 @@ def test_this_repo_gates_green():
 def test_every_accepted_entry_states_a_reason():
     """The reason is the whole mechanism. An entry without one is an entry nobody can
     ever remove, because the next reader has no basis on which to judge it."""
-    from thalamus.arch import model as arch_model
+    from thalamus_arch import model as arch_model
 
-    model = load(arch_model.REPO_ROOT / arch_model.MODEL_PATH)
+    model = load(REPO_ROOT / arch_model.MODEL_PATH)
     assert model.accepted, "the repo declares exceptions; this test guards their reasons"
     for entry in model.accepted:
         assert entry.reason.strip(), f"{entry.key} is accepted with no reason"
@@ -161,13 +163,13 @@ def test_every_accepted_entry_states_a_reason():
 
 
 def _dead_report(**kwargs):
-    from thalamus.arch import deadends as arch_deadends
+    from thalamus_arch import deadends as arch_deadends
 
     return arch_deadends.DeadEndReport(**kwargs)
 
 
 def _definition(name="orphaned_helper", path="src/thalamus/x.py"):
-    from thalamus.arch import deadends as arch_deadends
+    from thalamus_arch import deadends as arch_deadends
 
     return arch_deadends.Definition(
         name=name, qualname=name, path=path, line=12, kind="function")
@@ -180,8 +182,8 @@ def _run_dead_gate(monkeypatch, report, exemptions=()):
     printed a verdict and fell through would be indistinguishable from a passing one if
     this returned 0 for both.
     """
-    from thalamus import cli
-    from thalamus.arch import deadends as arch_deadends
+    from thalamus_arch import cli
+    from thalamus_arch import deadends as arch_deadends
 
     policy = arch_deadends.DeadEndPolicy(enabled=True, exemptions=tuple(exemptions))
     monkeypatch.setattr(cli, "_dead_policy", lambda repo: policy)
@@ -213,7 +215,7 @@ def test_an_exemption_that_matches_nothing_exits_two(monkeypatch):
     """The mirror of `test_acceptance_that_no_longer_happens_exits_two`, on the other
     implementation. A symbol that got wired up, or deleted, leaves its exemption behind
     describing a tree that moved; collapsing that into green lets the list only grow."""
-    from thalamus.arch import deadends as arch_deadends
+    from thalamus_arch import deadends as arch_deadends
 
     stale = arch_deadends.Exemption(
         reason="a reason long enough to be actionable by the next reader",
@@ -225,7 +227,7 @@ def test_an_exemption_that_matches_nothing_exits_two(monkeypatch):
 def test_an_exemption_that_still_fires_does_not_exit(monkeypatch):
     """The control for the test above: matching is what separates a live exemption from
     a stale one, so an exemption the report records as used must not reach exit 2."""
-    from thalamus.arch import deadends as arch_deadends
+    from thalamus_arch import deadends as arch_deadends
 
     definition = _definition()
     live = arch_deadends.Exemption(
@@ -241,7 +243,7 @@ def test_a_finding_outranks_a_stale_exemption(monkeypatch):
     """Both conditions at once resolve to 1, the same precedence `ArchModel.gate` gives
     a new violation over a stale acceptance. Exit 2 asks for a tidy-up; exit 1 says the
     build is broken, and a reader who sees 2 would tidy and move on."""
-    from thalamus.arch import deadends as arch_deadends
+    from thalamus_arch import deadends as arch_deadends
 
     stale = arch_deadends.Exemption(
         reason="a reason long enough to be actionable by the next reader",
@@ -254,8 +256,8 @@ def test_a_finding_outranks_a_stale_exemption(monkeypatch):
 def test_without_the_gate_flag_nothing_exits(monkeypatch):
     """`arch dead` is a report by default. The verdict is what `--gate` adds, and a
     report that exited non-zero would make the two indistinguishable in CI."""
-    from thalamus import cli
-    from thalamus.arch import deadends as arch_deadends
+    from thalamus_arch import cli
+    from thalamus_arch import deadends as arch_deadends
 
     policy = arch_deadends.DeadEndPolicy(enabled=True)
     monkeypatch.setattr(cli, "_dead_policy", lambda repo: policy)

@@ -85,15 +85,26 @@ session_id=$(printf '%s' "$input" | jq -r '.session_id // .conversation_id // em
 #
 # `agent` and `forked_from` have no Cursor referent: the pin arrives as an environment
 # variable rather than a picked agent, and the fork protocol is Claude-Code-only.
+#
+# `session_type` is the launcher's THALAMUS_SESSION_TYPE when it declared one, and
+# attended otherwise: a background agent exits above before any row, so every session
+# that reaches this line is one the operator opened in the editor.
 if [ -n "$session_id" ]; then
   pin_dir="$HOME/.thalamus/pins"
   mkdir -p "$pin_dir"
+  session_type="$(printf '%s' "${THALAMUS_SESSION_TYPE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  case "$session_type" in
+    attended|autonomous) ;;
+    *) session_type="attended" ;;
+  esac
   jq -cn --arg sid "$session_id" --arg scope "$scope" --arg cwd "$workspace_root" \
     --arg room "${THALAMUS_ROOM:-}" \
     --arg repo_root "$repo_root" \
     --arg project "$project" \
+    --arg session_type "$session_type" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{session_id: $sid, scope: $scope, cwd: $cwd, room: $room,
+      session_type: $session_type,
       repo_root: $repo_root, project: $project, ts: $ts}' \
     >> "$pin_dir/pins.jsonl"
 fi

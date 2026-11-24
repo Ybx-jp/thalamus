@@ -5,7 +5,7 @@
 `config/experts/*.yaml` — but it is reached from exactly one caller, `check_batch()` at
 `manifest.py:110`, which the CLI invokes only after `ingest()` has returned.
 
-Inside `ingest()` (`harness/ingest.py:522-531`) the order is:
+Inside `ingest()` (`thalamus_ingest/ingest.py:794-901`, `preflight()` then the model pass) the order is:
 
     fetch(location) -> archive_bytes(payload) -> to_text() -> run_extraction(build_prompt(...))
 
@@ -58,7 +58,8 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def run() -> Finding | None:
-    from thalamus.harness import extraction, ingest as ingest_mod  # noqa: PLC0415
+    from thalamus.harness import extraction  # noqa: PLC0415
+    from thalamus_ingest import ingest as ingest_mod  # noqa: PLC0415
 
     _Handler.hits = 0
     server = HTTPServer(("127.0.0.1", 0), _Handler)
@@ -130,7 +131,7 @@ def run() -> Finding | None:
             "model before any host check runs"
         ),
         witness=f"origin={url}; " + "; ".join(leaks),
-        site="src/thalamus/harness/ingest.py:522-531 vs src/thalamus/contract/manifest.py:110",
+        site="packages/thalamus-ingest/src/thalamus_ingest/ingest.py:794-901 vs src/thalamus/contract/manifest.py:110",
     )
 
 

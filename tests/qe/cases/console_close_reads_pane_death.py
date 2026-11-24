@@ -160,7 +160,7 @@ def _teardown(console, fn, cfg, pane_dead: str = "0", window_present: bool = Tru
 
 
 def run() -> Finding | None:
-    from thalamus.console import server as console  # noqa: PLC0415
+    from thalamus_console import server as console  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / "checkout"
@@ -195,7 +195,7 @@ def run() -> Finding | None:
                         "graceful-exit result cannot be attributed to the missing check",
                 witness=f"window_present=False: _record_forced_kill "
                         f"calls={len(forced)}, kill-window ran={stub.ran('kill-window')}",
-                site="src/thalamus/console/server.py::_window_gone",
+                site="packages/thalamus-console/src/thalamus_console/server.py::_window_gone",
             )
 
         # CONTROL 1: the fixed sibling, on the same fixture the property is asserted
@@ -231,7 +231,7 @@ def run() -> Finding | None:
                         f"{[op for _, op in forced]} and "
                         f"kill-window ran={stub.ran('kill-window')} — "
                         f"recycle_window on the identical fixture recorded none",
-                site="src/thalamus/console/server.py:1064",
+                site="packages/thalamus-console/src/thalamus_console/server.py:1064",
             )
     return None
 

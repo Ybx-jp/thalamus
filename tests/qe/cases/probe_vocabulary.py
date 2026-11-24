@@ -35,6 +35,10 @@ from pathlib import Path
 from ..model import Case, FailureClass, Finding, Substrate, Tier
 
 _SRC = Path(__file__).resolve().parents[3] / "src" / "thalamus"
+# Plugin packages are separate distributions under `packages/<name>/src/<import name>`;
+# code that moved there (the reflex, ingest) is still code this rule binds, and a scan
+# of the core alone would stop seeing it without anything failing.
+_PLUGIN_SRCS = sorted((_SRC.parents[1] / "packages").glob("*/src/*/"))
 _DEFINING_FILE = "contract/probes.py"
 # The vocabulary under test, and the sibling that acts as its control.
 _SUBJECT, _CONTROL = "Condition", "Outcome"
@@ -63,7 +67,7 @@ def _produced(enum_name: str, members: list[str]) -> dict[str, int]:
     a state nothing can reach.
     """
     counts = dict.fromkeys(members, 0)
-    for path in sorted(_SRC.rglob("*.py")):
+    for path in sorted(p for root in (_SRC, *_PLUGIN_SRCS) for p in root.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
         for node in ast.walk(tree):
             if (

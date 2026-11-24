@@ -275,7 +275,7 @@ def _experts_config(tmp_path, manifests):
 class TestRoleGuardHook:
     def test_it_blocks_a_bounded_scope_and_says_which_rule_fired(self, tmp_path):
         result = run_guard(
-            write_payload(f"{REPO}/src/thalamus/console/static/app.js"),
+            write_payload(f"{REPO}/packages/thalamus-console/src/thalamus_console/static/app.js"),
             tmp_path,
             {"CLAUDE_CODE_AGENT": "thalamus-designer"},
         )
@@ -316,7 +316,7 @@ class TestRoleGuardHook:
         channels name whoever spawned it. Only the payload's `agent_type` names the
         agent actually running, and it wins. Measured 2026-08-11 over 1132 subagent
         tool calls: env-only resolution named the right scope 6.4% of the time."""
-        payload = write_payload(f"{REPO}/src/thalamus/console/static/app.js")
+        payload = write_payload(f"{REPO}/packages/thalamus-console/src/thalamus_console/static/app.js")
         payload["agent_type"] = "thalamus-designer"
         result = run_guard(payload, tmp_path, {"THALAMUS_SCOPE": "main"})
         assert result.returncode == 2
@@ -327,7 +327,7 @@ class TestRoleGuardHook:
         through to the launcher's pin. Short-circuiting on any agent_type instead
         would make `Agent(subagent_type="general-purpose")` a one-line route around
         every expert's boundary."""
-        payload = write_payload(f"{REPO}/src/thalamus/console/static/app.js")
+        payload = write_payload(f"{REPO}/packages/thalamus-console/src/thalamus_console/static/app.js")
         payload["agent_type"] = "general-purpose"
         result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-designer"})
         assert result.returncode == 2
@@ -483,7 +483,7 @@ class TestRoleGuardHook:
         """Headless distillation and ingest runs are the machinery, not sessions in
         it — every hook returns early there."""
         result = run_guard(
-            write_payload(f"{REPO}/src/thalamus/console/static/app.js"),
+            write_payload(f"{REPO}/packages/thalamus-console/src/thalamus_console/static/app.js"),
             tmp_path,
             {"CLAUDE_CODE_AGENT": "thalamus-designer", "THALAMUS_SANDBOX": "1"},
         )
@@ -493,7 +493,7 @@ class TestRoleGuardHook:
         """The granularity audit reads this log: "never came near its own boundary"
         is evidence about a scope's partition exactly as a block is."""
         run_guard(
-            write_payload(f"{REPO}/src/thalamus/console/static/app.js"),
+            write_payload(f"{REPO}/packages/thalamus-console/src/thalamus_console/static/app.js"),
             tmp_path,
             {"CLAUDE_CODE_AGENT": "thalamus-designer"},
         )

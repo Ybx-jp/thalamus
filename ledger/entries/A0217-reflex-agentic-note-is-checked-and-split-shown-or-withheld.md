@@ -38,6 +38,38 @@ none
 
 ## Verdicts
 
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex_note.py § "check_note" =sha256:b3733f15092a1d97ef0fa2a194cadc6fd3f1cb9aeffc4182d77b0e0d37841bf1
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex_note.py § "assign_note_arm" =sha256:192af57a750d9bdf1e1f97fa9a9867327c49bceb1688406699642df893949e30
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex_note.py § "NOTE_CHAR_CAP" =sha256:8f9c8fe79c50bc90ef998c6cdf20a554820889cbeb282a8e302fad361cfb4d06
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex_worker.py § "run_job" =sha256:1f096a228a3e13b5ae7611ef68f722bf9bb14401ae6a3b3c657b55a0dbf132a8
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex_note.py § "check_note" =sha256:b3733f15092a1d97ef0fa2a194cadc6fd3f1cb9aeffc4182d77b0e0d37841bf1
+  note: src/thalamus/harness/reflex_note.py moved into the thalamus-reflex plugin package as reflex_note.py with check_note unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex_note.py § "assign_note_arm" =sha256:192af57a750d9bdf1e1f97fa9a9867327c49bceb1688406699642df893949e30
+  note: src/thalamus/harness/reflex_note.py moved into the thalamus-reflex plugin package as reflex_note.py with assign_note_arm unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex_note.py § "NOTE_CHAR_CAP" =sha256:8f9c8fe79c50bc90ef998c6cdf20a554820889cbeb282a8e302fad361cfb4d06
+  note: src/thalamus/harness/reflex_note.py moved into the thalamus-reflex plugin package as reflex_note.py with NOTE_CHAR_CAP unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py § "run_job" =sha256:1f096a228a3e13b5ae7611ef68f722bf9bb14401ae6a3b3c657b55a0dbf132a8
+  note: src/thalamus/harness/reflex_worker.py moved into the thalamus-reflex plugin package as reflex_worker.py with run_job unchanged, so the assertion is unaffected
+
 ## References
 
 - docs/cli.md · standing · cites-as-live

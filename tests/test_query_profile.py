@@ -2,7 +2,7 @@
 Gremlin query-cost tests — the span tap and the report over it.
 
 Interfaces: thalamus.substrate.spans (SpanRecorder, shape folding, instrument,
-ledger), thalamus.eval.profile (pooling, percentiles, corpus extraction,
+ledger), thalamus_measure.profile (pooling, percentiles, corpus extraction,
 step-metric parsing)
 Infrastructure: tmp_path ledgers and a fake DriverRemoteConnection; no live
 graph, no model. The `profile()` round trip is exercised live, not here.
@@ -17,8 +17,8 @@ import json
 
 import pytest
 
-from thalamus.eval.gremlin import step_fingerprint
-from thalamus.eval.profile import (
+from thalamus_measure.gremlin import step_fingerprint
+from thalamus_measure.profile import (
     QueryProfile,
     _flatten,
     lang_corpus,
@@ -335,7 +335,7 @@ def test_a_gremlin_python_recipe_is_refused_by_the_read_only_floor(tmp_path):
       memory_query surface enforces — so nothing profileable here is
       unrunnable there
     """
-    from thalamus.eval.profile import profile_query
+    from thalamus_measure.profile import profile_query
 
     profile = profile_query("ws://unused/gremlin", "g.V().count().next()")
     assert not profile.ok and "gremlin-python dialect" in profile.error

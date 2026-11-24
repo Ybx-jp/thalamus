@@ -1,7 +1,7 @@
 """
 Spawn confirmation: whether a window that dies late is reported as a failure.
 
-Interfaces: thalamus.harness.pin, thalamus.harness.launcher, thalamus.console.server
+Interfaces: thalamus.harness.pin, thalamus.harness.launcher, thalamus_console.server
 Infrastructure: a real tmux server on a private socket, named by
 `THALAMUS_TMUX_SOCKET`, plus fake harness binaries that die on a schedule. No claude,
 no `agent`, no network, no graph — and nothing that can see the operator's roster.
@@ -24,10 +24,10 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.console import server
-from thalamus.console.server import Config, do_spawn
-from thalamus.console import windows
-from thalamus.console import tmux
+from thalamus_console import server
+from thalamus_console.server import Config, do_spawn
+from thalamus_console import windows
+from thalamus_console import tmux
 from thalamus.harness.launcher import LAUNCH_SHAPES, settle_s
 
 pytestmark = pytest.mark.skipif(shutil.which("tmux") is None,

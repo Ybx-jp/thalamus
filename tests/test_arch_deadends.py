@@ -1,4 +1,4 @@
-"""Interfaces: thalamus.arch.deadends
+"""Interfaces: thalamus_arch.deadends
 Infrastructure: none — every unit fixture is a tree written into tmp_path. The last
        four cases read this checkout, because the census's precision is a claim about a
        real tree and a fixture cannot make it.
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.arch.deadends import (
+from thalamus_arch.deadends import (
     RULE_DECLARED,
     RULE_DECORATOR,
     RULE_DUNDER,
@@ -27,9 +27,10 @@ from thalamus.arch.deadends import (
     scan,
     test_only_symbols,
 )
-from thalamus.arch.extractor import ExtractorPolicy, scan_repo
-from thalamus.arch.findings import DESIGN, UNDERSTANDING
-from thalamus.arch.model import REPO_ROOT
+from thalamus_arch.extractor import ExtractorPolicy, scan_repo
+from thalamus_arch.findings import DESIGN, UNDERSTANDING
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _tree(root: Path, files: dict[str, str]) -> Path:
@@ -877,7 +878,7 @@ def test_every_declared_exemption_still_matches_a_definition():
     """
     import yaml
 
-    from thalamus.arch import model as arch_model
+    from thalamus_arch import model as arch_model
 
     document = yaml.safe_load((REPO_ROOT / arch_model.MODEL_PATH).read_text(encoding="utf-8"))
     policy = DeadEndPolicy.from_block(document.get("deadends") or {})
@@ -899,44 +900,44 @@ def test_every_declared_exemption_still_matches_a_definition():
 def test_the_contract_symbols_the_role_guard_calls_are_reached_not_reported():
     """`role-guard.sh` runs on every Edit and Write in every session on this checkout.
 
-    It reaches four contract symbols from `"$py" - <<PY` heredocs, and no `.py` module
-    imports any of them. Reporting them would be the false accusation the route channel
-    refuses to make about an uncalled route.
+    It reaches four contract symbols from `"$py" - <<PY` heredocs, and the session
+    preflight (`harness/preflight.py`) calls the same boundary methods to build the call
+    it probes the guard with. Whichever channel reaches them, none is reported.
     """
     report = test_only_symbols(REPO_ROOT)
-    reached = {
-        (item.definition.path, item.definition.name): item for item in report.silenced
-    }
-    for path, name in (
+    reported = {(item.path, item.name) for item in report.test_only}
+    for symbol in (
         ("src/thalamus/contract/ownership.py", "denies"),
         ("src/thalamus/contract/manifest.py", "denies"),
         ("src/thalamus/contract/manifest.py", "denies_skill"),
         ("src/thalamus/contract/manifest.py", "denies_tool"),
     ):
-        silenced = reached[(path, name)]
-        assert silenced.form == SILENCE_EMBEDDED
-        assert all("role-guard.sh:" in site for site in silenced.sites)
-    assert {name for _, name in reached} .isdisjoint({item.name for item in report.test_only})
+        assert symbol not in reported
 
 
 @pytest.mark.skipif(not (REPO_ROOT / "tests").is_dir(), reason="needs a full checkout")
 def test_the_module_the_role_guard_imports_is_not_an_orphan():
-    """`contract/ownership.py` is imported by `role-guard.sh` and by no scanned module."""
+    """`contract/ownership.py` is imported by `role-guard.sh` and by the preflight."""
     walked = census(REPO_ROOT)
     graph = scan_repo(REPO_ROOT, ExtractorPolicy(roots=("src",)))
-    assert "src/thalamus/contract/ownership.py" in orphan_modules(graph)
     assert "src/thalamus/contract/ownership.py" not in orphan_modules(graph, None, walked)
+
+
+CONSOLE_SERVER = "packages/thalamus-console/src/thalamus_console/server.py"
 
 
 @pytest.mark.skipif(not (REPO_ROOT / "tests").is_dir(), reason="needs a full checkout")
 def test_the_framework_dispatched_symbols_are_excused_rather_than_reported():
     """The false-positive class: names whose caller is a registry, a protocol or a base.
 
-    `pulse/web.py`'s `health` is not in the exempted list either — it is defined inside
+    thalamus-measure's `pulse/web.py` `health` is not in the exempted list either — it is defined inside
     the app factory, so it is a local binding the census never enters. It is checked
     here because it must not be *reported*, and that is what is asserted.
     """
-    report = test_only_symbols(REPO_ROOT, DeadEndPolicy(report_unreferenced=True))
+    report = test_only_symbols(REPO_ROOT, DeadEndPolicy(
+        source_roots=("src", "packages/thalamus-console/src",
+                      "packages/thalamus-measure/src"),
+        report_unreferenced=True))
     reported = {item.name for item in [*report.test_only, *report.unreferenced]}
     assert reported.isdisjoint(
         {"memory_recall", "memory_open_threads", "health", "do_GET", "do_POST", "log_message"}
@@ -947,6 +948,6 @@ def test_the_framework_dispatched_symbols_are_excused_rather_than_reported():
     }
     assert by_rule[("src/thalamus/harness/mcp_server.py", "memory_recall")] == RULE_DECORATOR
     assert by_rule[("src/thalamus/harness/mcp_server.py", "memory_open_threads")] == RULE_DECORATOR
-    assert by_rule[("src/thalamus/console/server.py", "do_GET")] == RULE_OVERRIDE
-    assert by_rule[("src/thalamus/console/server.py", "do_POST")] == RULE_OVERRIDE
-    assert by_rule[("src/thalamus/console/server.py", "log_message")] == RULE_OVERRIDE
+    assert by_rule[(CONSOLE_SERVER, "do_GET")] == RULE_OVERRIDE
+    assert by_rule[(CONSOLE_SERVER, "do_POST")] == RULE_OVERRIDE
+    assert by_rule[(CONSOLE_SERVER, "log_message")] == RULE_OVERRIDE

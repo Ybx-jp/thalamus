@@ -1,7 +1,7 @@
 """The class-A reference recognizer must reproduce a hand-declared disposition, and the
 gap report over it must account for every input it was ever shown.
 
-Issue #127 part 1: `src/thalamus/arch/references.py` ships with `tests/test_arch_references.py`
+Issue #127 part 1: `packages/thalamus-arch/src/thalamus_arch/references.py` ships with `tests/test_arch_references.py`
 as its only coverage, and that is the author's own unit suite — the same consultation
 `972d0bc03c7542d5` that split `arch_extractor.py`/`arch_route_channel.py`'s ground truth
 out of the extractor's own author settles this for the reference channel too. This case
@@ -104,7 +104,7 @@ def _actual_disposition(report, file_: str, target: str) -> str:
 
 
 def run() -> Finding | None:
-    from thalamus.arch import references as refs  # noqa: PLC0415
+    from thalamus_arch import references as refs  # noqa: PLC0415
 
     entries, error = _load_manifest()
     on_disk = sorted(p.name for p in FIXTURES_SUBDIR.glob("*.py")) if FIXTURES_SUBDIR.is_dir() else []
@@ -164,7 +164,7 @@ def run() -> Finding | None:
             summary="the reference recognizer's disposition disagrees with the "
                     "hand-declared ground-truth fixture corpus",
             witness="; ".join(mismatches),
-            site="src/thalamus/arch/references.py:census",
+            site="packages/thalamus-arch/src/thalamus_arch/references.py:census",
         )
 
     # The union-accounting reading: a real, unfixed defect. A citation shaped like a
@@ -181,7 +181,7 @@ def run() -> Finding | None:
             witness=f"{KNOWN_DEFECT_FILE} cites {KNOWN_DEFECT_TARGET!r} in plain prose "
                      "with no backticks and no directory prefix; census finds it in "
                      "none of references, dotted, or unconsumed",
-            site="src/thalamus/arch/references.py:_CANDIDATE",
+            site="packages/thalamus-arch/src/thalamus_arch/references.py:_CANDIDATE",
         )
 
     return None

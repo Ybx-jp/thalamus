@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-10-25T23:45:33-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/arch/deadends.py § "DeadEndPolicy" =sha256:5d012e80db8ed7093175b1d55d7b07e9aee6daeeff9c3715bc2f29353a726eb9
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-25T23:47:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-arch/src/thalamus_arch/deadends.py § "DeadEndPolicy" =sha256:5d012e80db8ed7093175b1d55d7b07e9aee6daeeff9c3715bc2f29353a726eb9
+  note: src/thalamus/arch/deadends.py moved into the thalamus-arch package as deadends.py with DeadEndPolicy unchanged, so the assertion is unaffected
+
 ## References
 
 - CLAUDE.md · standing · cites-as-live

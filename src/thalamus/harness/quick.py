@@ -413,6 +413,10 @@ def fork_env(target: LiveSession, base: dict[str, str] | None = None) -> dict[st
     """
     env = dict(os.environ if base is None else base)
     env["THALAMUS_FORKED_FROM"] = target.session_id
+    # A fork answers the operator's question on the operator's behalf, so it is an
+    # attended session even though it runs headless — and a headless run that does
+    # not say so is distilled as autonomous (`thalamus_resolve_session_type`).
+    env["THALAMUS_SESSION_TYPE"] = "attended"
     return env
 
 

@@ -97,14 +97,28 @@ MARKS = (MARK_OK, MARK_PENDING, MARK_ADVISORY, MARK_BLOCKED, MARK_FAIL)
 #: Line shape, install.py:601: two spaces, marker, space, name, ": ", detail.
 CHECK_LINE = re.compile(r"^  ([" + "".join(MARKS) + r"]) ([^:]+): (.*)$")
 
-#: The substring install.py:623-626 uses to recognise its own hook entries.
+#: The substring `install.py` (`_is_ours`) uses to recognise core's own hook entries.
 OUR_HOOK_MARKER = "thalamus/harness/hooks"
 
-#: install.py:145 declares 17 scripts across 24 entries in HOOK_WIRING — the reflex
-#: carrier (reflex-pointer-tap.sh) carries a second, PostToolUseFailure row alongside
-#: its PostToolUse one (docs/14-memory-reflex.md §4, "The carrier"), so a digest
-#: waiting for the agent is delivered whether its next call succeeds or fails.
-EXPECTED_HOOK_ENTRIES = 24
+#: The path shape of a plugin's hook script: `thalamus.plugins.PLUGIN_HOOK_PATH`, the
+#: rule `init --uninstall` recognises a plugin's entry by. Restated here rather than
+#: imported, so the oracle does not depend on the code it indicts; the root test
+#: `tests/test_install.py::TestTheInstallMatrixCountsTheSameWiring` fails if the count
+#: below stops matching `install.claude_wiring()`.
+PLUGIN_HOOK_PATH = re.compile(r"/thalamus_[a-z0-9_]+/hooks/[^/]+/[^/]+$")
+
+
+def is_our_hook(command: str) -> bool:
+    """A hook command this install wrote: core's script, or a plugin's by path shape."""
+    return OUR_HOOK_MARKER in command or PLUGIN_HOOK_PATH.search(command) is not None
+
+
+#: `install.claude_wiring()` on the matrix box: core's `HOOK_WIRING` (21 entries) plus
+#: the 4 entries of `thalamus_reflex.plugin.register_hooks` (reflex.sh on two events and
+#: reflex-pointer-tap.sh on two). The documented sequence is `uv sync` — whose default
+#: groups install the thalamus-reflex plugin — then `thalamus init`, so the plugin's
+#: rows are written and counted; a box without the plugin would carry 21.
+EXPECTED_HOOK_ENTRIES = 25
 
 #: The rendering a HEALTHY MCP registration produces: a backticked server name, the
 #: word `in`, one location, and nothing after it. Every unhealthy branch appends a
@@ -301,7 +315,7 @@ def _hook_entries() -> list[dict]:
 
 
 def _our_hooks() -> list[str]:
-    return [e["command"] for e in _hook_entries() if OUR_HOOK_MARKER in e["command"]]
+    return [e["command"] for e in _hook_entries() if is_our_hook(e["command"])]
 
 
 def _shipped_skills() -> list[str]:
@@ -373,7 +387,7 @@ def _shell_assets() -> list[str]:
     sw.js:12-20 declares `const SHELL = [...]` with entries relative to the worker, so
     `./` is the app root and the rest take a leading slash to become server paths.
     """
-    sw = REPO / "src" / "thalamus" / "console" / "static" / "sw.js"
+    sw = REPO / "packages" / "thalamus-console" / "src" / "thalamus_console" / "static" / "sw.js"
     try:
         text = sw.read_text()
     except OSError:
@@ -672,60 +686,6 @@ def check_cli_exists_after_sync() -> Result:
               "so the probe distinguishes a working CLI from a missing one")
 
 
-def check_ty_diagnostics_depend_on_pdf_extra() -> Result:
-    """SYNCED: does `ty check src`'s verdict depend on the synced extras (issue #167)?
-
-    Shaped as one more subprocess in the SYNCED phase's own venv rather than as a new
-    `Config`: the perturbation is a second, additive `uv sync` — pure Python, no
-    native build (pyproject.toml:90) — so it costs one call in a venv this cell
-    already has, not a second golden-image partition in `qe-linux.yml`/`qe-macos.yml`
-    for a property that needs neither Docker nor a graph to observe. It runs at
-    `evaluate()` time, after every other phase, so nothing downstream reads the venv
-    while the pdf extra is in it, and the sync back to `dev` alone at the end leaves
-    the venv the way SYNCED produced it for a `drive.py` run against a real checkout.
-    """
-    rc = step_rc("synced")
-    if rc is None:
-        return skip("the synced step recorded no exit code")
-    ty = REPO / ".venv" / "bin" / "ty"
-    if not ty.exists():
-        return skip(f"{ty} does not exist, so the dev extra this check depends on "
-                    "was not synced")
-
-    base_rc, base_out = run([str(ty), "check", "src"], timeout=120, cwd=REPO)
-    if base_rc != 0 or "diagnostic" in base_out.lower():
-        return skip("the dev-only baseline itself reported diagnostics "
-                    f"(rc={base_rc}): {base_out.strip()[:200]} — so a later "
-                    "diagnostic could not be attributed to the pdf extra rather "
-                    "than to the tree")
-    control = ("`ty check src` synced with `--extra dev` alone exited "
-               f"{base_rc} reporting no diagnostics ({base_out.strip()[:80]!r})")
-
-    sync_rc, sync_out = run(["uv", "sync", "--extra", "dev", "--extra", "pdf"],
-                            timeout=spec.TIMEOUTS["uv-sync"], cwd=REPO)
-    if sync_rc != 0:
-        return skip("`uv sync --extra dev --extra pdf` exited "
-                    f"{sync_rc}: {sync_out.strip()[:200]} — so the perturbation "
-                    "this check depends on never took effect")
-
-    pdf_rc, pdf_out = run([str(ty), "check", "src"], timeout=120, cwd=REPO)
-
-    # Restore the venv to what SYNCED left, regardless of the outcome above — see the
-    # docstring.
-    run(["uv", "sync", "--extra", "dev"], timeout=spec.TIMEOUTS["uv-sync"], cwd=REPO)
-
-    if "unused-ignore-comment" not in pdf_out:
-        return ok("`ty check src` reports no diagnostics with the pdf extra synced "
-                  "either", control + f"; the same command after `uv sync --extra "
-                  f"dev --extra pdf` also exited {pdf_rc} reporting none "
-                  f"({pdf_out.strip()[:80]!r})")
-    return bad(
-        "`ty check src` reports `unused-ignore-comment` on the pypdf import in "
-        "harness/ingest.py once the pdf extra is synced, on the same source that "
-        f"just reported clean: {pdf_out.strip()[:400]}",
-        control)
-
-
 def check_check_exits_zero_before_install() -> Result:
     """CHECKED: getting-started:127 promises --check is safe before installing.
 
@@ -988,7 +948,7 @@ def check_hooks_are_armed_and_resolvable() -> Result:
     commands = after["our_hooks"]
     if not commands:
         return bad("the install wrote no hook commands carrying "
-                   f"{OUR_HOOK_MARKER!r}", "0 of our commands found in the settings file")
+                   f"{OUR_HOOK_MARKER!r} or a plugin hook path", "0 of our commands found in the settings file")
     broken = []
     for command in commands:
         path = Path(command)
@@ -1137,7 +1097,7 @@ def check_cursor_guards_are_failclosed() -> Result:
                     "so there is no guard to check the flag on")
 
     non_guard_ours = [k for k, e in actual_flat.items()
-                      if OUR_HOOK_MARKER in k[1] and e.get("failClosed") is not True]
+                      if is_our_hook(k[1]) and e.get("failClosed") is not True]
     if not non_guard_ours:
         return skip("every one of our own entries in ~/.cursor/hooks.json carries "
                     "`failClosed`, so this check cannot tell a guard that is "
@@ -1234,7 +1194,7 @@ def check_second_init_does_not_duplicate_wiring() -> Result:
         return bad(f"the second init added {len(after) - len(before)} hook command(s) "
                    f"— {len(before)} became {len(after)}, so re-running appends", control)
     if len(after) != EXPECTED_HOOK_ENTRIES:
-        return bad(f"{len(after)} of our hook entries are wired, but HOOK_WIRING "
+        return bad(f"{len(after)} of our hook entries are wired, but install.claude_wiring() "
                    f"declares {EXPECTED_HOOK_ENTRIES}", control)
     return ok(f"our hook entries stayed at {len(after)} across a second init", control)
 
@@ -1435,7 +1395,6 @@ EVALUATORS = {
     "starting-graph-is-not-reported-as-absent":
         check_starting_graph_is_not_reported_as_absent,
     "cli-exists-after-sync": check_cli_exists_after_sync,
-    "ty-check-verdict-depends-on-pdf-extra": check_ty_diagnostics_depend_on_pdf_extra,
     "graph-down-diagnosis-reaches-the-user": check_graph_down_diagnosis,
     "compose-up-produces-a-graph-that-answers-queries": check_graph_ready_answers_queries,
     "check-exits-zero-before-install": check_check_exits_zero_before_install,

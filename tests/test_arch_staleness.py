@@ -1,6 +1,6 @@
 """The staleness gate's comparison — `thalamus arch scan --check`.
 
-Interfaces: thalamus.arch.model (derived_block, load, regenerate).
+Interfaces: thalamus_arch.model (derived_block, load, regenerate).
 
 The gate compares the *measurement* and not the file text. The distinction is the whole
 test: `scan` and `commit` name the tree that was measured, and writing the model then
@@ -11,9 +11,13 @@ satisfy — it fails on the commit that was supposed to fix it, forever.
 
 from __future__ import annotations
 
-from thalamus.arch.extractor import DependencyEdge, DependencyGraph
-from thalamus.arch.metrics import measure
-from thalamus.arch.model import derived_block
+from pathlib import Path
+
+from thalamus_arch.extractor import DependencyEdge, DependencyGraph
+from thalamus_arch.metrics import measure
+from thalamus_arch.model import derived_block
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 _MEASURED = ("metrics", "counted_edges", "recorded_edges", "unresolved", "edges")
 
@@ -76,11 +80,11 @@ def test_a_drift_report_names_the_key_that_moved():
 
 def test_this_repo_matches_its_committed_model():
     """The gate CI runs, run here, so a stale model fails the suite and not only CI."""
-    from thalamus.arch import model as arch_model
-    from thalamus.arch import routes as arch_routes
-    from thalamus.arch.extractor import scan_repo
+    from thalamus_arch import model as arch_model
+    from thalamus_arch import routes as arch_routes
+    from thalamus_arch.extractor import scan_repo
 
-    repo = arch_model.REPO_ROOT
+    repo = REPO_ROOT
     model = arch_model.load(repo / arch_model.MODEL_PATH)
     graph = arch_routes.merge(
         scan_repo(repo, model.policy), arch_routes.extract_routes(repo, model.routes)

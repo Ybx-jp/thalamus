@@ -208,7 +208,7 @@ def _teardown(console, fn, cfg, *, wid_capture_fails: bool, reused: bool):
 
 
 def run() -> Finding | None:
-    from thalamus.console import server as console  # noqa: PLC0415
+    from thalamus_console import server as console  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / "checkout"
@@ -250,7 +250,7 @@ def run() -> Finding | None:
                         "capture-failure fallback",
                 witness=f"wid_capture_fails=False, reused=True: forced={bool(forced)}, "
                         f"kill-window ran={stub.ran('kill-window')}",
-                site="src/thalamus/console/server.py::close_window",
+                site="packages/thalamus-console/src/thalamus_console/server.py::close_window",
             )
 
         # THE PROPERTY. Vulnerable path, index reused: close_window must not
@@ -287,7 +287,7 @@ def run() -> Finding | None:
                     f"{forced_r[0][0]['session'] if forced_r else None!r}, "
                     f"respawn-window target={killed_r!r} resolves to={destroyed_r!r}"
                 ),
-                site="src/thalamus/console/server.py::close_window",
+                site="packages/thalamus-console/src/thalamus_console/server.py::close_window",
             )
     return None
 

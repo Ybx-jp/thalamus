@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from thalamus.arch.extractor import (
+from thalamus_arch.extractor import (
     DEPTH_MODULE,
     DEPTH_RUNTIME,
     KIND_IMPORT,
@@ -18,8 +18,8 @@ from thalamus.arch.extractor import (
     DependencyGraph,
     ExtractorPolicy,
 )
-from thalamus.arch.model import scan_id
-from thalamus.arch.routes import RoutePolicy, extract_routes, merge
+from thalamus_arch.model import scan_id
+from thalamus_arch.routes import RoutePolicy, extract_routes, merge
 
 CLIENT = "src/ui/app.js"
 SERVER = "src/api.py"

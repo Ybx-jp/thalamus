@@ -2,8 +2,8 @@
 Memory reflex worker tests — the agentic plan's queue, worker, carrier and model loop.
 
 Interfaces: thalamus.harness.transcripts (excerpt_for_job, tool_calls_after),
-            thalamus.harness.extraction.run_tool_loop, thalamus.harness.agentic,
-            thalamus.harness.reflex_queue, thalamus.harness.reflex_worker (run_job,
+            thalamus.harness.extraction.run_tool_loop, thalamus_reflex.agentic,
+            thalamus_reflex.reflex_queue, thalamus_reflex.reflex_worker (run_job,
             work, deliver, sweep), reflex.fire on the agentic arm, the carrier half of
             reflex-pointer-tap.sh driven live with a stubbed `uv`
 Infrastructure: tmp_path as $HOME and as the queue root; the model's HTTP endpoint
@@ -28,26 +28,26 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.harness import (
+from thalamus.harness import extraction, install, retrieval
+from thalamus.harness.agents import cli_for
+from thalamus.harness.extraction import StopLoop, run_tool_loop
+from thalamus_reflex import (
     agentic,
-    extraction,
     reflex,
     reflex_channel,
     reflex_note,
     reflex_queue,
     reflex_worker,
-    retrieval,
 )
-from thalamus.harness.agents import cli_for
-from thalamus.harness.extraction import StopLoop, run_tool_loop
-from thalamus.harness.reflex import ARM_AGENTIC, SESSION_CHAR_BUDGET, Firing, load_firings
+from thalamus_reflex.reflex import ARM_AGENTIC, SESSION_CHAR_BUDGET, Firing, load_firings
 from thalamus.harness.transcripts import excerpt_for_job, tool_calls_after
 from thalamus.substrate.reader import MemoryResult
 from thalamus.substrate.vocabulary import Row
 
 TAP = (
     Path(__file__).resolve().parents[1]
-    / "src" / "thalamus" / "harness" / "hooks" / "claude-code" / "reflex-pointer-tap.sh"
+    / "packages" / "thalamus-reflex" / "src" / "thalamus_reflex" / "hooks" / "claude-code"
+    / "reflex-pointer-tap.sh"
 )
 _NOW = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
 FAILURE = "FAILED tests/test_budget.py::test_ceiling - AssertionError: reflex_budget over\n"
@@ -94,6 +94,20 @@ def test_the_excerpt_keeps_the_agents_turns_and_the_trigger_and_labels_other_res
     assert "[assistant] Running it." in excerpt.text
     assert "reflex_budget over" in excerpt.text
     assert excerpt.found == {"t2"}
+
+
+def test_the_excerpt_skips_the_compaction_summary(tmp_path):
+    path = _transcript(tmp_path / "t.jsonl", [
+        _user("fix the reflex budget test"),
+        {"type": "system", "subtype": "compact_boundary", "content": "Conversation compacted"},
+        _user("This session is being continued: COMPACTED RESTATEMENT", isCompactSummary=True),
+        _call("t2"),
+        _result("t2", FAILURE),
+    ])
+    excerpt = excerpt_for_job(path, {"t2"})
+    assert "[user] fix the reflex budget test" in excerpt.text
+    assert "COMPACTED RESTATEMENT" not in excerpt.text
+    assert "reflex_budget over" in excerpt.text
 
 
 def test_the_excerpt_skips_sidechain_records_in_the_parent_and_keeps_them_in_a_subagents_file(tmp_path):
@@ -701,6 +715,9 @@ def _stub_uv(tmp_path, prints):
 def _run_tap(payload, home, bin_dir):
     """Run the carrier on a socket stdin, as Claude Code runs it: a pipe would pass a
     hook that reopens `/dev/stdin`, which fails on every real call (A0203)."""
+    record = home / ".thalamus" / "hook-library"
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text(f"{install.HOOK_ROOT}\n")
     ours, theirs = socket.socketpair()
     with ours, theirs:
         ours.sendall(json.dumps(payload).encode())

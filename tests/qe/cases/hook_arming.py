@@ -54,13 +54,15 @@ def _settings_missing_one_wiring(wiring) -> tuple[dict, tuple[str, str | None, s
 def run() -> Finding | None:
     from thalamus.harness import install  # noqa: PLC0415
 
-    wiring = tuple(install.HOOK_WIRING)
+    # What verify_armed() declares: core's table plus every installed plugin's rows, by
+    # script name (armed_hooks() keys on the name, plugin rows carrying an absolute path).
+    wiring = tuple((event, matcher, path.name) for event, matcher, path in install.claude_wiring())
     if not wiring:
         return Finding(
             failure_class=FailureClass.COLLAPSED_SENTINEL,
-            summary="HOOK_WIRING is empty, so 'nothing missing' and 'nothing declared' "
+            summary="the declared wiring is empty, so 'nothing missing' and 'nothing declared' "
                     "are indistinguishable and this case proves nothing",
-            witness="len(HOOK_WIRING) == 0",
+            witness="len(install.claude_wiring()) == 0",
             site="src/thalamus/harness/install.py",
         )
 

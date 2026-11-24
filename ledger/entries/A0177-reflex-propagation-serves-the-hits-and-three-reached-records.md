@@ -51,8 +51,31 @@ none
 - 2026-10-08T00:20:00-07:00 · corroborated · grade: argued · author: main
   evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:861aa97e16791bb83e7d98d65334302056c2d753016b4dfeb7821cbc1ff99746
   note: Read at the current revision. The only change is the concurrent flag on the agentic branch's spawn_worker call; the propagation plan's serving, ordering, cap and pointer file are untouched — the assertion is unaffected.
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:861aa97e16791bb83e7d98d65334302056c2d753016b4dfeb7821cbc1ff99746
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/propagation.py § "propagate" =sha256:8f3987f4e1e1a2ccb131923b38c554a94d6c6f2f6097b10ddf7e1ffdbcd370b7
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/propagation.py § "linked_line" =sha256:e5895454d11c18faa44b5b0eb2c29ac6954170f09eea961e6bde678cb9488547
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/reflex.py § "fire" =sha256:861aa97e16791bb83e7d98d65334302056c2d753016b4dfeb7821cbc1ff99746
+  note: src/thalamus/harness/reflex.py moved into the thalamus-reflex plugin package as reflex.py with fire unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/propagation.py § "propagate" =sha256:8f3987f4e1e1a2ccb131923b38c554a94d6c6f2f6097b10ddf7e1ffdbcd370b7
+  note: src/thalamus/harness/propagation.py moved into the thalamus-reflex plugin package as propagation.py with propagate unchanged, so the assertion is unaffected
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-reflex/src/thalamus_reflex/propagation.py § "linked_line" =sha256:e5895454d11c18faa44b5b0eb2c29ac6954170f09eea961e6bde678cb9488547
+  note: src/thalamus/harness/propagation.py moved into the thalamus-reflex plugin package as propagation.py with linked_line unchanged, so the assertion is unaffected
 
 ## References
 
 - docs/cli.md · standing · cites-as-live
-- src/thalamus/harness/reflex.py · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/reflex.py · standing · cites-as-live

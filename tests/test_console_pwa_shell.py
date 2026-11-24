@@ -1,8 +1,8 @@
 """
 The console PWA shell: what `serve()` boots, and what the shipped client precaches.
 
-Interfaces: thalamus.console.server.serve and its STATIC table, against the files
-under thalamus/console/static/.
+Interfaces: thalamus_console.server.serve and its STATIC table, against the files
+under thalamus_console/static/.
 Infrastructure: a real socket on a real port and a real `git ls-files`; no tmux, no
 graph, no browser.
 Scope: the two failures that never reach a handler test. The first is `serve()`
@@ -25,8 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.console import server
-from thalamus.console.server import STATIC, STATIC_DIR, Config
+from thalamus_console import server
+from thalamus_console.server import STATIC, STATIC_DIR, Config
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

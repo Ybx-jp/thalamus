@@ -41,6 +41,41 @@ none
 - 2026-09-25T02:57:00-07:00 · corroborated · grade: measured · author: main
   evidence: yaml: arch/model.yaml § "rules" =sha256:32bbd0bb1fe636fb04ab9969ec1abafcc804ae1bdf017406a2da3f1d90535432
   note: the yaml section pattern now opens and ends sections only at top-level keys (#300), so the ground spans the key's whole block where it spanned the key line; read against that block, substrate may depend on vocabulary and archive only, and conformance is not among them, so the assertion holds
+- 2026-10-18T13:51:40-07:00 · contested · grade: measured · author: propagation
+  evidence: yaml: arch/model.yaml § "rules" =sha256:32bbd0bb1fe636fb04ab9969ec1abafcc804ae1bdf017406a2da3f1d90535432
+  artifact: sha256:978235708cf5d50ac0d97d61c82c006dcfaeafa9106b0228dd7694ffcf298447
+  note: propagated from a moved ground
+- 2026-10-18T13:55:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: yaml: arch/model.yaml § "rules" =sha256:978235708cf5d50ac0d97d61c82c006dcfaeafa9106b0228dd7694ffcf298447
+  note: the rules gained the extension and plugin-ingest layers and entry may now depend on extension; the substrate rule is unchanged at [vocabulary, archive], so the assertion is unaffected
+- 2026-10-18T16:14:12-07:00 · contested · grade: measured · author: propagation
+  evidence: yaml: arch/model.yaml § "rules" =sha256:978235708cf5d50ac0d97d61c82c006dcfaeafa9106b0228dd7694ffcf298447
+  artifact: sha256:784ea16599dba2146c1eba968a3d1d6b759b836d6052e63d91b8066c96bb4129
+  note: propagated from a moved ground
+- 2026-10-18T16:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: yaml: arch/model.yaml § "rules" =sha256:784ea16599dba2146c1eba968a3d1d6b759b836d6052e63d91b8066c96bb4129
+  note: the rules gained the plugin-reflex layer and harness may now depend on extension; the substrate rule is unchanged at [vocabulary, archive], so the assertion is unaffected
+- 2026-10-18T21:22:05-07:00 · contested · grade: measured · author: propagation
+  evidence: yaml: arch/model.yaml § "rules" =sha256:784ea16599dba2146c1eba968a3d1d6b759b836d6052e63d91b8066c96bb4129
+  artifact: sha256:e3cf0832f71b3d9966f3541ed326a1494735a8115cf5fa489d9c2bfb04c0e502
+  note: propagated from a moved ground
+- 2026-10-18T21:25:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: yaml: arch/model.yaml § "rules" =sha256:e3cf0832f71b3d9966f3541ed326a1494735a8115cf5fa489d9c2bfb04c0e502
+  note: the rules gained the plugin-measure layer and the plugin-reflex comment now names only the trace tap; the substrate rule is unchanged at [vocabulary, archive], so the assertion is unaffected
+- 2026-10-18T22:07:40-07:00 · contested · grade: measured · author: propagation
+  evidence: yaml: arch/model.yaml § "rules" =sha256:e3cf0832f71b3d9966f3541ed326a1494735a8115cf5fa489d9c2bfb04c0e502
+  artifact: sha256:3f56ab3e75be92ff3235749ac9b8a263bb5242c1bee55f827d3f6354d19cfb7a
+  note: propagated from a moved ground
+- 2026-10-18T22:10:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: yaml: arch/model.yaml § "rules" =sha256:3f56ab3e75be92ff3235749ac9b8a263bb5242c1bee55f827d3f6354d19cfb7a
+  note: the rules gained the plugin-console layer; the substrate rule is unchanged at [vocabulary, archive], so the assertion is unaffected
+- 2026-10-25T23:45:33-07:00 · contested · grade: measured · author: propagation
+  evidence: yaml: arch/model.yaml § "rules" =sha256:3f56ab3e75be92ff3235749ac9b8a263bb5242c1bee55f827d3f6354d19cfb7a
+  artifact: sha256:a424b4258c5c09b16055017277be1170fdd7a60e08efc5337ef21be88fdf29c5
+  note: propagated from a moved ground
+- 2026-10-25T23:47:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: yaml: arch/model.yaml § "rules" =sha256:a424b4258c5c09b16055017277be1170fdd7a60e08efc5337ef21be88fdf29c5
+  note: the rules gained the plugin-arch layer, which may depend on nothing; the substrate rule is unchanged at [vocabulary, archive], so the assertion is unaffected
 
 ## References
 

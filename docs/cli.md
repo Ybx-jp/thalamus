@@ -23,6 +23,9 @@ thalamus reflex --deliver --session-id <id> [--agent-id <id>]   # the carrier: p
 thalamus reflex --sweep               # record and clear queue state nothing will reach
 ```
 
+`reflex` is added by the `thalamus-reflex` plugin ([Plugins](#plugins)), with the hooks
+that run it.
+
 `init --check` and `status` answer different questions and neither answers the
 other's. `--check` verifies the **wiring** — hooks armed, skills readable, an MCP
 entry that matches this checkout — all of which can be correct while nothing is being
@@ -40,6 +43,42 @@ deciding something: the counterfactual arm runner in the companion repo runs it 
 a confinement cell before the cell spends anything, to establish that the treatment it
 is about to measure was actually installed there.
 
+## Plugins
+
+The core distribution, `thalamus-memory`, is memory itself: distillation, recall, the MCP
+server, experts and consultations. Further commands come from plugin packages, each
+installed on its own and depending on the core and nothing else — except
+`thalamus-arch`, which depends on nothing of thalamus and has a command of its own:
+
+| Package | Adds |
+|---|---|
+| `thalamus-arch` | `arch`, the structural gate ([Repository analysis](#repository-analysis)); installed without the core, the same subcommands are the `thalamus-arch` command |
+| `thalamus-console` | rooms and the console: `spawn`, `room`, `dispatch`, `ceremony`, `console`; `--room` on `pin`, and inside tmux `pin` opens a window; `--by-occasion` on `eval cost`; the room-member rows of `contract check --capabilities` |
+| `thalamus-ingest` | `ingest`, `backfill-chunks` |
+| `thalamus-measure` | the eval loop's reports: `eval report`, `eval uses`, `eval pins`, `eval withholding`, `eval gremlin`, `eval recipes`, `eval profile`; and the `pulse` dashboard |
+| `thalamus-reflex` | the memory reflex: `reflex`, `eval reflex`, `eval vocabulary`, and the Claude Code hooks `reflex.sh` and `reflex-pointer-tap.sh` |
+
+A plugin declares a module under the `thalamus` entry-point group, and every `thalamus`
+invocation loads the ones installed. A plugin that fails to load, or whose commands cannot
+be registered — one reusing a name the core already has, for instance — is reported on
+stderr and skipped; the core's commands and every other plugin's still
+work.<!-- (A0233, cites-as-live) -->
+That matters because the hooks and SessionEnd distillation run through the same
+`thalamus` command.
+
+A plugin's hook scripts are wired by `thalamus init` beside the core's, so run it again
+after installing or removing one. `init --check` verifies them with the rest, and
+`init --uninstall` recognises them by where they sit — under the plugin's own package —
+so it removes them even after the plugin itself is gone.<!-- (A0234, cites-as-live) -->
+The scripts reach the core's shell library through `~/.thalamus/hook-library`, which
+`init` writes when a plugin wires a hook.
+
+In a checkout, `uv sync` installs every package under `packages/` into the development
+environment. Elsewhere, a plugin installs by name from PyPI into the core's environment
+(`pip install thalamus-measure`, or `uv tool install thalamus-memory --with
+thalamus-measure`). `thalamus-measure` needs `thalamus-memory` 0.1.2 or later, and
+every other plugin 0.1.1 or later.
+
 ## Building memory
 
 ```bash
@@ -55,6 +94,15 @@ thalamus validate session.yaml     # check an extraction against the contract
 thalamus ingest <url|path> --scope <expert> --check   # verify the source, no model call
 thalamus ingest <url|path> --scope <expert>  # feed one document to an expert (dry run; --write to persist)
 ```
+
+`ingest` is added by the `thalamus-ingest` plugin ([Plugins](#plugins)); the core
+package alone does not have it.
+
+`extract` distils each session as the type its pin-ledger row recorded at launch —
+attended, or autonomous when no operator was present (see
+[concepts](concepts.md#autonomous-sessions)). `--session-type attended|autonomous`
+overrides the ledger; a session already in the graph keeps the type it was written under,
+and re-writing it as the other is refused.
 
 `--harness` and `--extract-with` are two questions, not one. `--harness` says who
 *wrote* the transcripts, which decides how the digest is rendered and where sessions are
@@ -144,9 +192,7 @@ there would read as "this was free" rather than "nobody priced it". Every change
 given week's claims: the graph stores the harness that *wrote* a session, not the one that
 extracted it, and a Source stores no extractor at all.
 
-`ingest` reads HTML, plain text, and PDF. **PDF needs the `pdf` extra** (`uv sync
---extra pdf`); without it the format is refused and the message names the extra. The
-document is the positional argument — `--url` on this command is the Gremlin endpoint,
+`ingest` reads HTML, plain text, and PDF. The document is the positional argument — `--url` on this command is the Gremlin endpoint,
 as it is on `write`, `bootstrap` and `extract`, and a document passed there is refused
 before anything is fetched.
 
@@ -190,18 +236,35 @@ citable address.
 thalamus schema                    # the session graph JSON schema
 thalamus contract check            # audit the live graph against the federation contract
                                    #   violations exit 1; advisories print and do not
-thalamus pulse                     # live telemetry dashboard over the eval loop
+thalamus contract check --transcripts  # Claude Code transcripts against what distillation
+                                   #   assumes of their format; any finding exits 1
+thalamus pulse                     # live telemetry dashboard over the eval loop (thalamus-measure)
 thalamus graph up|stop|ps          # the graph server, from the compose file the package ships
 thalamus snapshot                  # flush the in-memory graph to disk now
 ```
+
+Claude Code's transcript format is undocumented, and the readers that distil it skip
+whatever they do not recognise, so a release that changes it makes sessions distil
+thinner or credits the operator with text the harness wrote, and nothing fails.
+`contract check --transcripts` checks every transcript under `~/.claude/projects`, and
+every session the archive holds twice, against the rules in
+`harness/transcript_format.py`: each rule is one thing a reader depends on, and a record
+the readers take for the operator's words is checked for any discriminator outside the
+set measured as meaning that.<!-- (A0230, cites-as-live) -->
+Every Claude Code session `extract` distils is checked against the same rules as it is
+distilled; a finding is printed to stderr and appended to
+`~/.thalamus/logs/transcript-format.log`, and the distillation goes
+on.<!-- (A0231, cites-as-live) -->
+A finding is a decision to make: what the changed field means, and whether the reader or
+the rule's measured set is what changes.
 
 ## Running experts
 
 ```bash
 thalamus pin <scope>               # launch a session pinned to an expert scope
-thalamus spawn <scope>             # console: one on-demand pinned tmux window
+thalamus spawn <scope>             # one on-demand pinned tmux window (thalamus-console)
 thalamus console                   # drive pinned sessions from a browser or phone;
-                                   #   creates its tmux session if missing
+                                   #   creates its tmux session if missing (thalamus-console)
 thalamus quick ask <scope> "<q>"   # consult a live expert by forking its own session
 thalamus quick targets             # which experts are forkable, and how warm each is
 thalamus quick delta               # what a fork contributed back
@@ -220,6 +283,7 @@ thalamus preset remove cost deep                           # refused while a man
 ### Rooms
 
 A room is a private set of live sessions whose members see and message only each other.
+Rooms, `--room` and these commands come from the `thalamus-console` plugin.
 
 ```bash
 thalamus room create <name>        # create a room's config directory
@@ -231,7 +295,7 @@ thalamus dispatch <room> "<msg>"   # deliver to live room members; refuses on `w
 ### Ceremonies
 
 An append-only ledger of occasions, written at the start so an aborted occasion still
-leaves a row.
+leaves a row. From the `thalamus-console` plugin.
 
 ```bash
 thalamus ceremony start|end|skip   # an occasion, its close, its non-occurrence
@@ -245,6 +309,7 @@ thalamus ceremony ack              # acknowledge a delivery
 ## Threads
 
 Threads are minted only by distillation. An agent may propose a close; you approve it.
+Threads an autonomous run opened wait outside your queue until you promote one.
 
 ```bash
 thalamus thread propose <id>       # an agent's whole reach: propose a close
@@ -252,25 +317,49 @@ thalamus thread pending            # proposals awaiting you
 thalamus thread approve <id>       # close it
 thalamus thread reject <id>        # decline the proposed close
 thalamus thread audit              # the close ledger
+thalamus thread autonomous --scope <s>       # autonomous runs' threads awaiting promotion
+thalamus thread promote <id> --scope <s>     # move one into your queue; its tier is unchanged
 ```
+
+## Preflight
+
+The `preflight.sh` hook runs this at each session's first tool call, and `session-start.sh`
+runs it at an attended session's start with `--phase session-start`, which skips the tool
+surface; run it by hand to see what it found:
+
+```bash
+thalamus preflight --session-id <id> --session-type attended|autonomous \
+  [--phase session-start|first-tool-call] [--transcript <path>] [--scope <s>] \
+  [--project-dir <dir>]
+```
+
+It exits 1 when the preflight failed. A launcher shapes what an autonomous run is held
+to with three variables:
+
+| Variable | Means |
+|---|---|
+| `THALAMUS_PREFLIGHT_REQUIRES` | Comma-separated MCP server names or tool names the job needs, beyond its scope's own servers |
+| `THALAMUS_BUDGET_PRESET` | The budget preset the job promises to run under; the caps in force must equal it |
+| `THALAMUS_SETTING_SOURCES` | The settings sources the run loads (`user,project,local`), when `--setting-sources` narrowed them |
 
 ## The eval loop
 
 Layer 1 measures what retrieval did, from what the harness already logs — this is the
-whole of what `thalamus eval` runs.
+whole of what `thalamus eval` runs. The core lands and prices the traces (`sync`, `cost`,
+`conditioning`); the reports that read them back come from plugins, named beside each.
 
 ```bash
 thalamus eval sync --write         # land retrieval traces and used-vs-ignored verdicts
-thalamus eval report               # per-scope retrieval-utility numbers, priced
-thalamus eval uses                 # attribution subgraphs: coverage, depth, stamp, targets
+thalamus eval report               # per-scope retrieval-utility numbers, priced (thalamus-measure)
+thalamus eval uses                 # attribution subgraphs: coverage, depth, stamp, targets (thalamus-measure)
 thalamus eval cost                 # session and operation token-cost buckets
-thalamus eval pins                 # per-expert routing signal: pinned vs consulted utility
+thalamus eval pins                 # per-expert routing signal: pinned vs consulted utility (thalamus-measure)
 thalamus eval conditioning         # per-firing behavioural join on injected reminders
-thalamus eval reflex               # the memory reflex, read by arm: fired, served, used
-thalamus eval withholding          # the randomized-withholding ledger, read as an outcome
-thalamus eval gremlin              # gremlin fluency: guard rescue rate, rejection classes
-thalamus eval recipes              # smoke-run every stored gremlin recipe, read-only
-thalamus eval profile              # gremlin query cost: wall time per traversal shape
+thalamus eval reflex               # the memory reflex, read by arm: fired, served, used (thalamus-reflex)
+thalamus eval withholding          # the randomized-withholding ledger, read as an outcome (thalamus-measure)
+thalamus eval gremlin              # gremlin fluency: guard rescue rate, rejection classes (thalamus-measure)
+thalamus eval recipes              # smoke-run every stored gremlin recipe, read-only (thalamus-measure)
+thalamus eval profile              # gremlin query cost: wall time per traversal shape (thalamus-measure)
 ```
 
 `eval profile` reads the span tap: every traversal issued through `connect()` and
@@ -524,6 +613,9 @@ evidence than an ablation and stronger than the lexical overlap `eval report` sc
 
 ## Repository analysis
 
+From the `thalamus-arch` plugin. Installed without thalamus, the same subcommands are
+`thalamus-arch scan`, `thalamus-arch rules` and so on.
+
 ```bash
 thalamus arch scan                 # measure the tree; --write updates the model file
 thalamus arch scan --check         # exit 1 if the committed model is stale
@@ -534,7 +626,6 @@ thalamus arch rules --gate         # exit nonzero on an edge the model does not 
 thalamus arch dead                 # definitions nothing outside tests/ refers to
 thalamus arch refs                 # names a comment points at that the tree no longer holds
 thalamus arch refs --limits        # what the recognizer did not consume, and what it declined to judge
-thalamus arch growth               # unreferenced stock first, then rate
 ```
 
 `refs` reports and never gates: it has no `--gate` flag, because its precision has
@@ -545,9 +636,13 @@ suppression can be audited — and backticked dotted names and bare `.json`/`.ya
 names are counted but never judged, since their referents are as often a graph
 property or another program's file as they are ours.
 
-All seven measure this checkout by default, from any working directory — the model
-they read (`arch/model.yaml`) belongs to a repository, not to wherever you are
-standing. `--repo <path>` points them at another tree.
+All six measure the git repository holding the working directory, from its top — the
+model they read (`arch/model.yaml`) belongs to a repository, not to whichever of its
+directories you are standing in.<!-- (A0237, cites-as-live) -->
+`--repo <path>` points them at another tree.
+
+`thalamus growth` is the core's: what the memory store accumulates, with the
+unreferenced stock reported before the rate. It reads the graph and writes nothing.
 
 ### The gates
 
@@ -611,7 +706,7 @@ came for. Each still answers `--help`, and each is a dry run unless `--write` is
 passed.
 
 ```bash
-thalamus backfill-chunks           # co-index already-ingested documents as Chunk vertices
+thalamus backfill-chunks           # co-index already-ingested documents as Chunk vertices (thalamus-ingest)
 thalamus audit-artifacts           # measure how fragmented Artifact identity is (read-only)
 thalamus repair-projects           # re-anchor project values that named a directory, not a repo
 thalamus derive-artifact-paths     # project Artifact identifiers onto (repo, path)
@@ -658,7 +753,7 @@ box to one expert.
 
 | Tool | Input | Purpose |
 |---|---|---|
-| `memory_open_threads` | `project`, `limit`, `topic` | Active continuation points — **the entrypoint**. Pass `topic`; a bare call returns one page of many |
+| `memory_open_threads` | `project`, `limit`, `topic`, `autonomous` | Active continuation points — **the entrypoint**. Pass `topic`; a bare call returns one page of many. `autonomous=true` lists the threads autonomous runs opened that are awaiting promotion |
 | `memory_recall` | `query`, `limit` | Keyword search across session memories |
 | `memory_recall_by_artifact` | `identifier`, `limit` | Sessions that touched a file, class or dependency, under any spelling of its name — an absolute path answers for the repo-relative one and back |
 | `memory_recall_by_project` | `project`, `limit` | Recent sessions for a project |
@@ -670,7 +765,7 @@ box to one expert.
 | `memory_session_claims` | `session`, `kinds`, `limit` | A session's decisions, problems and solutions |
 | `memory_source_chunks` | `node`, `limit` | The verbatim passages behind a knowledge claim, or either side of a passage |
 | `memory_resolve` | `node` | One node in full by its vertex id; nothing for an id the scope may not read |
-| `memory_query` | `query` | One read-only Gremlin traversal (main scope only) |
+| `memory_query` | `query` | One read-only Gremlin traversal; outside `main`, confined to what the scope may read<!-- (A0242, cites-as-live) --> |
 | `memory_consultations` | `limit` | This expert's own answered consultations |
 | `memory_exchanges` | `query`, `limit`, `read_ticket` | Consultations this scope asked or answered, by topic |
 | `consult_request` | `expert`, `question` | Mint a consultation ticket — this *is* opening the exchange record |

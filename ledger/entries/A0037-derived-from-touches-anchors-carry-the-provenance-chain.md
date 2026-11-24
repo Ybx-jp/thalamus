@@ -43,6 +43,20 @@ none
 - 2026-09-24T01:16:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/harness/ingest.py § "anchor_citations" =sha256:38a3116f8bd9a4417d7a03fdd061acaa72699b9819673e6e1ec2b84f468df974
   note: anchor_citations now takes the index-aligned citation strings instead of claim objects; it still resolves each claim's ANCHORS target chunk by its verbatim citation, so the assertion is unaffected.
+- 2026-10-18T13:51:40-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/ingest.py § "anchor_citations" =sha256:38a3116f8bd9a4417d7a03fdd061acaa72699b9819673e6e1ec2b84f468df974
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T13:55:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-ingest/src/thalamus_ingest/ingest.py § "anchor_citations" =sha256:38a3116f8bd9a4417d7a03fdd061acaa72699b9819673e6e1ec2b84f468df974
+  note: harness/ingest.py moved unchanged into the thalamus-ingest plugin package as thalamus_ingest/ingest.py; the citation-to-chunk anchoring the assertion names is the same function, so the assertion is unaffected
+- 2026-11-23T01:57:50-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/substrate/writer.py § "_write_sources" =sha256:f1c7f354759c6e259913a097ab9fbdf6dbae1a5c3f39b16102a9da2f7b35f355
+  artifact: sha256:2422a577742a8f84e33be453e79b5cb66e3d9af9be0f8162477a5e8e788c15a8
+  note: propagated from a moved ground
+- 2026-11-23T01:58:10-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/substrate/writer.py § "_write_sources" =sha256:2422a577742a8f84e33be453e79b5cb66e3d9af9be0f8162477a5e8e788c15a8
+  note: _write_sources now stamps provenance through session.provenance_for with the session type (#394); the Session -[DERIVED_FROM]-> Source edge and the SUPERSEDES lineage are unchanged, so the assertion is unaffected
 
 ## References
 

@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-10-25T23:45:33-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/arch/model.py § "GateResult" =sha256:b02041ea2570d788fa107cd7bbefdd97a2bbba42753140421dec065f6f4b0c3e
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-25T23:47:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-arch/src/thalamus_arch/model.py § "GateResult" =sha256:b02041ea2570d788fa107cd7bbefdd97a2bbba42753140421dec065f6f4b0c3e
+  note: src/thalamus/arch/model.py moved into the thalamus-arch package as model.py with GateResult unchanged, so the assertion is unaffected
+
 ## References
 
 - CLAUDE.md · standing · cites-as-live

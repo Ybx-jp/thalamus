@@ -3,7 +3,7 @@
 Issue #283: `ExpertManifest.tier` (`contract/manifest.py:275`, "Origin tier of this
 expert's content sources") is parsed from every `config/experts/*.yaml` and read by
 nothing — `grep` over `src/` finds no attribute read of a manifest's `tier`. Ingest
-stamps the tier itself, hardcoded, in `build_batch()` (`harness/ingest.py:572-576`):
+stamps the tier itself, hardcoded, in `build_batch()` (`thalamus_ingest/ingest.py:554-558`):
 
     provenance = Provenance(
         tier=Tier.CURATED,
@@ -77,7 +77,8 @@ entities:
 
 def run() -> Finding | None:
     from thalamus.contract.manifest import load_manifest  # noqa: PLC0415
-    from thalamus.harness import extraction, ingest as ingest_mod  # noqa: PLC0415
+    from thalamus.harness import extraction  # noqa: PLC0415
+    from thalamus_ingest import ingest as ingest_mod  # noqa: PLC0415
 
     called: list[str] = []
 
@@ -131,7 +132,7 @@ def run() -> Finding | None:
                     "cannot distinguish an ignored manifest tier from a broken harness"
                 ),
                 witness=f"{type(exc).__name__}: {exc}",
-                site="src/thalamus/harness/ingest.py::ingest",
+                site="packages/thalamus-ingest/src/thalamus_ingest/ingest.py::ingest",
             )
         finally:
             extraction.run_extraction = original_extraction
@@ -189,7 +190,7 @@ def run() -> Finding | None:
             f"batch provenance tier(s) written={sorted(t.value for t in written_tiers)} "
             f"(CURATED=2)"
         ),
-        site="src/thalamus/harness/ingest.py::build_batch",
+        site="packages/thalamus-ingest/src/thalamus_ingest/ingest.py::build_batch",
     )
 
 

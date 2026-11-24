@@ -285,17 +285,24 @@ def archived_transcripts(archive_base: Path | None = None) -> dict[str, Path]:
     session is re-retained under a new hash as its transcript grows, so several files
     can carry one id; the largest is the most complete and wins.
     """
+    return {
+        session_id: max(paths, key=lambda path: path.stat().st_size)
+        for session_id, paths in archived_snapshots(archive_base).items()
+    }
+
+
+def archived_snapshots(archive_base: Path | None = None) -> dict[str, list[Path]]:
+    """Map session id -> every retained transcript carrying it, smallest first."""
     root = archive_base or archive_dir()
     if not root.is_dir():
         return {}
-    found: dict[str, Path] = {}
+    found: dict[str, list[Path]] = {}
     for path in sorted(root.glob("*/*.jsonl")):
         session_id = _archived_session_id(path)
-        if not session_id:
-            continue
-        held = found.get(session_id)
-        if held is None or path.stat().st_size > held.stat().st_size:
-            found[session_id] = path
+        if session_id:
+            found.setdefault(session_id, []).append(path)
+    for paths in found.values():
+        paths.sort(key=lambda path: path.stat().st_size)
     return found
 
 
@@ -310,6 +317,18 @@ def tool_result_text(block: dict) -> str:
         ]
         return " ".join(p.strip() for p in parts if p.strip())
     return ""
+
+
+def is_compaction_summary(record: dict) -> bool:
+    """Whether a record is the summary Claude Code writes when it compacts a session.
+
+    It is a user-type record with a bare-string content, so every reader that takes such
+    a record for the operator typing would read the harness's restatement of the
+    conversation as something the operator said. It is skipped instead of relabelled:
+    compaction only appends, so the turns it summarises are earlier in the same file,
+    and reading it would count them twice (A0229, cites-as-live).
+    """
+    return bool(record.get("isCompactSummary"))
 
 
 def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
@@ -359,7 +378,7 @@ def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
 
         if record_type not in ("user", "assistant"):
             continue
-        if record.get("isSidechain") or record.get("isMeta"):
+        if record.get("isSidechain") or record.get("isMeta") or is_compaction_summary(record):
             continue  # subagent sidechains are their own episodes, not this one
 
         facts.message_count += 1
@@ -592,6 +611,8 @@ def excerpt_for_job(
         return Excerpt(text="", found=found)
     for record in _records(path):
         if record.get("type") not in ("user", "assistant") or record.get("isMeta"):
+            continue
+        if is_compaction_summary(record):
             continue
         if record.get("isSidechain") and not sidechain:
             continue

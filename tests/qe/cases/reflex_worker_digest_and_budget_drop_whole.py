@@ -42,7 +42,7 @@ prerequisite of the fast tier") — `test_reflex_worker.py` imports `pytest` at 
 scope, so this case dies on import and reports MALFORMED without the `dev` extra.
 
 **Shown capable of going red.** Loosen `pack_digest`'s `room` budget in
-`src/thalamus/harness/reflex.py` (e.g. drop the `- len(frame)` term) and rerun: the
+`packages/thalamus-reflex/src/thalamus_reflex/reflex.py` (e.g. drop the `- len(frame)` term) and rerun: the
 ready digest's `chars` exceeds `DIGEST_CHAR_CAP` and this case reports
 `INVARIANT_FALSIFIED` with that length as the witness. Comment out the
 `Path(...).unlink(missing_ok=True)` call in `reflex_worker.deliver`'s budget branch and
@@ -82,8 +82,8 @@ def _load_fixture():
 
 
 def run() -> Finding | None:
-    from thalamus.harness import agentic, reflex_worker  # noqa: PLC0415
-    from thalamus.harness.reflex import DIGEST_CHAR_CAP, SESSION_CHAR_BUDGET, Firing  # noqa: PLC0415
+    from thalamus_reflex import agentic, reflex_worker  # noqa: PLC0415
+    from thalamus_reflex.reflex import DIGEST_CHAR_CAP, SESSION_CHAR_BUDGET, Firing  # noqa: PLC0415
     from thalamus.substrate.vocabulary import Row  # noqa: PLC0415
 
     trw = _load_fixture()
@@ -160,7 +160,7 @@ def run() -> Finding | None:
                     ),
                     witness=f"chars={ready_s1['chars']} len(digest)={len(digest_s1)} "
                              f"DIGEST_CHAR_CAP={DIGEST_CHAR_CAP}",
-                    site="src/thalamus/harness/reflex.py::pack_digest",
+                    site="packages/thalamus-reflex/src/thalamus_reflex/reflex.py::pack_digest",
                 )
             if "more in the file" not in digest_s1:
                 return Finding(
@@ -172,7 +172,7 @@ def run() -> Finding | None:
                         "silently incomplete or the accounting is wrong"
                     ),
                     witness=f"digest={digest_s1!r}",
-                    site="src/thalamus/harness/reflex.py::pack_digest",
+                    site="packages/thalamus-reflex/src/thalamus_reflex/reflex.py::pack_digest",
                 )
             if _SUMMARY not in digest_s1:
                 return Finding(
@@ -183,7 +183,7 @@ def run() -> Finding | None:
                         "that fit intact and unshortened, not empty"
                     ),
                     witness=f"digest={digest_s1!r}",
-                    site="src/thalamus/harness/reflex.py::pack_digest",
+                    site="packages/thalamus-reflex/src/thalamus_reflex/reflex.py::pack_digest",
                 )
 
             # --- the budget half: s1 (unsaturated) delivers; s2 (saturated) refused ---
@@ -209,7 +209,7 @@ def run() -> Finding | None:
                         "served digest still names the file to the agent"
                     ),
                     witness=f"pointer={ready_s1['pointer']!r}",
-                    site="src/thalamus/harness/reflex_worker.py::deliver",
+                    site="packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py::deliver",
                 )
 
             claimed2 = trw._claim(tmp_path, session="s2", use_id="t9")
@@ -242,9 +242,9 @@ def run() -> Finding | None:
                         "delivered anyway instead of being dropped whole"
                     ),
                     witness=f"deliver(s2)={refused!r}",
-                    site="src/thalamus/harness/reflex_worker.py::deliver",
+                    site="packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py::deliver",
                 )
-            from thalamus.harness import reflex_queue  # noqa: PLC0415
+            from thalamus_reflex import reflex_queue  # noqa: PLC0415
             outcomes = reflex_queue.load_outcomes(tmp_path)
             if not outcomes or outcomes[-1].get("outcome") != "budget":
                 return Finding(
@@ -255,7 +255,7 @@ def run() -> Finding | None:
                         "the reflex stopped delivering"
                     ),
                     witness=f"last_outcome={outcomes[-1] if outcomes else None!r}",
-                    site="src/thalamus/harness/reflex_worker.py::deliver",
+                    site="packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py::deliver",
                 )
             if Path(ready_s2["pointer"]).exists():
                 return Finding(
@@ -267,7 +267,7 @@ def run() -> Finding | None:
                         "never saw"
                     ),
                     witness=f"pointer={ready_s2['pointer']!r}",
-                    site="src/thalamus/harness/reflex_worker.py::deliver",
+                    site="packages/thalamus-reflex/src/thalamus_reflex/reflex_worker.py::deliver",
                 )
             return None
     finally:

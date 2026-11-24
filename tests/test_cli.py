@@ -535,3 +535,90 @@ def test_the_reference_feed_withholds_another_scopes_episodic_memory(monkeypatch
     served = cli._served_nodes(graph, "s1", "main")
 
     assert [node["vid"] for node in served] == [foreign_knowledge, own_episodic]
+
+
+def test_extract_reads_the_session_type_from_the_ledger_and_the_flag_overrides_it(
+    monkeypatch, tmp_path, capsys
+):
+    """
+    Scenario: a headless run's pin row says `entrypoint: sdk-cli` and nothing else
+    about its type; a second session's row declares itself attended
+
+    Requires:
+    - monkeypatched transcripts / graph connection / writer (no graph server)
+    - retained responses, so no model is called
+
+    Verifications:
+    - the unmarked headless run is distilled as autonomous, from the ledger
+    - the declared row is distilled as attended
+    - `--session-type` outranks the ledger
+    - this shell's own environment is not consulted: it describes the re-extraction
+    """
+    from thalamus.harness import pin
+    from thalamus.substrate.schema import SessionType
+
+    args = _extract_fakes(monkeypatch, tmp_path, ["aaaa1111", "bbbb2222"])
+    args.write = True
+    for sid in ("aaaa1111", "bbbb2222"):
+        retained = tmp_path / ".thalamus" / "extractions" / f"main-{sid}.txt"
+        retained.parent.mkdir(parents=True, exist_ok=True)
+        retained.write_text(
+            "```yaml\n"
+            'summary: "Ran the weekly review."\n'
+            "decisions:\n"
+            '  - description: "Count postings by distinct boards"\n'
+            '    rationale: "One board is not a trend"\n'
+            '    artifacts: ["src/governor.py"]\n'
+            "```\n"
+        )
+    rows = {
+        "aaaa1111": {"entrypoint": "sdk-cli"},
+        "bbbb2222": {"session_type": "attended", "entrypoint": "sdk-cli"},
+    }
+    monkeypatch.setattr(pin, "ledger_facts", lambda sid: rows[sid])
+    monkeypatch.setenv("THALAMUS_SESSION_TYPE", "autonomous")
+    written = {}
+    monkeypatch.setattr(
+        cli, "write_session_checked",
+        lambda graph, session: written.__setitem__(session.session_id, session),
+    )
+    monkeypatch.setattr(cli, "_persist", lambda graph: None)
+
+    cli._cmd_extract(args)
+    assert written["aaaa1111"].session_type is SessionType.AUTONOMOUS
+    assert written["bbbb2222"].session_type is SessionType.ATTENDED
+    assert "autonomous" in capsys.readouterr().out
+
+    written.clear()
+    args.session_type = "attended"
+    cli._cmd_extract(args)
+    assert written["aaaa1111"].session_type is SessionType.ATTENDED
+
+
+def test_extract_exits_nonzero_when_a_session_write_fails(monkeypatch, tmp_path, capsys):
+    """
+    Scenario: one session's write is refused by the graph
+
+    Verifications:
+    - the summary counts it as failed
+    - the command exits 1, so session-end.sh and a job runner record the failure
+      rather than reading the run as a success
+    """
+    from thalamus.harness import pin
+
+    args = _extract_fakes(monkeypatch, tmp_path, ["aaaa1111"])
+    args.write = True
+    retained = tmp_path / ".thalamus" / "extractions" / "main-aaaa1111.txt"
+    retained.parent.mkdir(parents=True, exist_ok=True)
+    retained.write_text('```yaml\nsummary: "Ran the weekly review."\n```\n')
+    monkeypatch.setattr(pin, "ledger_facts", lambda sid: {})
+
+    def refuse(graph, session):
+        raise RuntimeError("Gremlin server 500: Expected an id that is convertible to Long")
+
+    monkeypatch.setattr(cli, "write_session_checked", refuse)
+    monkeypatch.setattr(cli, "_persist", lambda graph: None)
+    with pytest.raises(SystemExit) as exit_:
+        cli._cmd_extract(args)
+    assert exit_.value.code == 1
+    assert "0 extracted, 0 skipped, 1 failed" in capsys.readouterr().out

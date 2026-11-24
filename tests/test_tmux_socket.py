@@ -1,7 +1,7 @@
 """
 The named tmux server: which one this checkout addresses, and how it knows.
 
-Interfaces: thalamus.console.tmux
+Interfaces: thalamus_console.tmux
 Infrastructure: environment only — no tmux server, no windows, no graph.
 Scope: the resolver, not the control plane. Whether a socket-scoped argv actually
 reaches its own server is exercised live in `test_spawn_settle.py`, which builds a
@@ -14,7 +14,7 @@ tests that keep it from silently becoming decorative.
 
 import pytest
 
-from thalamus.console import tmux
+from thalamus_console import tmux
 
 
 def test_the_socket_defaults_to_a_name_rather_than_the_boxs_default_server(monkeypatch):

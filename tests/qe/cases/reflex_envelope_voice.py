@@ -1,13 +1,13 @@
 """The reflex digest's own scaffolding prose must never address the reader as an
 instruction.
 
-`harness/reflex.py`'s module docstring states the design's whole claim to safety: the
+`thalamus_reflex/reflex.py`'s module docstring states the design's whole claim to safety: the
 reflex fires off a Bash result the agent did not run, in order to summon memory nobody
 asked for, and the one thing that keeps that from reading as a command is that the
 scaffolding *says* it is unsolicited and never itself speaks in the imperative — only a
 quoted, tier-stamped record may, sitting in the pointer file rather than the digest
 itself, and a voiced record is counted and named in the digest's header rather than
-dropped or rewritten (`render_envelope`'s docstring, `src/thalamus/harness/reflex.py`).
+dropped or rewritten (`render_envelope`'s docstring, `packages/thalamus-reflex/src/thalamus_reflex/reflex.py`).
 
 That is a UNIVERSAL over the scaffolding text `render_envelope` emits regardless of what
 it is fed — no anchor list, no voiced count, no pointer path, and no served item can make
@@ -25,7 +25,7 @@ clean result below is uninterpretable — a detector that never fires on anythin
 report the scaffolding as silent for the wrong reason, and every real regression alike.
 
 **Shown capable of going red.** Add an imperative sentence to `render_envelope`'s own
-`lines` list in `src/thalamus/harness/reflex.py` (e.g. append `"Now fix the anchors
+`lines` list in `packages/thalamus-reflex/src/thalamus_reflex/reflex.py` (e.g. append `"Now fix the anchors
 above."` to the list the function builds before joining it into the digest) and rerun
 this case: it reports `INVARIANT_FALSIFIED` with the added sentence as its witness.
 `qe` does not write `src/thalamus/harness/`, so the mutation is not carried in the
@@ -38,7 +38,7 @@ from ..model import Case, FailureClass, Finding, Substrate, Tier
 
 
 def run() -> Finding | None:
-    from thalamus.harness.reflex import imperative_voice, render_envelope  # noqa: PLC0415
+    from thalamus_reflex.reflex import imperative_voice, render_envelope  # noqa: PLC0415
 
     # CONTROL: the detector must be shown capable of firing on a plain instruction, or
     # a clean scaffolding result below cannot be told apart from a detector that never
@@ -76,7 +76,7 @@ def run() -> Finding | None:
             "authored, by the scaffolding itself"
         ),
         witness=f"imperative_voice(render_envelope(...)) = {hits!r}",
-        site="src/thalamus/harness/reflex.py::render_envelope",
+        site="packages/thalamus-reflex/src/thalamus_reflex/reflex.py::render_envelope",
     )
 
 

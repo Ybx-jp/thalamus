@@ -63,7 +63,7 @@ def _roundtrip(text: str):
     """(entity names, referenced names, contract issues) for one model response."""
     from thalamus.contract.conformance import check_knowledge  # noqa: PLC0415
     from thalamus.harness.extraction import parse_extraction  # noqa: PLC0415
-    from thalamus.harness.ingest import build_batch  # noqa: PLC0415
+    from thalamus_ingest.ingest import build_batch  # noqa: PLC0415
 
     data = parse_extraction(text)
     batch = build_batch(
@@ -81,7 +81,7 @@ def _roundtrip(text: str):
 
 
 def run() -> Finding | None:
-    from thalamus.harness import ingest  # noqa: PLC0415
+    from thalamus_ingest import ingest  # noqa: PLC0415
 
     prompt = getattr(ingest, "_ARTICLE_PROMPT", "")
     match = _FENCE.search(prompt)
@@ -91,7 +91,7 @@ def run() -> Finding | None:
             summary="no YAML example was found in the extraction prompt, so 'the example "
                     "round-trips' and 'there is no example' are the same clean result",
             witness=f"_ARTICLE_PROMPT is {len(prompt)} chars with no ```yaml block",
-            site="src/thalamus/harness/ingest.py::_ARTICLE_PROMPT",
+            site="packages/thalamus-ingest/src/thalamus_ingest/ingest.py::_ARTICLE_PROMPT",
         )
     example = match.group("body")
     if _PLACEHOLDER not in example:
@@ -100,7 +100,7 @@ def run() -> Finding | None:
             summary="the template's example no longer carries the quoted entity "
                     "placeholder this case substitutes into, so nothing was exercised",
             witness=f"expected {_PLACEHOLDER} in the example; got: {example[:160]!r}",
-            site="src/thalamus/harness/ingest.py::_ARTICLE_PROMPT",
+            site="packages/thalamus-ingest/src/thalamus_ingest/ingest.py::_ARTICLE_PROMPT",
         )
 
     # MUTATION CONTROL, first: the same document in the shape the defect shipped with
@@ -128,7 +128,7 @@ def run() -> Finding | None:
             summary="the template's own example does not survive the parser that reads "
                     "the model's imitation of it",
             witness=f"{type(exc).__name__}: {exc}",
-            site="src/thalamus/harness/ingest.py::_ARTICLE_PROMPT",
+            site="packages/thalamus-ingest/src/thalamus_ingest/ingest.py::_ARTICLE_PROMPT",
         )
 
     problems = []
@@ -149,7 +149,7 @@ def run() -> Finding | None:
             "imitation, and the name arrives as something else"
         ),
         witness=f"name={_HOSTILE!r}; " + "; ".join(problems),
-        site="src/thalamus/harness/ingest.py::_ARTICLE_PROMPT vs extraction.parse_extraction",
+        site="packages/thalamus-ingest/src/thalamus_ingest/ingest.py::_ARTICLE_PROMPT vs extraction.parse_extraction",
     )
 
 

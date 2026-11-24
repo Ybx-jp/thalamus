@@ -35,7 +35,23 @@ none
 
 ## Verdicts
 
+- 2026-10-18T22:07:41-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/console/distill.py § "_traceback_starts" =sha256:21e81822e88b8982b5ed3a79221a91cb46c0cae2e2bb16e0bda91fbefd33eff0
+  artifact: absent
+  note: propagated from a withdrawn ground
+
+- 2026-10-18T22:07:41-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/console/distill.py § "_crash_detail" =sha256:8d9abbaba0f081981f07a6317ee2e192c5cf66f2608460d57100c1fa3486be9c
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T22:10:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: packages/thalamus-console/src/thalamus_console/distill.py § "_traceback_starts" =sha256:21e81822e88b8982b5ed3a79221a91cb46c0cae2e2bb16e0bda91fbefd33eff0
+  note: src/thalamus/console/distill.py moved into the thalamus-console plugin package as distill.py with _traceback_starts unchanged, so the assertion is unaffected
+- 2026-10-18T22:10:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: packages/thalamus-console/src/thalamus_console/distill.py § "_crash_detail" =sha256:8d9abbaba0f081981f07a6317ee2e192c5cf66f2608460d57100c1fa3486be9c
+  note: src/thalamus/console/distill.py moved into the thalamus-console plugin package as distill.py with _crash_detail unchanged, so the assertion is unaffected
+
 ## References
 
-- src/thalamus/console/distill.py · standing · cites-as-live
+- packages/thalamus-console/src/thalamus_console/distill.py · standing · cites-as-live
 - docs/console.md · standing · cites-as-live

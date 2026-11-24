@@ -46,4 +46,4 @@ The permissions reference accepts a tool-name glob in an allow rule after a lite
 
 ## References
 
-- src/thalamus/harness/reflex_channel.py · standing · cites-as-live
+- packages/thalamus-reflex/src/thalamus_reflex/reflex_channel.py · standing · cites-as-live

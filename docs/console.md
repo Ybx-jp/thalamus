@@ -423,8 +423,9 @@ discontinuity is what guards the controls rather than putting them out of reach.
 The two are the same size and differ by outline, because shipping the more final
 action as the smaller target is how a mis-tap happens.
 
-- **restart** replaces a window's claude process. MCP servers and hooks arm *per
-  process*, so this is how a wiring change actually takes effect. It
+- **restart** replaces a window's claude process. MCP servers arm *per process*, so
+  this is how a server or env change takes effect; a hook edit reaches a Claude
+  Code window without one.<!-- (A0257, cites-as-live) --> It
   sends `/exit` — which fires SessionEnd, so the session distills to memory
   normally — waits up to 4 minutes for it, then respawns the window with its
   original command and `THALAMUS_SCOPE` intact. Only a session that hangs past the
@@ -532,7 +533,7 @@ With `--frames`, the desktop surface can also render the pane inside a panel dra
 in a background image — `frame` toggles (F12), `▸` cycles (F9). Off by default, and
 when it is off neither the controls nor the key bindings exist; no artwork ships
 with it. The file `--frames` points at names each image and the panel rectangle to
-draw the pane inside; `frames()` in `console/server.py` is both the parser and the
+draw the pane inside; `frames()` in `thalamus_console/server.py` is both the parser and the
 statement of the format.
 
 ### Install it to your home screen
@@ -650,7 +651,7 @@ config mistake and not a state.
 ### Merging is not deploying
 
 The unit runs `.venv/bin/thalamus` out of `%h/code/thalamus`, and that venv is an
-editable install: the console serves `src/thalamus/console/` **from the shared
+editable install: the console serves `packages/thalamus-console/src/thalamus_console/` **from the shared
 checkout's working tree**, whatever branch it happens to be sitting on. Merging a PR
 to `master` on GitHub changes nothing the phone can see. Two things have to move for
 a merge to reach the phone, and they cover different halves. The checkout updates `static/` — `app.js`, `style.css` and
@@ -661,14 +662,31 @@ matter how current the tree is. A client built against a server field the runnin
 process does not return renders as *nothing happened*.
 
 Both moves are one action. **INFRA → Build → deploy** fast-forwards the checkout onto
-its upstream and restarts the unit hosting the console, then the page reloads onto
-what it now serves. By hand it is the same two commands:
+its upstream, syncs the environment, and restarts the unit hosting the console, then
+the page reloads onto what it now serves. By hand it is the same three commands:
 
 ```bash
 git -C ~/code/thalamus pull --ff-only
+uv sync --directory ~/code/thalamus --inexact --frozen
 systemctl --user restart thalamus-console                  # Linux
 launchctl kickstart -k gui/$(id -u)/com.thalamus.console   # macOS
 ```
+
+**The sync is what makes a new package reachable.** The console itself is the
+`thalamus-console` plugin, installed into `.venv` by `uv sync`, and so is every other
+plugin. Restarted without a sync after a merge that changes `uv.lock` or adds a package
+under `packages/`, the unit runs the new core against the old environment, and a
+command that moved into a plugin the environment does not hold yet is not there —
+`thalamus console` included, so the unit fails at start. Deploy runs
+`uv sync --inexact --frozen` after every fast-forward, including one that moved
+nothing, so a checkout pulled by hand without a sync is repaired by the next deploy.
+`--frozen` installs what the pulled lockfile says without re-resolving it; `--inexact`
+keeps the dev extras a plain `uv sync` would remove. `uv` is looked up on the unit's
+PATH — one more reason to pin it (below). A sync that fails, or a `uv` that is not on
+PATH, stops the deploy before the restart: the checkout has moved, the unit is left
+running, and the INFRA log carries `uv`'s error. The sync runs only when the console
+runs out of the checkout's own `.venv`; a console installed anywhere else is not the
+checkout's to rewrite.<!-- (A0238, cites-as-live) -->
 
 Deploy refuses rather than improvises. Uncommitted changes to tracked files, a
 detached HEAD, a branch with no upstream, and a history that will not fast-forward
@@ -789,7 +807,7 @@ console runs under a bare `python3` with nothing else installed:
 
 ```bash
 tmux -L thalamus new -d -s thalamus -n main
-python3 -m thalamus.console.server      # or: python3 src/thalamus/console/server.py
+cd packages/thalamus-console/src && python3 -m thalamus_console.server
 ```
 
 You get panes, input, keys, the composer and the whole client — and shells, which
@@ -806,10 +824,10 @@ keeps that true.
 
 ## How it works
 
-`src/thalamus/console/` — `server.py`, `transcript.py` and `distill.py` plus
+`packages/thalamus-console/src/thalamus_console/` — `server.py`, `transcript.py` and `distill.py` plus
 `static/`. Stdlib Python and a dependency-free client.
 
-- **Stdlib `http.server`, not FastAPI** like `pulse/`. One of its jobs
+- **Stdlib `http.server`, not FastAPI** like thalamus-measure's pulse. One of its jobs
   is restarting the service unit hosting it; the fewer moving parts between a tap
   on a phone and a tmux call, the better.
 - **The read view is a deferred import.** It reuses the harness's transcript
@@ -888,7 +906,7 @@ keeps that true.
   session's own start, epoch seconds, converted at the boundary from the ledger's
   ISO stamp). Absent where the ledger has no value, never inferred from the cwd.
 - **Whether a session is stopped waiting on a human is served, not computed by the
-  client.** `console/dispatch.py` owns what the state means and the harness's
+  client.** `thalamus_console/dispatch.py` owns what the state means and the harness's
   session descriptor owns the value; the console joins them to a window and reduces
   them to `observed`, `blocked`, `blocked_since`, `activity` and `activity_since`.
   **`observed` is the field to branch on.** Session descriptors are partitioned by

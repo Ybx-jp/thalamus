@@ -35,6 +35,12 @@ import pytest
 
 HOOKS = Path(__file__).resolve().parents[1] / "src" / "thalamus" / "harness" / "hooks"
 
+
+def _hook_scripts() -> list[Path]:
+    """Core's hook scripts, then every plugin's (`packages/*/src/*/hooks/<harness>/`)."""
+    plugins = HOOKS.parents[3] / "packages"
+    return sorted(HOOKS.glob("*/*.sh")) + sorted(plugins.glob("*/src/*/hooks/*/*.sh"))
+
 # The variables the hook has in scope where it builds the block. Values are
 # stand-ins; what is under test is the *shape* of the assembled script, and a
 # realistic non-empty value is what makes an unquoted expansion visible.
@@ -74,7 +80,7 @@ def _blocks(path: Path) -> list[tuple[int, str]]:
 def _hook_blocks() -> list[tuple[Path, int, str]]:
     return [
         (path, line, body)
-        for path in sorted(HOOKS.glob("*/*.sh"))
+        for path in _hook_scripts()
         for line, body in _blocks(path)
     ]
 
@@ -212,7 +218,7 @@ _PIPES_INTO_HEAD = re.compile(r"\|\s*head\b")
 def test_no_hook_pipes_into_a_partial_reader():
     offenders = [
         f"{path.parent.name}/{path.name}:{number}"
-        for path in sorted(HOOKS.glob("*/*.sh"))
+        for path in _hook_scripts()
         for number, line in enumerate(path.read_text().splitlines(), start=1)
         if _PIPES_INTO_HEAD.search(line) and not line.lstrip().startswith("#")
     ]
@@ -263,7 +269,7 @@ _REOPENS_STDIN = re.compile(r"/dev/stdin|/dev/fd/0|/proc/self/fd/0")
 
 
 def test_no_hook_reopens_its_stdin_by_path():
-    scripts = sorted(HOOKS.glob("*/*.sh")) + sorted(REPO_HOOKS.glob("*.sh"))
+    scripts = _hook_scripts() + sorted(REPO_HOOKS.glob("*.sh"))
     assert len(scripts) > 20, scripts
     offenders = [
         f"{path.relative_to(path.parents[1])}:{number}"

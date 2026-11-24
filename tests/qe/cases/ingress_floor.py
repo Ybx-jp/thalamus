@@ -16,7 +16,7 @@ not with eval-methodology, despite the inputs being the kind of text a model pro
 The separator family is the generator, and it is the one that has actually paid out:
 hyphen, underscore, period and slash are word characters to `_TOKEN_RE`, so a claim
 joining its words with any of them shares no token with a page that spaces them, and
-all four lifted the floor to tier 1 until `_tokens` began emitting each compound's
+all four lifted the floor to tier 1 until `word_forms` (then `_tokens`) began emitting each compound's
 parts beside it. The suite tries the whole class rather than the one found first —
 a fix closing hyphen alone leaves three open.
 """
@@ -125,7 +125,7 @@ def run() -> Finding | None:
             "apply_ingress_floor's docstring on reading through a rewritten spelling"
         ),
         witness=" | ".join(lifted),
-        site="src/thalamus/harness/extraction.py::_tokens",
+        site="src/thalamus/harness/extraction.py::word_forms",
     )
 
 

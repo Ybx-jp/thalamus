@@ -34,6 +34,10 @@ from pathlib import Path
 from ..model import Case, FailureClass, Finding, Substrate, Tier
 
 _SRC = Path(__file__).resolve().parents[3] / "src" / "thalamus"
+# Plugin packages are separate distributions under `packages/<name>/src/<import name>`;
+# code that moved there (the reflex, ingest) is still code this rule binds, and a scan
+# of the core alone would stop seeing it without anything failing.
+_PLUGIN_SRCS = sorted((_SRC.parents[1] / "packages").glob("*/src/*/"))
 
 # The argv-construction sites: a list literal or call whose first element is the tmux
 # binary. Matches `["tmux", ...]`, `("tmux", ...)` and `"tmux", "..."` inside a call.
@@ -85,7 +89,7 @@ def run() -> Finding | None:
 
     unscoped: list[str] = []
     total = 0
-    for path in sorted(_SRC.rglob("*.py")):
+    for path in sorted(p for root in (_SRC, *_PLUGIN_SRCS) for p in root.rglob("*.py")):
         text = path.read_text(encoding="utf-8", errors="ignore")
         for match in _INVOCATION.finditer(text):
             total += 1

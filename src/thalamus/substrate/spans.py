@@ -3,8 +3,8 @@
 The tap, not the metric. This module times traversals at the two seams the house owns
 (`writer.connect`'s remote connection and `query.run_query`'s client) and appends what
 it measured to ~/.thalamus/profiles/<YYYY-MM>.jsonl. Reading those rows into a report
-is `eval/profile.py`'s job, the same split the trace tap already has: the hook records,
-`eval/traces.py` interprets.
+is the job of `profile.py` in the thalamus-measure plugin, the same split the trace
+tap already has: the hook records, `eval/traces.py` interprets.
 
 Sits in `substrate/` because that is all it knows — a traversal, a duration, and the
 step names in between. It imports nothing from the layers above, which is what lets
@@ -25,9 +25,9 @@ traversal time it sits beside rather than asserted to be negligible.
 
 What it does not see: a traversal built on a `DriverRemoteConnection` or `Client` the
 caller constructed itself instead of reaching for `connect()` / `run_query` — ad-hoc
-Bash gremlin that skips the house idiom is the realistic case. `eval/profile.py`'s
-step profiler is the one deliberate exclusion: a profiled traversal is a distorted
-one, and mixing it into this record would poison it.
+Bash gremlin that skips the house idiom is the realistic case. The step profiler in
+thalamus-measure's `profile.py` is the one deliberate exclusion: a profiled traversal
+is a distorted one, and mixing it into this record would poison it.
 
 Set `THALAMUS_PROFILE=0` to disable recording entirely.
 """

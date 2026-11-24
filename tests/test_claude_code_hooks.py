@@ -206,6 +206,25 @@ class TestInjectedInstruction:
         assert pins[0]["forked_from"] == "parent-sess-9"
 
 
+class TestAJobLaunchedWithoutContext:
+    """A scheduled job's launcher sets THALAMUS_SESSION_CONTEXT=none: the pin is still
+    recorded, and nothing is added to the job's input."""
+
+    def test_the_pin_is_recorded_and_nothing_is_injected(self, tmp_path):
+        result = run_hook(session_start_payload(session_id="job-1"), tmp_path,
+                          env={"THALAMUS_SESSION_CONTEXT": "none", "THALAMUS_SCOPE": "career",
+                               "THALAMUS_SESSION_TYPE": "autonomous"})
+        assert json.loads(result.stdout) == {}
+        row = json.loads((tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[-1])
+        assert (row["session_id"], row["scope"], row["session_type"]) == (
+            "job-1", "career", "autonomous")
+
+    def test_any_other_value_primes_as_before(self, tmp_path):
+        result = run_hook(session_start_payload(), tmp_path,
+                          env={"THALAMUS_SESSION_CONTEXT": "full"})
+        assert "memory_open_threads" in context_of(result)
+
+
 class TestSessionIdentityInjection:
     """A session must be told which session it is.
 
@@ -1170,7 +1189,8 @@ def test_a_query_that_failed_is_not_a_validated_recipe(tmp_path):
     """
     for response in (
         "Traceback (most recent call last): GremlinServerError",
-        "memory_query is a master-plane instrument and this session is pinned to `x`",
+        "Rejected: a second traversal root (`g`) after the first.",
+        "Query not run: the confinement for this pin could not be built (bad scope)",
         "No results",
         "",
         "   ",
