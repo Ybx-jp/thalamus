@@ -2550,9 +2550,12 @@ def run(dry_run: bool = False, check_only: bool = False,
         return 1
     if not check_only:
         editors = " and ".join(EDITOR_NAMES.get(h, h) for h in harnesses)
-        print(f"\nInstalled for {editors}. Hooks and the MCP server arm per *process*: "
-              "every session already open keeps the old config until the editor is "
-              "relaunched, and `/clear` is not enough.")
+        # Claude Code reloads hooks into open sessions (A0257, cites-as-live); the
+        # MCP server is what a relaunch is for.
+        print(f"\nInstalled for {editors}. The MCP server arms per *process*: every "
+              "session already open keeps the old server until the editor is "
+              "relaunched, and `/clear` is not enough. Claude Code applies the hook "
+              "changes to open sessions by itself.")
         if "cursor" in harnesses:
             print("Cursor: discovery reads the sessionEnd hook log, not the filesystem "
                   "(cursor_transcripts.discover), so sessions that ran on this box before "

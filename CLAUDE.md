@@ -145,9 +145,11 @@ Novelty claims are phrased "not found in the current scan", never a bare "novel"
 
 ## Memory
 
-- Session distillation is automatic (SessionEnd hook → `thalamus extract`). Hooks and
-  the MCP server arm per *process* — after wiring changes, relaunch your editor;
-  `/clear` is not enough.
+- Session distillation is automatic (SessionEnd hook → `thalamus extract`). Claude
+  Code reloads its settings files on change, so a hook edit reaches a session already
+  open;<!-- (A0257, cites-as-live) -->
+  the MCP server arms per *process* — after a server or env change, relaunch your
+  editor; `/clear` is not enough.
 - **An agent cannot open a thread, and no surface will be added that lets one.** Threads
   are minted only by distillation from a session that actually happened, which is what
   makes an open thread evidence rather than an assertion; an agent that could file one

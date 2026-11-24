@@ -1003,8 +1003,8 @@ function escapeHtml(s) {
 }
 
 // ---- Infra admin ----
-// The gear panel. Restart replaces a window's claude process — MCP servers and
-// hooks arm per process, so this is how wiring changes take effect. Everything the
+// The gear panel. Restart replaces a window's claude process — MCP servers arm
+// per process, so this is how a server or env change takes effect. Everything the
 // panel does could be typed into the composer by hand; this is the one-tap version.
 function adminLog(line) {
   const t = new Date().toTimeString().slice(0, 8);

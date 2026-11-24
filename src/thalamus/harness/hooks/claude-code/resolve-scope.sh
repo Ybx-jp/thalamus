@@ -270,12 +270,19 @@ thalamus_resolve_forked_from() {
 # and its threads in the operator's queue. CLAUDE_CODE_ENTRYPOINT is `sdk-cli` under
 # `claude -p` and `cli` in a terminal; anything else, including unset, reads attended.
 # (A0246, cites-as-live)
+#
+# Builtins only, and bash 3.2's (macOS): preflight.sh decides from this whether a hook
+# that cannot run fails closed, so it must still answer on a PATH with no coreutils.
 thalamus_resolve_session_type() {
-  local declared
-  declared="$(printf '%s' "${THALAMUS_SESSION_TYPE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  local declared="${THALAMUS_SESSION_TYPE:-}" nocase
+  declared="${declared//[[:space:]]/}"
+  nocase="$(shopt -p nocasematch)"
+  shopt -s nocasematch
   case "$declared" in
-    attended|autonomous) printf '%s' "$declared"; return 0 ;;
+    attended) eval "$nocase"; printf 'attended'; return 0 ;;
+    autonomous) eval "$nocase"; printf 'autonomous'; return 0 ;;
   esac
+  eval "$nocase"
   case "${CLAUDE_CODE_ENTRYPOINT:-}" in
     sdk*) printf 'autonomous' ;;
     *) printf 'attended' ;;
