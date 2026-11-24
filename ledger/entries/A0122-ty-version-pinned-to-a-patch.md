@@ -49,6 +49,13 @@ none
 - 2026-10-18T13:55:00-07:00 · corroborated · grade: measured · author: architect
   evidence: toml-key: pyproject.toml § "dev" =sha256:e655fa1768362f978259beaa71923a9b4e81362b6fcbe9ef906e4240a7075300
   note: the `pdf` extra left project.optional-dependencies when PDF extraction moved into the thalamus-ingest plugin as a required dependency; ty is still pinned at ==0.0.74 in the dev extra, so the assertion is unaffected
+- 2026-11-24T01:57:29-08:00 · contested · grade: measured · author: propagation
+  evidence: toml: pyproject.toml § "project.optional-dependencies" =sha256:882b20d486d8460036c447d499c89ffc925bac9a3665882431a11ee4e79081bc
+  artifact: sha256:87d7b9364b44e3089819b378f8eb1c62f7c224e0ce15c8f61d2c63ea489bde3f
+  note: propagated from a moved ground
+- 2026-11-24T01:57:36-08:00 · corroborated · grade: measured · author: main
+  evidence: toml: pyproject.toml § "project.optional-dependencies" =sha256:87d7b9364b44e3089819b378f8eb1c62f7c224e0ce15c8f61d2c63ea489bde3f
+  note: the dev extra gained hypothesis>=6.100 and a new qe-browser extra holds playwright>=1.49; ty is still pinned at ==0.0.74 in the dev extra, so the assertion is unaffected
 
 ## References
 
