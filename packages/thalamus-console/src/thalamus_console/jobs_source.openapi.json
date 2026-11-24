@@ -3274,7 +3274,7 @@
        "text",
        "commits"
       ],
-      "description": "Commits between two of the job's versions that touched shared code only, folded into one row."
+      "description": "Commits between two of the job's versions placed by rule (b) of History: they touch shared code and none of the job's own paths. Folded into one row."
      },
      {
       "type": "object",
@@ -3431,7 +3431,7 @@
      "items",
      "more"
     ],
-    "description": "J3. The job's versions, newest first, `limit` of them: a commit is a version of a job when it touches the job's registry file, its prompts or the code paths its registry entry declares, or when a tuning decision for the job names it. Shared-code commits between two versions fold into one shared item; a run sits under the job version it ran on.",
+    "description": "J3. The job's versions, newest first, `limit` of them, with a run under the job version it ran on. A job X's own paths are its registry file, its prompts and the code paths its registry entry declares; shared code is any path no job declares. Each commit is placed by these rules, in order: (a) it touches X's own paths, or a tuning decision for X names it: a version of X; (b) otherwise it touches any shared code, even if it also touches another job's paths, because shared code can change X: it goes into the shared item between the two versions it falls between; (c) otherwise it touches only other jobs' paths: it is not shown.",
     "examples": [
      {
       "columns": [
