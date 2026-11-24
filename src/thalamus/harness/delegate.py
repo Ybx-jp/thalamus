@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from thalamus.contract.manifest import load_manifest
+from thalamus.contract.reporting import charter_domain
 from thalamus.harness.extraction import (
     ExtractionRun,
     estimate_prompt_tokens,
@@ -84,7 +85,7 @@ def build_prompt(scope: str, instructions: str, inputs: list[tuple[Path, str]]) 
     manifest = load_manifest(scope)
     sections = [
         f"You are the {manifest.name} expert (scope `{manifest.scope}`).",
-        f"Domain: {manifest.domain}",
+        f"Domain: {charter_domain(manifest)}",
         "You have no filesystem or tools. Every allowed input is included below. "
         "Do not assume or request any material outside those inputs.",
         "# Instructions",

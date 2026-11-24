@@ -81,6 +81,14 @@ none
 - 2026-11-23T17:37:46-08:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:50a10758e207f8d803bc1f78b3aeb0bbf8eb5c4baeaedb9aaa21e78261cdcbf4
   note: The class gains a reports_to field defaulting to main. The assertion is unaffected.
+- 2026-11-23T20:53:28-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:50a10758e207f8d803bc1f78b3aeb0bbf8eb5c4baeaedb9aaa21e78261cdcbf4
+  artifact: sha256:95646f6236406d8384815d944e2a8707a0ca9050065318a227a737548d91f0ed
+  note: propagated from a moved ground
+
+- 2026-11-23T20:56:00-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:95646f6236406d8384815d944e2a8707a0ca9050065318a227a737548d91f0ed
+  note: The class gains a rules field defaulting to the empty string and a private record of the config root it was loaded from. The assertion is unaffected.
 
 ## References
 

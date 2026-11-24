@@ -2350,7 +2350,7 @@ def _report_expert_boundaries():
     roster's bound" cannot read the same.
     """
     from thalamus.contract.manifest import available_scopes, load_manifest
-    from thalamus.contract.reporting import reporting_graph
+    from thalamus.contract.reporting import inherited_rules, reporting_graph
 
     tree = reporting_graph()
     for scope in available_scopes():
@@ -2359,6 +2359,8 @@ def _report_expert_boundaries():
         origin = "declared" if manifest.capability_boundary is not None else "inherited"
         print(f"\n  {scope}")
         print(f"    reports to {tree.superior(scope)}")
+        bound = [origin for origin, _ in inherited_rules(manifest)]
+        print(f"    rules      from: {', '.join(bound) if bound else '(none)'}")
         writes = manifest.write_boundary.deny_globs
         print(f"    writes     denied: {', '.join(writes) if writes else '(nothing)'}")
         write_exceptions = manifest.write_boundary.allow_globs

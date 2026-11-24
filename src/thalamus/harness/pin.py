@@ -45,6 +45,7 @@ from thalamus.contract.manifest import (
     load_manifest,
 )
 from thalamus.contract.ontology import MAIN_SCOPE
+from thalamus.contract.reporting import charter_domain
 from thalamus.substrate.schema import SessionType
 
 AGENT_PREFIX = "thalamus-"
@@ -362,7 +363,7 @@ def _charter(manifest: ExpertManifest, selfcheck: str) -> str:
     vocabulary for the carrier.
     """
     return f"""You are working a session pinned to the Thalamus expert scope `{manifest.scope}`
-({manifest.name}). Domain: {manifest.domain}
+({manifest.name}). Domain: {charter_domain(manifest)}
 
 The pin is enforced server-side: every `mcp__thalamus__` memory operation in this
 process reads and writes the `{manifest.scope}` scope, and this session's

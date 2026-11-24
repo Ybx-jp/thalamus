@@ -327,11 +327,21 @@ class ExpertManifest(BaseModel):
         "`contract.reporting`, since one manifest cannot see whether its superior "
         "exists or reports back to it.",
     )
+    rules: str = Field(
+        "",
+        description="Rules that bind this scope and every scope that reports to it, at "
+        "any depth. A subordinate's charter carries them after its own `domain` "
+        "(`contract.reporting.charter_domain`); its own `rules` add to them, and "
+        "nothing it declares removes one.",
+    )
 
     # The selected preset per dimension, resolved against the config root the manifest
     # was loaded from. A preset is defined beside the manifests rather than inside
     # them, so the name cannot be checked by the model alone.
     _presets: dict[str, Preset] = PrivateAttr(default_factory=dict)
+    # The config root this manifest was loaded from, so the superiors whose `rules`
+    # reach its charter are read from the same root rather than the default one.
+    _base: Path | None = PrivateAttr(None)
 
     def preset(self, dimension: Dimension) -> Preset:
         if dimension.key not in self._presets:
@@ -527,6 +537,7 @@ def load_manifest(scope: str, base: Path | None = None) -> ExpertManifest:
         raise ValueError(f"{path}: {exc}") from exc
     if manifest.scope != scope:
         raise ValueError(f"{path} declares scope `{manifest.scope}`, not `{scope}`")
+    manifest._base = base
     for dimension in DIMENSIONS.values():
         try:
             manifest._presets[dimension.key] = resolve_preset(

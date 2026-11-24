@@ -61,6 +61,14 @@ none
 - 2026-09-29T00:31:35-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/contract/manifest.py § "load_manifest" =sha256:841f3a4e9bde3b515b489a6d4165d2dd3335f91be21f542e92aec8aa6cd2f2d7
   note: load_manifest now re-raises a validation failure as a ValueError naming the file; preset resolution and the refusal of an undefined preset are unchanged, so the assertion is unaffected
+- 2026-11-23T20:53:28-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "load_manifest" =sha256:841f3a4e9bde3b515b489a6d4165d2dd3335f91be21f542e92aec8aa6cd2f2d7
+  artifact: sha256:4085508c61e2be255a086a93f47e86abb7d41d6e731b267c22be25a32709b2f5
+  note: propagated from a moved ground
+
+- 2026-11-23T20:56:00-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "load_manifest" =sha256:4085508c61e2be255a086a93f47e86abb7d41d6e731b267c22be25a32709b2f5
+  note: The function now records the config root on the loaded manifest. The assertion is unaffected.
 
 ## References
 

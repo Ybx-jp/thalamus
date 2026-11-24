@@ -60,6 +60,23 @@ none
 - 2026-11-23T17:37:46-08:00 · corroborated · grade: argued · author: main
   evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:50a10758e207f8d803bc1f78b3aeb0bbf8eb5c4baeaedb9aaa21e78261cdcbf4
   note: The class gains a reports_to field defaulting to main. The assertion is unaffected.
+- 2026-11-23T20:53:28-08:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:50a10758e207f8d803bc1f78b3aeb0bbf8eb5c4baeaedb9aaa21e78261cdcbf4
+  artifact: sha256:95646f6236406d8384815d944e2a8707a0ca9050065318a227a737548d91f0ed
+  note: propagated from a moved ground
+
+- 2026-11-23T20:53:28-08:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "load_manifest" =sha256:841f3a4e9bde3b515b489a6d4165d2dd3335f91be21f542e92aec8aa6cd2f2d7
+  artifact: sha256:4085508c61e2be255a086a93f47e86abb7d41d6e731b267c22be25a32709b2f5
+  note: propagated from a moved ground
+
+- 2026-11-23T20:56:00-08:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:95646f6236406d8384815d944e2a8707a0ca9050065318a227a737548d91f0ed
+  note: The class gains a rules field defaulting to the empty string and a private record of the config root it was loaded from. The assertion is unaffected.
+
+- 2026-11-23T20:56:00-08:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "load_manifest" =sha256:4085508c61e2be255a086a93f47e86abb7d41d6e731b267c22be25a32709b2f5
+  note: The function now records the config root on the loaded manifest. The assertion is unaffected.
 
 ## References
 
