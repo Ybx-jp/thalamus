@@ -442,20 +442,20 @@
       "name": "from",
       "in": "query",
       "required": true,
-      "description": "Older version.",
+      "description": "Older version: a version id the source sent.",
       "schema": {
        "type": "string",
-       "pattern": "^[0-9a-f]{4,40}$"
+       "pattern": "^[A-Za-z0-9._:-]{1,80}$"
       }
      },
      {
       "name": "to",
       "in": "query",
       "required": false,
-      "description": "Newer version.",
+      "description": "Newer version: a version id the source sent, or HEAD for the job as it stands now.",
       "schema": {
        "type": "string",
-       "pattern": "^([0-9a-f]{4,40}|HEAD)$",
+       "pattern": "^[A-Za-z0-9._:-]{1,80}$",
        "default": "HEAD"
       }
      }
@@ -2544,11 +2544,16 @@
      },
      "version": {
       "type": "string",
-      "description": "The job version: the newest commit at or before the run's code version that touched the job's own files."
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9._:-]+$",
+      "description": "The job version the run used: an opaque id the source defines. The page prints it and passes it back (as jobs/{job}/diff's from or to); it never parses it."
      },
      "code_version": {
       "type": "string",
-      "description": "The commit the run executed."
+      "minLength": 1,
+      "maxLength": 80,
+      "description": "Optional. The code the run executed, as the source names it; opaque to the page."
      },
      "status": {
       "$ref": "#/components/schemas/RunStatus"
@@ -2558,7 +2563,6 @@
      "id",
      "label",
      "version",
-     "code_version",
      "status"
     ]
    },
@@ -3274,7 +3278,7 @@
        "text",
        "commits"
       ],
-      "description": "Commits between two of the job's versions placed by rule (b) of History: they touch shared code and none of the job's own paths. Folded into one row."
+      "description": "Changes between two of the job's versions that are not versions of it but that the source judges could still affect it, folded into one row."
      },
      {
       "type": "object",
@@ -3295,10 +3299,17 @@
         "description": "Display text the source composed for this place. Printed as text."
        },
        "version": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "pattern": "^[A-Za-z0-9._:-]+$",
+        "description": "The job version the run used: an opaque id the source defines. The page prints it and passes it back (as jobs/{job}/diff's from or to); it never parses it."
        },
        "code_version": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "description": "Optional. The code the run executed, as the source names it; opaque to the page."
        },
        "cells": {
         "anyOf": [
@@ -3337,7 +3348,6 @@
        "title",
        "line",
        "version",
-       "code_version",
        "cells",
        "span"
       ]
@@ -3431,7 +3441,7 @@
      "items",
      "more"
     ],
-    "description": "J3. The job's versions, newest first, `limit` of them, with a run under the job version it ran on. A job X's own paths are its registry file, its prompts and the code paths its registry entry declares; shared code is any path no job declares. Each commit is placed by these rules, in order: (a) it touches X's own paths, or a tuning decision for X names it: a version of X; (b) otherwise it touches any shared code, even if it also touches another job's paths, because shared code can change X: it goes into the shared item between the two versions it falls between; (c) otherwise it touches only other jobs' paths: it is not shown.",
+    "description": "J3. The job's versions, newest first, `limit` of them, with a run under the version it ran on. The source decides which changes are versions of a job, and which other changes it folds into a shared item between two versions because they could still affect the job.",
     "examples": [
      {
       "columns": [
@@ -3554,6 +3564,7 @@
      "to",
      "files"
     ],
+    "description": "What changed in the job's definition, settings and prompts between two of its versions.",
     "examples": [
      {
       "from": "b39469d",
@@ -3922,10 +3933,17 @@
       ]
      },
      "version": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9._:-]+$",
+      "description": "The job version the run used: an opaque id the source defines. The page prints it and passes it back (as jobs/{job}/diff's from or to); it never parses it."
      },
      "code_version": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "description": "Optional. The code the run executed, as the source names it; opaque to the page."
      },
      "status": {
       "$ref": "#/components/schemas/RunStatus"
@@ -3999,7 +4017,6 @@
      "job",
      "replay_of",
      "version",
-     "code_version",
      "status",
      "line",
      "tiles",
