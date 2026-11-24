@@ -144,8 +144,10 @@ prerequisites in §1 and the run is clean.
 
 ## 5. Relaunch your editor
 
-Hooks and the MCP server arm **per process**. An already-running session picks up
-nothing, and `/clear` is not enough — quit and reopen your editor.
+The MCP server arms **per process**. A session already running never gains its
+tools, and `/clear` is not enough — quit and reopen your editor. Claude Code picks
+up the hooks in an open session by itself; the relaunch is for the
+server.<!-- (A0257, cites-as-live) -->
 
 A new session should greet you with a memory prompt naming its scope. Your graph is
 empty, so it will have nothing to tell you yet. That is the expected first run.
@@ -186,9 +188,8 @@ signal.
 
 If it still says **no sessions distilled yet**, the graph is fine and nothing has
 been written. In order of likelihood: the editor is still open (distillation fires on
-exit, not on `/clear`); the editor was never relaunched after §5, so the hooks are
-not armed in it; or a hook died on a missing binary, which `thalamus status` reports
-under **Hook failures** and `thalamus init --check` reports too.
+exit, not on `/clear`); or a hook died on a missing binary, which `thalamus status`
+reports under **Hook failures** and `thalamus init --check` reports too.
 
 The two commands answer different questions and neither answers the other's.
 `init --check` verifies the wiring — hooks armed, skills readable, an MCP entry that
@@ -330,8 +331,8 @@ server is still starting. Docker publishes the port immediately; the JVM needs a
 `healthy` and re-run. This is a different message from the one above on purpose: it is
 the state where starting the container again would do nothing.
 
-**A new session doesn't mention memory** — hooks arm per process. Fully quit and
-reopen your editor.
+**A new session doesn't mention memory** — the editor was open before the install,
+and the MCP server arms per process. Fully quit and reopen your editor.
 
 **Memory stopped accumulating and nothing said so** — a hook needs `jq`, and
 SessionEnd also needs `uv`. If either leaves your PATH after install, the hook cannot

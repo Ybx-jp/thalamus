@@ -63,6 +63,13 @@ none
 - 2026-11-23T15:40:00-08:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/hooks/claude-code/resolve-scope.sh § "thalamus_guard_command" =sha256:bd323616388d3ee5334760551f1686b9c1a24da05f5b462a57baf2648e834f82
   note: thalamus_resolve_session_type now case-folds by pattern with builtins only (#403); thalamus_resolve_scope still tries the payload's agent_type before CLAUDE_CODE_AGENT, so the assertion is unaffected
+- 2026-11-23T16:22:20-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/hooks/claude-code/resolve-scope.sh § "thalamus_guard_command" =sha256:0b257a1ccf8a93d182e8299fe680c73ffb7f10250d2a66cbc2af41b07a25e926
+  artifact: sha256:022702641b55f65f2db447c7c6e13111dd5ba780e29cce00d685ad5a56e55d71
+  note: propagated from a moved ground
+- 2026-11-23T16:30:00-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/hooks/claude-code/resolve-scope.sh § "thalamus_guard_command" =sha256:022702641b55f65f2db447c7c6e13111dd5ba780e29cce00d685ad5a56e55d71
+  note: the section changed only in thalamus_resolve_session_type, which now lowercases and strips THALAMUS_SESSION_TYPE with bash builtins instead of tr; thalamus_resolve_scope and its agent_type-first order are untouched, so the assertion is unaffected
 
 ## References
 

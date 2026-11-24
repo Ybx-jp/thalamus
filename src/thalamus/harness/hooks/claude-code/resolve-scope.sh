@@ -271,16 +271,18 @@ thalamus_resolve_forked_from() {
 # `claude -p` and `cli` in a terminal; anything else, including unset, reads attended.
 # (A0246, cites-as-live)
 #
-# Builtins only, case-folded by pattern rather than `tr` or bash 4's `${,,}`: the
-# preflight resolves the type before it knows what is on PATH, and an autonomous
-# hook that cannot name its session type cannot fail closed (#403).
+# Builtins only, and bash 3.2's (macOS): preflight.sh decides from this whether a hook
+# that cannot run fails closed, so it must still answer on a PATH with no coreutils.
 thalamus_resolve_session_type() {
-  local declared="${THALAMUS_SESSION_TYPE:-}"
+  local declared="${THALAMUS_SESSION_TYPE:-}" nocase
   declared="${declared//[[:space:]]/}"
+  nocase="$(shopt -p nocasematch)"
+  shopt -s nocasematch
   case "$declared" in
-    [Aa][Tt][Tt][Ee][Nn][Dd][Ee][Dd]) printf 'attended'; return 0 ;;
-    [Aa][Uu][Tt][Oo][Nn][Oo][Mm][Oo][Uu][Ss]) printf 'autonomous'; return 0 ;;
+    attended) eval "$nocase"; printf 'attended'; return 0 ;;
+    autonomous) eval "$nocase"; printf 'autonomous'; return 0 ;;
   esac
+  eval "$nocase"
   case "${CLAUDE_CODE_ENTRYPOINT:-}" in
     sdk*) printf 'autonomous' ;;
     *) printf 'attended' ;;

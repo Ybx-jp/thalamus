@@ -32,8 +32,8 @@
 
 set -uo pipefail
 
-# The directory by parameter expansion, not `dirname`: nothing here may need PATH
-# before the session type is known (#403).
+# Builtins only until the session type is known: a PATH that has lost jq has usually
+# lost coreutils with it, and a resolver that cannot run reads as attended (#403).
 . "${BASH_SOURCE[0]%/*}/resolve-scope.sh"
 thalamus_sandbox_guard
 

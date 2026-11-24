@@ -35,6 +35,14 @@ none
 
 ## Verdicts
 
+- 2026-11-23T16:06:02-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/preflight.py § "hook_output" =sha256:869a66d845a89ed5ae7dfecbbafa4376f13cdabdd6bb198d540c91d53553e8e7
+  artifact: sha256:60e19dbaec94fd437a8bae726d614ab935a9a9564d7a219d514d0f468c434cb9
+  note: propagated from a moved ground
+- 2026-11-23T16:10:00-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/preflight.py § "hook_output" =sha256:60e19dbaec94fd437a8bae726d614ab935a9a9564d7a219d514d0f468c434cb9
+  note: hook_output's closing repair sentence moved into the module constant _REPAIR and now says a hook fixed in its settings file reaches the session on save; the outputs it chooses and the fields each carries are unchanged, so the assertion is unaffected
+
 ## References
 
 - src/thalamus/harness/preflight.py · standing · cites-as-live

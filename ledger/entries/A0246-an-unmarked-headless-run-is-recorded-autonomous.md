@@ -42,6 +42,13 @@ none
 - 2026-11-23T15:40:00-08:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/hooks/claude-code/resolve-scope.sh § "thalamus_guard_command" =sha256:bd323616388d3ee5334760551f1686b9c1a24da05f5b462a57baf2648e834f82
   note: thalamus_resolve_session_type now strips whitespace and case-folds by pattern with builtins instead of tr (#403); a declared attended or autonomous still wins and the sdk entrypoint rule is unchanged, so the assertion is unaffected
+- 2026-11-23T16:22:20-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/hooks/claude-code/resolve-scope.sh § "thalamus_guard_command" =sha256:0b257a1ccf8a93d182e8299fe680c73ffb7f10250d2a66cbc2af41b07a25e926
+  artifact: sha256:022702641b55f65f2db447c7c6e13111dd5ba780e29cce00d685ad5a56e55d71
+  note: propagated from a moved ground
+- 2026-11-23T16:30:00-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/hooks/claude-code/resolve-scope.sh § "thalamus_guard_command" =sha256:022702641b55f65f2db447c7c6e13111dd5ba780e29cce00d685ad5a56e55d71
+  note: thalamus_resolve_session_type now matches THALAMUS_SESSION_TYPE case-insensitively with whitespace stripped using bash builtins instead of tr, so it still answers on a PATH without coreutils (#403); the rule is the same, declared attended or autonomous wins and otherwise an sdk entrypoint reads autonomous, so the assertion is unaffected
 
 ## References
 
