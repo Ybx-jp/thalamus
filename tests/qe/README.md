@@ -57,6 +57,48 @@ and the generated personas on the host. It spends model tokens and is run on dem
 own README covers the configurations, the controls, and what it deliberately does not
 test; `python3 tests/qe/live/oracle_cases.py` is the oracle's hermetic self-check.
 
+## The console — three arms over one rig
+
+```bash
+uv sync --extra dev --extra qe-browser --all-groups
+uv run playwright install chromium-headless-shell
+uv run python tests/qe/run.py --tier fast      # integration + property arms (need tmux)
+uv run python tests/qe/run.py --tier browser   # the Playwright arm
+```
+
+Every console case drives a **real `thalamus console` subprocess**, importing the real
+core and every installed plugin, through `cases/_console_rig.py`: a throwaway `HOME`, a
+private tmux server (`THALAMUS_TMUX_SOCKET`, checked back off `/api/panes` before
+anything is driven), stand-in `claude`/`codex` that `exec cat`, and seeded git repos. No
+case can reach the operator's roster, files or a model. `/api/deploy`, `/api/service`,
+`/api/roster` and `/api/cursor-sweep` are never driven, since no redirection contains them.
+
+- **Integration** (`console_integ_*`, FAST): agreement across layers. The roster against
+  tmux and the pin ledger the real SessionStart hook writes; spawn → ledger → rooms →
+  close; policy POSTs against core's own readers and the next spawn's argv; dispatch
+  reaching exactly a room; the plugins' shared settings and hooks.
+- **Property and fuzz** (`console_api_*`, FAST): Hypothesis (Hatfield-Dodds & Dygalo,
+  ICSE 2022, for the schema-driven form of the same idea) with `derandomize=True`, so a
+  run is reproducible and a witness is the shrunk input. Generated bodies and targets
+  against every drivable route; a set model of the favorites store; metamorphic
+  `send(a); send(b) ≡ send(a+b)`; proxy-path containment.
+- **Browser** (`console_browser_*`, tier `browser`): Python Playwright in Chromium at the
+  board's 430×932 viewport. Rendering against tmux, composer text reaching only its pane,
+  the spawn sheet, zero page errors and foreign requests, source strings rendering as
+  text, and app pages unable to drive the console from a frame or a top-level tab.
+
+**Cases written before their surface exists.** The design board (Penpot, *Thalamus console
+— living design space*; `_console_spec.PENPOT_FILE`) specifies surfaces `src/` does not
+serve yet. Their cases are written from the board's own rules, declare a
+`Substrate.CONSOLE_UNBUILT_*` member, skip naming the surface, and arm in the commit
+that lands it. `console-spec-cases-arm-when-their-surface-lands` is red when a surface
+looks built while its probe still says otherwise, so a skip cannot outlive its reason.
+
+**Against another tree.** `QE_CONSOLE_SRC=<worktree>/packages/thalamus-console/src` points
+the rig and the arming probes at a branch still being built, without merging it. It is
+also how a case is shown capable of going red without writing `src/`: copy the tree,
+mutate the copy, point the variable at it.
+
 ## Known-red, and why it is not a mute button
 
 `expectations.json` triages defects that are real and unfixed. A triaged case exits 0,

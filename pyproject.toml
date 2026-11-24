@@ -62,6 +62,16 @@ dev = [
     # `claims-ledger.toml` sets `citation-slug`, and a release that does not know the
     # key refuses the whole configuration rather than ignoring it.
     "claims-ledger>=0.0.4",
+    # The generator behind the qe suite's property and fuzz cases over the console's
+    # HTTP surface (`tests/qe/cases/console_api_*`). In `dev` rather than its own extra
+    # because those cases are in the fast tier, which CI runs on `--extra dev`.
+    "hypothesis>=6.100",
+]
+# The browser the qe suite's `browser` tier drives the console's pages in. Its own
+# extra because it downloads a Chromium build (`playwright install chromium`) that no
+# other suite needs; a box without it skips that tier and names what is missing.
+qe-browser = [
+    "playwright>=1.49",
 ]
 # The entailment judge — the eval loop's fast attribution path. Optional because it
 # pulls a multi-gigabyte torch build and only the attribution instrument itself needs

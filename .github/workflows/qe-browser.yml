@@ -1,0 +1,67 @@
+# The adversarial suite's browser tier: the console's pages in a real Chromium, driven
+# by Playwright against a real `thalamus console` on a tmux server of its own
+# (`tests/qe/cases/_console_rig.py`). Same exit codes as `qe-fast.yml`, and for the same
+# reason `continue-on-error` is absent: a known defect is triaged in
+# `tests/qe/expectations.json` and exits 0 on its own, so red here is new.
+#
+# Not on every push. Its substrate is an extra (`qe-browser`) plus a Chromium download
+# no other suite needs, so it runs when what it measures can have changed: the console
+# package, the cases and rig that drive it, and this file.
+#
+# Cases written from the design board for a surface `src/` does not serve yet skip here
+# and name the surface (`console-unbuilt:*`); the FAST case
+# `console-spec-cases-arm-when-their-surface-lands` is what turns a skip that outlived
+# its reason red.
+name: qe-browser
+
+on:
+  pull_request:
+    paths:
+      - "packages/thalamus-console/**"
+      - "tests/qe/cases/_console_*.py"
+      - "tests/qe/cases/console_*.py"
+      - "tests/qe/model.py"
+      - ".github/workflows/qe-browser.yml"
+  workflow_dispatch:
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The ledger row stamps the revision via `git rev-parse`.
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install
+        run: |
+          uv sync --extra dev --extra qe-browser
+          sudo apt-get update -qq && sudo apt-get install -y -qq tmux
+          uv run playwright install --with-deps chromium-headless-shell
+
+      # Asserted so a missing browser surfaces as an install fault here, not as every
+      # case in the tier skipping with `needs-playwright` and the job reading green.
+      - name: Confirm declared substrate
+        run: |
+          tmux -V
+          uv run python -c "from qe.model import Substrate, available; assert available(Substrate.NEEDS_PLAYWRIGHT)"
+        env:
+          PYTHONPATH: tests
+
+      - name: Run the browser tier
+        run: uv run python tests/qe/run.py --tier browser
+
+      - name: Ledger
+        if: always()
+        run: cat ~/.thalamus/qe/runs.jsonl || echo "no ledger written"
+
+      # The rigs clean up after themselves; this is for the run that was killed
+      # mid-case. Nothing here may turn a clean run red.
+      - name: Stop what this job started
+        if: always()
+        run: |
+          pkill -f "thalamus console" 2>/dev/null || true
+          for s in /tmp/tmux-*/qe-rig-*; do [ -e "$s" ] && tmux -S "$s" kill-server; done 2>/dev/null || true
+          exit 0

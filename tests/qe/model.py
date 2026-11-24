@@ -48,6 +48,21 @@ class Substrate(str, Enum):
     NEEDS_NODE = "needs-node"
     NEEDS_JQ = "needs-jq"
     NEEDS_CODEX = "needs-codex"
+    # The `qe-browser` extra and a Chromium it can launch. Probed by launching it,
+    # because the package and the browser build are installed separately and a
+    # Playwright upgrade leaves the package importable and the browser missing.
+    NEEDS_PLAYWRIGHT = "needs-playwright"
+    # A console surface the design board specifies and `src/` does not serve yet. Not
+    # a property of the box, unlike every member above: a property of the tree. These
+    # members let a case be written from the board before the code exists and arm
+    # itself the commit the surface lands, with the skip naming what it waits for.
+    # The probes live in `cases/_console_spec.py`, which also holds the case that
+    # goes red when a surface looks built while its probe still says it is not — the
+    # failure this would otherwise be, a skip that outlives its reason.
+    CONSOLE_UNBUILT_JOBS_API = "console-unbuilt:jobs-api"
+    CONSOLE_UNBUILT_JOBS_PAGE = "console-unbuilt:jobs-page"
+    CONSOLE_UNBUILT_BOARD_PAGE = "console-unbuilt:board-page"
+    CONSOLE_UNBUILT_REPOS = "console-unbuilt:repos"
 
 
 class Tier(str, Enum):
@@ -60,6 +75,11 @@ class Tier(str, Enum):
 
     FAST = "fast"
     DEEP = "deep"
+    # A real console driven in a real browser. Its own tier because its cost is a
+    # Chromium per case and its substrate an extra nobody else installs; its blast
+    # radius is the same as FAST's, since every case runs on `_console_rig`'s private
+    # tmux server and throwaway HOME.
+    BROWSER = "browser"
 
 
 class Outcome(str, Enum):
@@ -195,7 +215,28 @@ def available(substrate: Substrate) -> bool:
         # server's env before any model call resolves, so it needs no credentials
         # either — auth state is not this substrate's business.
         return shutil.which("codex") is not None
+    if substrate is Substrate.NEEDS_PLAYWRIGHT:
+        return _playwright_launches()
+    if substrate.value.startswith("console-unbuilt:"):
+        # Imported here: the probes read the console's source tree, and `model` is
+        # imported by everything, including cases that never touch the console.
+        from .cases._console_spec import surface_served
+
+        return surface_served(substrate.value.split(":", 1)[1])
     return False
+
+
+def _playwright_launches() -> bool:
+    try:
+        from playwright.sync_api import Error, sync_playwright
+    except ImportError:
+        return False
+    try:
+        with sync_playwright() as p:
+            p.chromium.launch().close()
+    except Error:
+        return False
+    return True
 
 
 def missing_substrate(case: Case) -> tuple[Substrate, ...]:
