@@ -109,7 +109,7 @@ check("no banner, nothing shown", B.bannerShown(null, []) === false);
 
 suite("tones and words");
 const tone = evaluate(extractFunction("toneClass", surface), ["toneClass"],
-  { TONES: ["ok", "danger", "pending", "muted", "accent"] });
+  { TONES: ["ok", "faint", "danger", "pending", "muted", "accent"] });
 check("a known tone maps to its class", tone.toneClass("danger") === "tone-danger");
 check("an unknown tone still renders, muted", tone.toneClass("brand-new") === "tone-muted");
 

@@ -98,7 +98,7 @@ function scopeHue(name) {
   return name === "main" ? MAIN_HUE : hashHue(name);
 }
 
-const TONES = ["ok", "danger", "pending", "muted", "accent"];
+const TONES = ["ok", "faint", "danger", "pending", "muted", "accent"];
 
 // The class for a source-sent tone. An unknown tone renders as muted rather than as
 // nothing, so a source newer than this page still shows its word.
