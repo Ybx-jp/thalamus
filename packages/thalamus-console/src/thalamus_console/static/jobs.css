@@ -247,11 +247,12 @@ button.d-node { cursor: pointer; }
 .d-node-status { font-size: .68rem; margin-top: .25rem; }
 .d-stages { display: flex; flex-direction: column; gap: 6px; margin-top: .5rem; }
 .d-stage {
-  display: flex; gap: .4rem; font-size: .7rem; border: 1px solid var(--ok); border-radius: 5px;
+  display: flex; gap: .4rem; font-size: .66rem; border: 1px solid var(--ok); border-radius: 5px;
   padding: .25rem .4rem;
 }
 .d-note { position: absolute; font-style: italic; }
-.d-lane { position: relative; border-top: 1px solid var(--hair); flex: none; }
+.d-lane { border-top: 1px solid var(--hair); flex: none; overflow-x: auto; }
+.d-lane-in { position: relative; min-width: 100%; }
 .d-lane-label { position: absolute; left: 1rem; top: .7rem; }
 .d-lane-row { position: absolute; left: 0; right: 0; height: 30px; border-bottom: 1px solid #1d232b; }
 .d-lane-name { position: absolute; left: 1rem; top: 6px; }

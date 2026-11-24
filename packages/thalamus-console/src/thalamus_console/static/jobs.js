@@ -512,19 +512,29 @@ async function renderCommit(r, seq) {
 
 const CANVAS = { colW: 142, nodeW: 128, nodeH: 56, rowH: 120, top: 44, left: 16 };
 
-// Pixel boxes for nodes laid out by (col, row). A node with stages grows to hold them;
-// rows below it do not move, because the comps place rows on a fixed pitch and a job
-// with three stages sits in a band of its own.
+// Pixel boxes for nodes laid out by (col, row). Rows sit on the comps' fixed pitch
+// unless a row holds a job drawn with its stages: that row grows to its tallest node,
+// and every row below moves down, so a staged job never covers the row under it.
 function graphLayout(nodes) {
+  const heightOf = (n) => CANVAS.nodeH + ((n.stages || []).length ? 14 + n.stages.length * 30 : 0);
+  const rowSpan = {};
+  for (const n of nodes) rowSpan[n.row] = Math.max(rowSpan[n.row] || 0, heightOf(n) + CANVAS.rowH - CANVAS.nodeH);
+  const rowTop = {};
+  let y = CANVAS.top;
+  const maxRow = Math.max(-1, ...nodes.map((n) => n.row));
+  for (let r = 0; r <= maxRow; r++) {
+    rowTop[r] = y;
+    y += rowSpan[r] || CANVAS.rowH;
+  }
   const boxes = {};
   for (const n of nodes) {
-    const stages = (n.stages || []).length;
     boxes[n.id] = {
       x: CANVAS.left + n.col * CANVAS.colW,
-      y: CANVAS.top + n.row * CANVAS.rowH,
-      // A job drawn with its stages is wider, so a stage's name and cost fit on a line.
-      w: stages ? CANVAS.nodeW + 42 : CANVAS.nodeW,
-      h: CANVAS.nodeH + (stages ? 14 + stages * 30 : 0),
+      y: rowTop[n.row],
+      // A staged job takes its column's full width (less the gap), so a stage's name
+      // and cost fit on one line without reaching into the next column.
+      w: (n.stages || []).length ? CANVAS.colW - 6 : CANVAS.nodeW,
+      h: heightOf(n),
     };
   }
   return boxes;
@@ -607,8 +617,13 @@ function graphView(graph) {
   const layer = h("div.d-graph", { style: { width: width + "px", height: height + "px" } }, svg,
     (graph.columns || []).map((c, k) => h("span.d-col.s-label", { style: { left: (CANVAS.left + k * CANVAS.colW) + "px" } }, c)),
     nodes.map((n) => graphNode(n, boxes[n.id])),
-    (graph.note || []).map((t) => h("span.d-note.small.muted", { style: {
-      left: (CANVAS.left + t.col * CANVAS.colW) + "px", top: (CANVAS.top + t.row * CANVAS.rowH + CANVAS.nodeH + 8) + "px" } }, t.text)));
+    (graph.note || []).map((t) => {
+      // A caption sits under the node in its cell; with no node there, under the row.
+      const host = nodes.find((n) => n.row === t.row && n.col === t.col);
+      const top = host ? boxes[host.id].y + boxes[host.id].h + 8 : CANVAS.top + t.row * CANVAS.rowH + CANVAS.nodeH + 8;
+      return h("span.d-note.small.muted", { style: {
+        left: (CANVAS.left + t.col * CANVAS.colW) + "px", top: top + "px" } }, t.text);
+    }));
   return h("div.d-graphwrap", layer);
 }
 
@@ -643,8 +658,12 @@ function laneView(lane) {
     { style: { left: (xOf[c.sha] - 28) + "px", top: axisTop + "px" } },
     h("span.d-tick-dot" + (c.tag || c.head ? ".on" : "")), c.sha, h("br"), c.time,
     c.tag ? h("span.d-tag.small", c.tag) : null));
-  return h("section.d-lane", { style: { height: (axisTop + 72) + "px" } },
-    h("span.s-label.d-lane-label", "versions · " + (lane.repo || "")), rows, axis);
+  // The lane scrolls sideways inside its own band once the commits outgrow the
+  // canvas column, rather than running under the inspector.
+  const width = x0 + commits.length * step + 40;
+  return h("section.d-lane",
+    h("div.d-lane-in", { style: { height: (axisTop + 72) + "px", width: width + "px" } },
+      h("span.s-label.d-lane-label", "versions" + (lane.repo ? " · " + lane.repo : "")), rows, axis));
 }
 
 function inspector(job, history, list) {
