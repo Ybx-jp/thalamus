@@ -73,6 +73,14 @@ none
 - 2026-10-16T17:55:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:b65fad6b3e06f0440ee1686f649afff4af1258e0dfdb69d93764b818f0e4baeb
   note: Only wording in the section changed: #342 retires "roster" where it meant the set of experts or the console's tmux windows. The assertion is unaffected.
+- 2026-11-23T17:37:45-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:b65fad6b3e06f0440ee1686f649afff4af1258e0dfdb69d93764b818f0e4baeb
+  artifact: sha256:50a10758e207f8d803bc1f78b3aeb0bbf8eb5c4baeaedb9aaa21e78261cdcbf4
+  note: propagated from a moved ground
+
+- 2026-11-23T17:37:46-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:50a10758e207f8d803bc1f78b3aeb0bbf8eb5c4baeaedb9aaa21e78261cdcbf4
+  note: The class gains a reports_to field defaulting to main. The assertion is unaffected.
 
 ## References
 

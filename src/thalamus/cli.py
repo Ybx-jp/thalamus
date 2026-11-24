@@ -664,6 +664,15 @@ def _main():
     preset_remove.add_argument("dimension")
     preset_remove.add_argument("name")
 
+    reporting_parser = subparsers.add_parser(
+        "reporting",
+        help="Which expert scope reports to which, from the manifests' `reports_to`",
+    )
+    reporting_parser.add_argument(
+        "--json", action="store_true",
+        help="Print the tree as JSON: each scope's superior and each scope's direct reports",
+    )
+
     thread_parser = subparsers.add_parser(
         "thread",
         help="Close threads (propose, approve, audit the close ledger), and promote "
@@ -845,6 +854,8 @@ def _main():
         _cmd_preflight(args)
     elif args.command == "growth":
         _cmd_growth(args)
+    elif args.command == "reporting":
+        _cmd_reporting(args)
     else:
         parser.print_help()
         sys.exit(1)
@@ -2339,12 +2350,15 @@ def _report_expert_boundaries():
     roster's bound" cannot read the same.
     """
     from thalamus.contract.manifest import available_scopes, load_manifest
+    from thalamus.contract.reporting import reporting_graph
 
+    tree = reporting_graph()
     for scope in available_scopes():
         manifest = load_manifest(scope)
         capability = manifest.effective_capability_boundary
         origin = "declared" if manifest.capability_boundary is not None else "inherited"
         print(f"\n  {scope}")
+        print(f"    reports to {tree.superior(scope)}")
         writes = manifest.write_boundary.deny_globs
         print(f"    writes     denied: {', '.join(writes) if writes else '(nothing)'}")
         write_exceptions = manifest.write_boundary.allow_globs
@@ -2363,6 +2377,21 @@ def _report_expert_boundaries():
           "and `Read` on a SKILL.md are named misses (role-guard.sh). Which of these "
           "binds on which harness is a separate question with a separate record: "
           "`thalamus contract check --capabilities`.")
+
+
+def _cmd_reporting(args) -> None:
+    """Print the reporting tree. Exits 1, naming the manifest, if the chain is broken."""
+    from thalamus.contract.reporting import reporting_graph
+
+    try:
+        tree = reporting_graph()
+    except (ValueError, FileNotFoundError) as exc:
+        sys.exit(f"reporting: {exc}")
+    if args.json:
+        print(json.dumps(tree.as_dict(), indent=2))
+        return
+    for line in tree.lines():
+        print(line)
 
 
 def _cmd_growth(args) -> None:

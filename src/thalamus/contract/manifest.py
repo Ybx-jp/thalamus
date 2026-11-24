@@ -31,6 +31,7 @@ from thalamus.contract.capabilities import (
     read_presets,
 )
 from thalamus.contract import paths
+from thalamus.contract.ontology import MAIN_SCOPE
 
 
 @dataclass(frozen=True)
@@ -318,6 +319,13 @@ class ExpertManifest(BaseModel):
         "inherit EXPERT_CAPABILITY_DEFAULT — the opposite of write_boundary's default, "
         "because this decision was made once for every expert rather than per scope. "
         "An explicit empty block is the opt-out.",
+    )
+    reports_to: str = Field(
+        MAIN_SCOPE,
+        description="The scope this one reports to: `main`, or another declared "
+        "expert. Absent means `main`. The roster's chain is checked as a whole by "
+        "`contract.reporting`, since one manifest cannot see whether its superior "
+        "exists or reports back to it.",
     )
 
     # The selected preset per dimension, resolved against the config root the manifest

@@ -105,6 +105,12 @@ A manifest can also declare:
   cap rides the pin's launch environment on Claude Code and the scope's profile on
   Codex.<!-- (A0185, cites-as-live) -->
   Cursor sessions are not budgeted.
+- **`reports_to`** — the scope this one reports to: `main`, the default, or another
+  declared expert, so a large area can be one manager scope with specialists under it.
+  Across the roster every chain has to end at `main`; a scope that reports to itself, to
+  an undeclared name, or round a loop is refused, naming its manifest, and a chain may be
+  any depth.<!-- (A0259, cites-as-live) -->
+  `thalamus reporting` prints the tree.
 - **MCP servers** of its own, in `config/mcp/<scope>.json`, giving a scope tools no
   other scope has.<!-- (A0007, cites-as-live) -->
   `designer` is the worked example.
