@@ -41,6 +41,13 @@ none
 - 2026-09-25T02:57:00-07:00 · corroborated · grade: argued · author: main
   evidence: yaml: .github/workflows/qe-fast.yml § "jobs" =sha256:e50d0538e4ec550b2b7349789304f4fce91dfd6a357baf2745cafb2999286b25
   note: the yaml section pattern now opens and ends sections only at top-level keys (#300), so the ground spans the key's whole block where it spanned the key line; read against that block, adversarial runs the fast tier with --exclude expectation-additions-are-never-silent and mute-review runs --only that case, so the assertion holds
+- 2026-11-24T01:57:29-08:00 · contested · grade: argued · author: propagation
+  evidence: yaml: .github/workflows/qe-fast.yml § "jobs" =sha256:e50d0538e4ec550b2b7349789304f4fce91dfd6a357baf2745cafb2999286b25
+  artifact: sha256:15a7990edc2ca1053112c21b07dbd3c168c722f18d960c3b3c88c340f5fee7d7
+  note: propagated from a moved ground
+- 2026-11-24T01:57:36-08:00 · corroborated · grade: argued · author: main
+  evidence: yaml: .github/workflows/qe-fast.yml § "jobs" =sha256:15a7990edc2ca1053112c21b07dbd3c168c722f18d960c3b3c88c340f5fee7d7
+  note: the Install step now also installs tmux and the substrate step asserts tmux -V and import hypothesis; adversarial still runs the fast tier with --exclude expectation-additions-are-never-silent and mute-review still runs --only that case, so the assertion holds
 
 ## References
 
