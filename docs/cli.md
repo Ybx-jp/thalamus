@@ -280,6 +280,15 @@ thalamus preset set budget short max_turns=30 max_tool_calls=60 max_tokens=20000
 thalamus preset remove cost deep                           # refused while a manifest selects it
 ```
 
+Each manifest's `reports_to` places its scope in one tree under `main`.
+
+```bash
+thalamus reporting                 # the tree, main first, each scope under its superior
+thalamus reporting --json          # each scope's superior and each scope's direct reports
+```
+
+A broken chain exits 1 and names the manifest to fix.<!-- (A0260, cites-as-live) -->
+
 ### Rooms
 
 A room is a private set of live sessions whose members see and message only each other.
