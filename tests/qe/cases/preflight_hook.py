@@ -305,7 +305,7 @@ CASES = (
     Case(name="preflight-autonomous-unreadable-payload-fails-closed", tier=Tier.FAST,
          substrate=_NEEDS, classes=(FailureClass.FAILED_OPEN, FailureClass.COLLAPSED_SENTINEL),
          summary="an autonomous run whose hook payload cannot be read is stopped, not allowed",
-         run=run_unreadable_payload, issue=403),
+         run=run_unreadable_payload, issue=403, fixed=True),
     Case(name="preflight-attended-session-is-never-stopped", tier=Tier.FAST,
          substrate=_NEEDS,
          classes=(FailureClass.INVARIANT_FALSIFIED, FailureClass.COLLAPSED_SENTINEL),
@@ -319,7 +319,7 @@ CASES = (
          substrate=_NEEDS,
          classes=(FailureClass.INVARIANT_FALSIFIED, FailureClass.COLLAPSED_SENTINEL),
          summary="a malformed session-start record leaves the first tool call telling every finding",
-         run=run_start_record_shape, issue=404),
+         run=run_start_record_shape, issue=404, fixed=True),
 )
 
 CASE = CASES[0]  # the first, for a loader that reads one
