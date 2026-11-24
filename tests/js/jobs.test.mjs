@@ -12,17 +12,24 @@ import {
   extractFunction, evaluate, suite, check, lacksMatch, stripComments, done,
 } from "./harness.mjs";
 
+// A top-level `const NAME = ...;` from the source, evaluated.
+function constOf(name, src) {
+  const m = new RegExp(`^const ${name} = ([\\s\\S]*?);[ \\t]*(?://[^\\n]*)?$`, "m").exec(src);
+  if (!m) throw new Error(`const ${name} not found`);
+  return new Function(`return ${m[1]};`)();
+}
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const STATIC = path.resolve(HERE, "../../packages/thalamus-console/src/thalamus_console/static");
 const jobs = fs.readFileSync(path.join(STATIC, "jobs.js"), "utf8");
 const surface = fs.readFileSync(path.join(STATIC, "surface.js"), "utf8");
 
 const env = evaluate(
-  ["parseRoute", "backTarget", "graphLayout", "edgePath"].map((n) => extractFunction(n, jobs)).join("\n"),
-  ["parseRoute", "backTarget", "graphLayout", "edgePath"],
-  { CANVAS: { colW: 142, nodeW: 128, nodeH: 56, rowH: 120, top: 44, left: 16 } },
+  ["parseRoute", "backTarget", "columnWidths", "graphLayout", "routeEdge"].map((n) => extractFunction(n, jobs)).join("\n"),
+  ["parseRoute", "backTarget", "graphLayout", "routeEdge"],
+  { CANVAS: constOf("CANVAS", jobs) },
 );
-const { parseRoute, backTarget, graphLayout, edgePath } = env;
+const { parseRoute, backTarget, graphLayout, routeEdge } = env;
 
 suite("routes");
 check("empty hash is the list", parseRoute("").screen === "list");
@@ -46,16 +53,49 @@ check("change → list when not", backTarget({ screen: "change" }) === "#/");
 check("commit → repo", backTarget({ screen: "commit" }) === "#/repo");
 
 suite("D1 layout");
-const boxes = graphLayout([
+const C = constOf("CANVAS", jobs);
+const { boxes } = graphLayout([
   { id: "a", col: 0, row: 0 },
-  { id: "b", col: 4, row: 3, stages: [{ name: "plan" }, { name: "research" }, { name: "assess" }] },
-]);
-check("column pitch", boxes.b.x - boxes.a.x === 4 * 142);
-check("row pitch", boxes.b.y - boxes.a.y === 3 * 120);
-check("a staged job grows to hold its stages", boxes.b.h > boxes.a.h && boxes.b.w > boxes.a.w);
-const d = edgePath(boxes.a, boxes.b);
-check("an edge leaves the right edge of its source", d.startsWith(`M${boxes.a.x + boxes.a.w},`));
-check("and ends on the left edge of its target", d.includes(` ${boxes.b.x},`));
+  { id: "b", col: 4, row: 3, job: "x", title: "career-evidence-staleness", stages: [{ name: "plan" }, { name: "research" }] },
+], 7);
+check("columns before a wide one keep the plain pitch", boxes.b.x - boxes.a.x === 4 * C.colW);
+check("row pitch", boxes.b.y - boxes.a.y === 3 * C.rowH);
+check("a staged job grows to hold its stages", boxes.b.h > boxes.a.h);
+check("a staged or long-named job's column is the comp's wide one", boxes.b.w === C.wideNodeW);
+
+// Points along an orthogonal or cubic path: the corners, and for a cubic its two ends.
+function corners(d) {
+  const pts = [];
+  let x = 0, y = 0;
+  for (const [, cmd, args] of d.matchAll(/([MHVC])([^MHVC]*)/g)) {
+    const n = args.trim().split(/[ ,]+/).map(Number);
+    if (cmd === "M") { [x, y] = n; } else if (cmd === "H") { x = n[0]; } else if (cmd === "V") { y = n[0]; }
+    else if (cmd === "C") { [x, y] = n.slice(4, 6); }
+    pts.push([x, y]);
+  }
+  return pts;
+}
+function crosses(d, box) {
+  const pts = corners(d);
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
+    const x0 = Math.min(ax, bx), x1 = Math.max(ax, bx), y0 = Math.min(ay, by), y1 = Math.max(ay, by);
+    if (x0 < box.x + box.w && x1 > box.x && y0 < box.y + box.h && y1 > box.y) return true;
+  }
+  return false;
+}
+// D1's case: a table two columns left of a model job one row up, with a planned node
+// in the column between, on the straight line's way.
+const L = graphLayout([
+  { id: "games", col: 2, row: 1 }, { id: "ghost", col: 3, row: 0 }, { id: "weekly", col: 3, row: 1 },
+  { id: "coach", col: 4, row: 0, job: "coach", title: "coach" },
+], 7).boxes;
+const route = routeEdge(L.games, L.coach, [L.ghost, L.weekly]);
+check("an edge leaves the right edge of its source", route.startsWith(`M${L.games.x + L.games.w},`));
+check("and ends on the left edge of its target", corners(route).at(-1)[0] === L.coach.x);
+check("an edge crosses no other node", !crosses(route, L.ghost) && !crosses(route, L.weekly), route);
+const near = routeEdge(L.weekly, L.coach, [L.ghost, L.games]);
+check("an unobstructed edge between neighbouring columns is a cubic", near.includes(" C"));
 
 suite("the banner hides once its receipt has been read on this device");
 const B = evaluate(extractFunction("sameCommit", jobs) + "\n" + extractFunction("bannerShown", jobs),

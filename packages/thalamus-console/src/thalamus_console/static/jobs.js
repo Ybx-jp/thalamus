@@ -323,8 +323,7 @@ function historyView(d, r, replays) {
     h("div.j-hist-head.mono.muted", h("span.grow", "run"), cols.map((c) => h("span.j-hist-col", c))),
   ];
   for (const it of d.items || []) out.push(historyItem(it, cols));
-  if (d.more) out.push(h("p.j-more-link", h("span.muted.small", "older versions are in the repo ›"),
-    " ", h("a.s-link", { href: "#/repo" }, "repo ›")));
+  if (d.more) out.push(h("a.s-link.j-more-link", { href: "#/repo" }, "older versions in the repo ›"));
   return h("div.j-hist", { style: { "--cols": String(Math.max(cols.length, 1)) } }, out);
 }
 
@@ -336,6 +335,7 @@ function historyItem(it, cols) {
       h("span.grow", h("span.j-hist-subject", it.subject), h("span.j-hist-line", it.line)));
   }
   if (it.type === "empty") return h("div.j-hist-empty", it.text);
+  if (it.type === "shared") return sharedItem(it);
   if (it.type === "replays") {
     const grid = h("div.j-grid", { role: "table", "aria-label": it.title });
     (it.grid || []).forEach((row, k) => {
@@ -356,6 +356,21 @@ function historyItem(it, cols) {
       ? h("span.j-runcell.mono." + toneClass(c.tone), c.text) : h("span.j-runcell.none", "—")));
   return h("a.j-hist-run", { href: "#/run/" + encodeURIComponent(it.id) },
     h("span.grow", h("span.j-hist-title", it.title), h("span.j-hist-line", it.line)), cells);
+}
+
+// Commits between two of a job's versions that touched shared code only: one faint
+// row that opens in place to list them, each linking to its commit.
+function sharedItem(it) {
+  const list = h("div.j-shared-list", { hidden: true },
+    (it.commits || []).map((c) => h("a.j-commit.j-shared-commit", { href: "#/commit/" + encodeURIComponent(c.sha) },
+      h("span.j-sha.mono.muted", c.sha),
+      h("span.grow", h("span.j-hist-subject", c.subject), h("span.j-hist-line", c.line)))));
+  const btn = h("button.j-shared", { type: "button", "aria-expanded": "false" }, it.text);
+  btn.addEventListener("click", () => {
+    list.hidden = !list.hidden;
+    btn.setAttribute("aria-expanded", list.hidden ? "false" : "true");
+  });
+  return h("div.j-shared-wrap", btn, list);
 }
 
 // ---- J4 ----
@@ -391,12 +406,28 @@ function gateCard(g) {
     g.note ? h("p.j-gate-note", g.note) : null);
 }
 
+// The indentation every non-blank line of a hunk shares, so a prompt nested in a list
+// does not start each diff line halfway across a phone.
+function commonIndent(lines) {
+  let min = Infinity;
+  for (const l of lines) {
+    if (!l.text || !l.text.trim()) continue;
+    min = Math.min(min, l.text.length - l.text.trimStart().length);
+  }
+  return Number.isFinite(min) ? min : 0;
+}
+
 function diffCard(f) {
+  const lines = f.lines || [];
+  const cut = commonIndent(lines);
+  // The +/- sits in its own gutter column; a wrapped line hangs under its text, so
+  // the sign stays readable on every visual line of it.
   return h("section.s-card.j-diff",
     h("div.j-diff-head.mono", h("span.grow", f.path), h("span.muted", `+${f.added} −${f.removed}`)),
-    h("div.j-diff-body.mono", (f.lines || []).map((l) =>
+    h("div.j-diff-body.mono", lines.map((l) =>
       h("div.j-diff-line." + (l.op === "+" ? "add" : l.op === "-" ? "del" : "ctx"),
-        (l.op === " " ? "  " : l.op + " ") + l.text))));
+        h("span.j-diff-op", { "aria-hidden": l.op === " " ? "true" : null }, l.op === " " ? "" : l.op),
+        h("span.j-diff-text", l.text.slice(Math.min(cut, l.text.length - l.text.trimStart().length)))))));
 }
 
 function changeFoot(d) {
@@ -538,12 +569,27 @@ async function renderCommit(r, seq) {
 
 // ---- D1, the desktop canvas ----
 
-const CANVAS = { colW: 142, nodeW: 128, nodeH: 56, rowH: 120, top: 44, left: 16 };
+// Row pitch is tighter than J2's cards: D1 has to show the graph and the version lane in
+// one 980 px viewport (designer review, 2026-11-24). A column holding a staged job or a
+// long job name is wide (the comp's 172 px model-job column), so names break at their
+// hyphens only when they are longer than that.
+const CANVAS = { colW: 142, wideW: 186, nodeW: 128, wideNodeW: 172, nodeH: 56, rowH: 96, top: 44, left: 16 };
 
-// Pixel boxes for nodes laid out by (col, row). Rows sit on the comps' fixed pitch
-// unless a row holds a job drawn with its stages: that row grows to its tallest node,
-// and every row below moves down, so a staged job never covers the row under it.
-function graphLayout(nodes) {
+function columnWidths(nodes, count) {
+  const widths = [];
+  for (let c = 0; c < count; c++) {
+    const wide = nodes.some((n) => n.col === c && ((n.stages || []).length || (n.job && (n.title || "").length > 16)));
+    widths.push(wide ? CANVAS.wideW : CANVAS.colW);
+  }
+  return widths;
+}
+
+// Pixel boxes for nodes laid out by (col, row). A row grows to its tallest node and
+// every row below moves down, so a staged job never covers the row under it.
+function graphLayout(nodes, count) {
+  const widths = columnWidths(nodes, Math.max(count || 0, ...nodes.map((n) => n.col + 1)));
+  const colX = [];
+  widths.reduce((x, w, c) => { colX[c] = x; return x + w; }, CANVAS.left);
   const heightOf = (n) => CANVAS.nodeH + ((n.stages || []).length ? 14 + n.stages.length * 30 : 0);
   const rowSpan = {};
   for (const n of nodes) rowSpan[n.row] = Math.max(rowSpan[n.row] || 0, heightOf(n) + CANVAS.rowH - CANVAS.nodeH);
@@ -556,27 +602,36 @@ function graphLayout(nodes) {
   }
   const boxes = {};
   for (const n of nodes) {
-    boxes[n.id] = {
-      x: CANVAS.left + n.col * CANVAS.colW,
-      y: rowTop[n.row],
-      // A staged job takes its column's full width (less the gap), so a stage's name
-      // and cost fit on one line without reaching into the next column.
-      w: (n.stages || []).length ? CANVAS.colW - 6 : CANVAS.nodeW,
-      h: heightOf(n),
-    };
+    const wide = widths[n.col] === CANVAS.wideW;
+    boxes[n.id] = { x: colX[n.col], y: rowTop[n.row], w: wide ? CANVAS.wideNodeW : CANVAS.nodeW, h: heightOf(n) };
   }
-  return boxes;
+  return { boxes, colX, widths, width: CANVAS.left * 2 + widths.reduce((a, b) => a + b, 0) };
 }
 
-// A cubic from the right edge of one box to the left edge of the next.
-function edgePath(a, b) {
+// An edge from the right edge of one box to the left edge of another, crossing no other
+// box. Where nothing stands in its way it is a cubic; otherwise it runs orthogonally:
+// out into the gutter, along a horizontal channel that clears every box it passes over,
+// and back in through the gutter before its target.
+function routeEdge(a, b, others) {
   const x1 = a.x + a.w, y1 = a.y + Math.min(a.h, CANVAS.nodeH) / 2;
   const x2 = b.x, y2 = b.y + Math.min(b.h, CANVAS.nodeH) / 2;
-  const dx = Math.max(16, (x2 - x1) / 2);
-  return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
+  const pad = 6;
+  const span = others.filter((o) => o.x < x2 && o.x + o.w > x1);
+  const clear = (y) => span.every((o) => y < o.y - pad || y > o.y + o.h + pad);
+  const lo = Math.min(y1, y2), hi = Math.max(y1, y2);
+  const blocked = span.some((o) => o.y - pad < hi && o.y + o.h + pad > lo);
+  if (!blocked) {
+    const dx = Math.max(16, (x2 - x1) / 2);
+    return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
+  }
+  const candidates = [y1, y2];
+  for (const o of span) candidates.push(o.y - 2 * pad, o.y + o.h + 2 * pad);
+  const ych = candidates.filter(clear).sort((p, q) => (Math.abs(p - y1) + Math.abs(p - y2)) - (Math.abs(q - y1) + Math.abs(q - y2)))[0];
+  const gx1 = x1 + 4, gx2 = x2 - 4;
+  return `M${x1},${y1} H${gx1} V${ych} H${gx2} V${y2} H${x2}`;
 }
 
-const canvasState = { job: null, view: "graph", scope: "", tab: "versions", compare: null };
+const canvasState = { job: null, view: "graph", scope: "", tab: "versions", compare: null, version: null, run: null };
 
 async function renderCanvas(r, seq) {
   setChrome("jobs", "./");
@@ -584,15 +639,40 @@ async function renderCanvas(r, seq) {
   const firstJob = (graph.nodes || []).find((n) => n.job && (n.stages || []).length) ||
     (graph.nodes || []).find((n) => n.job);
   canvasState.job = r.params.job || canvasState.job || (firstJob && firstJob.job);
-  const job = canvasState.job ? await api("jobs/" + encodeURIComponent(canvasState.job)).catch(() => null) : null;
+  const q = canvasState.run ? "?run=" + encodeURIComponent(canvasState.run) : "";
+  const job = canvasState.job ? await api("jobs/" + encodeURIComponent(canvasState.job) + q).catch(() => null) : null;
   const history = canvasState.job
     ? await api("jobs/" + encodeURIComponent(canvasState.job) + "/history?replays=1").catch(() => null) : null;
   if (seq !== renderSeq) return;
   paint(seq, canvasView(graph, list, job, history));
 }
 
+function versionsOf(history) {
+  return (history && history.items || []).filter((i) => i.type === "commit");
+}
+
+// Pick a job in the graph: its run and version selections start over.
+function pickJob(id) {
+  canvasState.job = id;
+  canvasState.compare = null;
+  canvasState.version = null;
+  canvasState.run = null;
+  route();
+}
+
 function canvasView(graph, list, job, history) {
   const scopes = [...new Set((graph.nodes || []).map((n) => n.scope).filter(Boolean))].sort();
+  const versions = versionsOf(history);
+  // The comp's toolbar selectors. "version" picks the version the inspector compares
+  // with HEAD and marks it in the Versions list; "run" picks the run whose stages and
+  // pinned input the inspector shows. Both follow the job picked in the graph.
+  const versionSel = selectEl(versions.map((c) => c.sha), canvasState.version || (versions[0] && versions[0].sha) || "",
+    (sha) => { const c = versions.find((x) => x.sha === sha); return c && c.head ? `${sha} HEAD` : sha; },
+    (sha) => { canvasState.version = sha; canvasState.compare = null; route(); });
+  const runs = (job && job.runs) || [];
+  const runSel = selectEl(["", ...runs.map((x) => x.id)], canvasState.run || "",
+    (id) => (id ? (runs.find((x) => x.id === id) || {}).label || id : "latest"),
+    (id) => { canvasState.run = id || null; route(); });
   const bar = h("div.d-bar",
     h("div.d-seg", ["graph", "grid"].map((v) => h("button.d-segbtn" + (canvasState.view === v ? ".on" : ""),
       { type: "button", "aria-pressed": canvasState.view === v ? "true" : "false",
@@ -600,7 +680,8 @@ function canvasView(graph, list, job, history) {
     h("label.d-select", "scope ",
       selectEl(["", ...scopes], canvasState.scope, (v) => v || "all", (v) => { canvasState.scope = v; route(); })),
     h("span.grow"),
-    h("a.s-link", { href: "#/repo" }, "repo ›"));
+    h("label.d-select.mono", "version ", versionSel),
+    h("label.d-select.mono", "run ", runSel));
   const body = canvasState.view === "grid"
     ? h("div.d-gridview", history ? historyView(history, { job: canvasState.job, params: {} }, true)
       : h("p.s-empty", "Pick a job in the graph."))
@@ -624,8 +705,7 @@ function selectEl(values, current, label, onchange) {
 function graphView(graph) {
   const nodes = (graph.nodes || []).filter((n) => !canvasState.scope || !n.scope || n.scope === canvasState.scope);
   const keep = new Set(nodes.map((n) => n.id));
-  const boxes = graphLayout(nodes);
-  const width = CANVAS.left * 2 + (graph.columns || []).length * CANVAS.colW;
+  const { boxes, colX, width } = graphLayout(nodes, (graph.columns || []).length);
   const height = Math.max(...Object.values(boxes).map((b) => b.y + b.h), 200) + 24;
   const svgNS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(svgNS, "svg");
@@ -636,21 +716,21 @@ function graphView(graph) {
   for (const [a, b] of graph.edges || []) {
     if (!keep.has(a) || !keep.has(b)) continue;
     const p = document.createElementNS(svgNS, "path");
-    p.setAttribute("d", edgePath(boxes[a], boxes[b]));
+    const others = Object.entries(boxes).filter(([id]) => id !== a && id !== b).map(([, box]) => box);
+    p.setAttribute("d", routeEdge(boxes[a], boxes[b], others));
     const sel = nodes.find((n) => n.id === b && n.job === canvasState.job) ||
       nodes.find((n) => n.id === a && n.job === canvasState.job);
     p.setAttribute("class", sel ? "on" : "");
     svg.appendChild(p);
   }
   const layer = h("div.d-graph", { style: { width: width + "px", height: height + "px" } }, svg,
-    (graph.columns || []).map((c, k) => h("span.d-col.s-label", { style: { left: (CANVAS.left + k * CANVAS.colW) + "px" } }, c)),
+    (graph.columns || []).map((c, k) => h("span.d-col.s-label", { style: { left: colX[k] + "px" } }, c)),
     nodes.map((n) => graphNode(n, boxes[n.id])),
     (graph.note || []).map((t) => {
       // A caption sits under the node in its cell; with no node there, under the row.
       const host = nodes.find((n) => n.row === t.row && n.col === t.col);
-      const top = host ? boxes[host.id].y + boxes[host.id].h + 8 : CANVAS.top + t.row * CANVAS.rowH + CANVAS.nodeH + 8;
-      return h("span.d-note.small.muted", { style: {
-        left: (CANVAS.left + t.col * CANVAS.colW) + "px", top: top + "px" } }, t.text);
+      const top = host ? boxes[host.id].y + boxes[host.id].h + 6 : CANVAS.top + t.row * CANVAS.rowH + CANVAS.nodeH + 6;
+      return h("span.d-note.small.muted", { style: { left: (colX[t.col] || CANVAS.left) + "px", top: top + "px" } }, t.text);
     }));
   return h("div.d-graphwrap", layer);
 }
@@ -660,7 +740,7 @@ function graphNode(n, box) {
   const el = h((n.job ? "button" : "div") + ".d-node" + (n.planned ? ".planned" : "") + (selected ? ".sel" : ""),
     { type: n.job ? "button" : null, style: { left: box.x + "px", top: box.y + "px", width: box.w + "px",
       minHeight: box.h + "px", "--scope": n.scope ? scopeHue(n.scope) : "transparent" },
-      onclick: n.job ? () => { canvasState.job = n.job; canvasState.compare = null; route(); } : null },
+      onclick: n.job ? () => pickJob(n.job) : null },
     h("span.d-node-title", n.title), h("span.d-node-line", n.line),
     statusWord(n.status, "d-node-status"),
     (n.stages || []).length ? h("span.d-stages", n.stages.map((s) =>
@@ -669,30 +749,36 @@ function graphNode(n, box) {
 }
 
 // The version lane: one row per job, commits along the bottom, a mark where a job ran
-// on a commit. Marks are text ("1", "6 replays", "next"), so the lane reads without
-// its tones.
+// on a version. Marks are text ("1", "6 replays", "next"), so the lane reads without
+// its tones. The commit axis is pinned at the bottom of the canvas column, always in
+// view; the job rows above it scroll on their own once there are more than five.
+const LANE = { x0: 170, rowH: 30, rowsMax: 5, axisH: 66 };
+
 function laneView(lane) {
   if (!lane || !(lane.commits || []).length) return null;
   const commits = lane.commits;
-  const x0 = 170, step = Math.max(56, Math.min(82, 840 / Math.max(commits.length, 1)));
+  const step = Math.max(56, Math.min(82, 840 / Math.max(commits.length, 1)));
   const xOf = {};
-  commits.forEach((c, k) => { xOf[c.sha] = x0 + k * step; });
-  const rows = (lane.jobs || []).map((j, k) => h("div.d-lane-row", { style: { top: (36 + k * 44) + "px" } },
+  commits.forEach((c, k) => { xOf[c.sha] = LANE.x0 + k * step; });
+  const jobs = lane.jobs || [];
+  const rows = jobs.map((j, k) => h("div.d-lane-row", { style: { top: (k * LANE.rowH) + "px" } },
     h("span.d-lane-name.small.muted", j.name),
     (j.marks || []).filter((m) => m.sha in xOf).map((m) => h("span.d-mark.mono." + toneClass(m.tone),
       { style: { left: (xOf[m.sha] - 20) + "px" } }, m.text))));
-  const axisTop = 36 + (lane.jobs || []).length * 44 + 8;
   const axis = commits.map((c) => h("span.d-tick.mono" + (c.tag || c.head ? ".tone-accent" : ".muted"),
-    { style: { left: (xOf[c.sha] - 28) + "px", top: axisTop + "px" } },
+    { style: { left: (xOf[c.sha] - 28) + "px" } },
     h("span.d-tick-dot" + (c.tag || c.head ? ".on" : "")), c.sha, h("br"), c.time,
     c.tag ? h("span.d-tag.small", c.tag) : null));
-  // The lane scrolls sideways inside its own band once the commits outgrow the
-  // canvas column, rather than running under the inspector.
-  const width = x0 + commits.length * step + 40;
+  const width = LANE.x0 + commits.length * step + 40;
   return h("section.d-lane",
-    h("div.d-lane-in", { style: { height: (axisTop + 72) + "px", width: width + "px" } },
-      h("span.s-label.d-lane-label", "versions" + (lane.repo ? " · " + lane.repo : "")), rows, axis));
+    h("div.d-lane-in", { style: { width: width + "px" } },
+      h("span.s-label.d-lane-label", "versions" + (lane.repo ? " · " + lane.repo : "")),
+      h("div.d-lane-rows", { style: { height: Math.min(jobs.length, LANE.rowsMax) * LANE.rowH + "px", width: width + "px" } },
+        h("div.d-lane-rows-in", { style: { height: jobs.length * LANE.rowH + "px" } }, rows)),
+      h("div.d-lane-axis", { style: { height: LANE.axisH + "px" } }, axis)));
 }
+
+const VERSIONS_SHOWN = 5;
 
 function inspector(job, history, list) {
   if (!job) return h("aside.d-insp", h("p.s-empty", "Pick a job in the graph."));
@@ -707,13 +793,21 @@ function inspector(job, history, list) {
     body = h("div", (job.runs || []).map((x) => h("a.j-commit", { href: "#/run/" + encodeURIComponent(x.id) },
       h("span.grow", h("span.j-hist-subject", x.label), h("span.j-hist-line.mono", "on " + x.version)), statusWord(x.status))));
   } else {
-    const commits = (history && history.items || []).filter((i) => i.type === "commit");
-    body = h("ol.d-versions", commits.map((c) => h("li.d-version" + (c.head || c.tag ? ".on" : ""),
-      h("a.mono" + (c.head || c.tag ? ".tone-accent" : ".muted"),
-        { href: c.change ? "#/change/" + encodeURIComponent(c.change) : "#/commit/" + encodeURIComponent(c.sha) }, c.sha),
-      h("div.j-hist-subject", c.subject), h("div.j-hist-line", c.line))));
+    const commits = versionsOf(history);
+    const picked = canvasState.version;
+    body = h("div",
+      h("ol.d-versions", commits.slice(0, VERSIONS_SHOWN).map((c) => {
+        const on = c.head || c.tag || (picked && sameCommit(picked, c.sha));
+        return h("li.d-version" + (on ? ".on" : ""),
+          h("a.mono" + (on ? ".tone-accent" : ".muted"),
+            { href: c.change ? "#/change/" + encodeURIComponent(c.change) : "#/commit/" + encodeURIComponent(c.sha) }, c.sha),
+          h("div.j-hist-subject", c.subject), h("div.j-hist-line", c.line));
+      })),
+      commits.length > VERSIONS_SHOWN || (history && history.more)
+        ? h("a.s-link.d-all", { href: "#/job/" + encodeURIComponent(job.id) + "/history" }, "all versions ›") : null);
   }
   const compare = canvasState.compare ? diffPanel(canvasState.compare) : null;
+  const from = canvasState.version || (job.run && job.run.version);
   const pinned = job.run ? h("section.d-insp-sec",
     h("div.s-label", "pinned input"),
     h("div", job.pinned ? job.pinned.title : "run " + job.run.label),
@@ -721,10 +815,10 @@ function inspector(job, history, list) {
     h("div.j-foot-acts",
       h("button.s-btn.primary", { type: "button", disabled: !(job.actions && job.actions.replay),
         onclick: () => replayOnHead(job) }, "Replay HEAD on it"),
-      h("button.s-btn", { type: "button", onclick: async () => {
+      h("button.s-btn", { type: "button", disabled: !from, onclick: async () => {
         try {
           canvasState.compare = await api("jobs/" + encodeURIComponent(job.id) + "/diff?from="
-            + encodeURIComponent(job.run.version) + "&to=HEAD");
+            + encodeURIComponent(from) + "&to=HEAD");
           route();
         } catch (e) { toast(e.message); }
       } }, "Compare versions"))) : null;

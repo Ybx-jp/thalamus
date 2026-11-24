@@ -172,7 +172,17 @@ a { color: inherit; text-decoration: none; }
 .j-diff { padding: 0; overflow: hidden; }
 .j-diff-head { display: flex; gap: .6rem; padding: .8rem 1rem; font-size: .8rem; }
 .j-diff-body { font-size: .74rem; line-height: 1.75; padding: 0 0 .6rem; overflow-x: auto; }
-.j-diff-line { padding: 0 1rem; white-space: pre-wrap; word-break: break-word; }
+.j-diff-line { display: grid; grid-template-columns: 1.4em minmax(0, 1fr); padding: 0 1rem 0 .7rem; }
+.j-diff-op { text-align: center; user-select: none; }
+.j-diff-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* J3: shared-code commits folded between versions. Faint, italic, and a button. */
+.j-shared {
+  appearance: none; display: block; width: 100%; text-align: left; cursor: pointer;
+  background: transparent; border: 0; border-bottom: 1px solid var(--hair);
+  padding: .7rem 1rem; min-height: 44px; font: italic 400 .82rem var(--ui); color: var(--faint);
+}
+.j-shared-list[hidden] { display: none; }
+.j-shared-commit { padding-left: 1.6rem; }
 /* Removed and added lines: the "−" / "+" prefix is the carrier; the grounds repeat it. */
 .j-diff-line.del { background: #3a2226; color: #f0b6ad; }
 .j-diff-line.add { background: #17332f; color: #a6e3d7; }
@@ -213,8 +223,10 @@ a { color: inherit; text-decoration: none; }
 
 /* ---- D1: the desktop canvas ---- */
 body.desk .s-main { max-width: none; }
-.d-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 390px; min-height: calc(100dvh - 53px); }
-.d-left { min-width: 0; border-right: 1px solid var(--hair); display: flex; flex-direction: column; }
+/* D1 fills the viewport: the graph scrolls in its own pane and the version lane stays
+   pinned at the bottom of the canvas column, so its commit axis is always in view. */
+.d-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 390px; height: calc(100dvh - 53px); }
+.d-left { min-width: 0; min-height: 0; border-right: 1px solid var(--hair); display: flex; flex-direction: column; }
 .d-bar { display: flex; align-items: center; gap: 1rem; padding: .6rem 1rem; border-bottom: 1px solid var(--hair); }
 .d-seg { display: inline-flex; border: 1px solid var(--hair); border-radius: 8px; overflow: hidden; }
 .d-segbtn {
@@ -227,10 +239,10 @@ body.desk .s-main { max-width: none; }
   background: var(--panel); color: var(--ink); border: 1px solid var(--hair); border-radius: 6px;
   font: 400 .85rem var(--ui); min-height: 32px; padding: 0 .4rem;
 }
-.d-graphwrap { overflow: auto; flex: 1; }
+.d-graphwrap, .d-gridview { overflow: auto; flex: 1 1 auto; min-height: 0; }
 .d-graph { position: relative; }
 .d-edges { position: absolute; inset: 0; pointer-events: none; }
-.d-edges path { fill: none; stroke: #3a4350; stroke-width: 1.5; }
+.d-edges path { fill: none; stroke: #3a4350; stroke-width: 1.5; stroke-linejoin: round; }
 .d-edges path.on { stroke: var(--accent); stroke-width: 2; }
 .d-col { position: absolute; top: 14px; }
 .d-node {
@@ -251,24 +263,28 @@ button.d-node { cursor: pointer; }
   padding: .25rem .4rem;
 }
 .d-note { position: absolute; font-style: italic; }
-.d-lane { border-top: 1px solid var(--hair); flex: none; overflow-x: auto; }
-.d-lane-in { position: relative; min-width: 100%; }
+.d-lane { border-top: 1px solid var(--hair); flex: none; overflow-x: auto; overflow-y: hidden; }
+.d-lane-in { position: relative; min-width: 100%; padding-top: 2rem; }
+.d-lane-rows { overflow-y: auto; overflow-x: hidden; }
+.d-lane-rows-in { position: relative; }
+.d-lane-axis { position: relative; }
 .d-lane-label { position: absolute; left: 1rem; top: .7rem; }
 .d-lane-row { position: absolute; left: 0; right: 0; height: 30px; border-bottom: 1px solid #1d232b; }
+.d-all { margin: 0 1.2rem .4rem; }
 .d-lane-name { position: absolute; left: 1rem; top: 6px; }
 .d-mark {
   position: absolute; top: 2px; min-width: 40px; height: 24px; padding: 0 .4rem; border: 1px solid currentColor;
   border-radius: 5px; font-size: .68rem; display: inline-flex; align-items: center; justify-content: center;
   background: var(--panel);
 }
-.d-tick { position: absolute; width: 56px; text-align: center; font-size: .66rem; line-height: 1.4; }
+.d-tick { position: absolute; top: 8px; width: 56px; text-align: center; font-size: .66rem; line-height: 1.4; }
 .d-tick-dot {
   display: block; width: 12px; height: 12px; margin: 0 auto .3rem; border-radius: 50%;
   border: 2px solid var(--muted); background: var(--bg);
 }
 .d-tick-dot.on { border-color: var(--accent); background: var(--accent); }
 .d-tag { display: block; }
-.d-insp { overflow-y: auto; max-height: calc(100dvh - 53px); position: sticky; top: 53px; }
+.d-insp { overflow-y: auto; min-height: 0; }
 .d-insp-head { padding: 1rem 1.2rem; border-bottom: 1px solid var(--hair); box-shadow: inset 4px 0 0 var(--scope); }
 .d-insp-title { font-size: 1.1rem; font-weight: 600; display: block; margin-bottom: .3rem; }
 .d-tabs { display: flex; gap: 1.2rem; padding: 0 1.2rem; border-bottom: 1px solid var(--hair); }
