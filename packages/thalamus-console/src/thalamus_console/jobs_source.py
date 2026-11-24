@@ -93,7 +93,8 @@ def forward(source: str, token_file: Path | None, method: str, rest: str, query:
 
     Answers 404 when no source is configured — a console without one has no jobs
     screens, which the client renders as their absence — and 502 when the source does
-    not answer, so a dead source reads as a dead source and not as an empty list.
+    not answer, redirects, or sends less or more than a whole reply, so a failing
+    source reads as failing and never as a short or empty answer.
     """
     if not source:
         return _error(404, "no jobs source")
@@ -104,19 +105,53 @@ def forward(source: str, token_file: Path | None, method: str, rest: str, query:
     headers = {"Accept": "application/json"}
     if body is not None:
         headers["Content-Type"] = "application/json"
+    token = ""
     if token_file:
         try:
-            headers["Authorization"] = f"Bearer {Path(token_file).expanduser().read_text().strip()}"
+            token = Path(token_file).expanduser().read_text().strip()
         except OSError as exc:
             return _error(502, f"jobs source token unreadable: {exc.strerror}")
     req = urllib.request.Request(url, data=body, method=method, headers=headers)
+    if token:
+        # Unredirected: even if a later change let a redirect through, the token would
+        # not travel to wherever the Location header points.
+        req.add_unredirected_header("Authorization", f"Bearer {token}")
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
-            return Reply(resp.status, resp.read(MAX_BODY),
-                         {k: v for k in PASSED_HEADERS if (v := resp.headers.get(k))})
+        with _OPENER.open(req, timeout=TIMEOUT_S) as resp:
+            return _relay(resp.status, resp, resp.headers)
     except urllib.error.HTTPError as exc:
-        return Reply(exc.code, exc.read(MAX_BODY),
-                     {k: v for k in PASSED_HEADERS if (v := exc.headers.get(k))})
+        if 300 <= exc.code < 400:
+            # _NoRedirects refused to follow it, so the token went nowhere.
+            return _error(502, "jobs source redirected; a source must answer, not redirect")
+        return _relay(exc.code, exc, exc.headers)
     except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
         reason = getattr(exc, "reason", exc)
         return _error(502, f"jobs source unreachable: {reason}")
+
+
+class _NoRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect. urllib's own handler copies every header but the
+    body's two onto the new request, Authorization included, so following one would
+    hand the source's token to whatever host Location names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirects)
+
+
+def _relay(status: int, stream, headers) -> Reply:
+    """The source's reply, or a 502 when its body is not the whole of what it declared.
+
+    `read(n)` does not raise when the connection closes short of Content-Length, so a
+    truncated body would otherwise go out as the source's 200; and a body past the cap
+    would be cut and go out the same way. Both are the source failing, and say so.
+    """
+    data = stream.read(MAX_BODY + 1)
+    if len(data) > MAX_BODY:
+        return _error(502, "jobs source reply too large")
+    declared = headers.get("Content-Length")
+    if declared is not None and declared.isdigit() and int(declared) != len(data):
+        return _error(502, f"jobs source reply truncated: {len(data)} of {declared} bytes")
+    return Reply(status, data, {k: v for k in PASSED_HEADERS if (v := headers.get(k))})

@@ -34,5 +34,10 @@ none
 
 ## Verdicts
 
+- 2026-11-23T23:39:08-08:00 · contested · grade: argued · author: propagation
+  evidence: code: packages/thalamus-console/src/thalamus_console/jobs_source.py § "forward" =sha256:9f43e31d48bf477af81fcc8f9cd4d160c287f97b98e95e7b959c45d4ca611519
+  artifact: sha256:88b7034e31b48af1445912b0272092bfae471d20ee72e046688e482748ad01b0
+  note: propagated from a moved ground
+
 ## References
-- docs/console.md · standing · cites-as-live
+- docs/console.md · standing · cites-as-contested

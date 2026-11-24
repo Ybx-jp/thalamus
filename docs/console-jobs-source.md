@@ -15,6 +15,12 @@ separate line. A browser enforces both, so a source can tighten the policy but n
 loosen it. A page the source serves, even one opened in a tab of its own, runs in an
 opaque origin and cannot use the console's API.<!-- (A0265, cites-as-live) -->
 
+A source must answer each request directly and must not redirect. The console never
+follows a redirect, so the token cannot travel to another host. It answers a redirect
+with 502. It also answers 502 when a reply's body is shorter than its declared length
+or larger than the console's cap, rather than passing on part of a
+reply.<!-- (A0266, cites-as-live) -->
+
 ## Rules every answer follows
 
 - JSON objects only. An error is `{"error": "<sentence>"}` with a 4xx or 5xx status;

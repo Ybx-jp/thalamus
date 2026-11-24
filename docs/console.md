@@ -558,7 +558,7 @@ instead: the jobs as a graph from sources to the phone, a version lane, and an i
 
 The console knows nothing about that program. It forwards `/api/jobs/<path>` to
 `<source>/v1/console/<path>` and attaches the token itself, so the token never reaches
-the browser.<!-- (A0262, cites-as-live) -->
+the browser.<!-- (A0262, cites-as-contested) -->
 A write (run now, replay, revert, a label, the auto-apply switch) is forwarded only after
 the same Origin check every other write here passes, so a page on another origin, or a
 sandboxed frame, cannot reach the source through the console.<!-- (A0263, cites-as-live) -->

@@ -30,6 +30,7 @@ class _Source(BaseHTTPRequestHandler):
     """Records what arrived, answers per path."""
 
     seen: list[dict] = []
+    elsewhere = ""
 
     def log_message(self, *args):
         pass
@@ -52,6 +53,17 @@ class _Source(BaseHTTPRequestHandler):
                 ("Access-Control-Allow-Origin", "*")])
         if self.path == "/v1/console/missing":
             return self._reply(404, b'{"error": "no such job"}')
+        if self.path == "/v1/console/redirect":
+            return self._reply(302, b"", extra=[("Location", _Source.elsewhere + "/stolen")])
+        if self.path == "/v1/console/short":
+            # Declares 500 bytes, sends 7, and closes.
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", "500")
+            self.end_headers()
+            self.wfile.write(b'[{"id":')
+            self.close_connection = True
+            return
         self._reply(200, json.dumps({"path": self.path}).encode())
 
     def do_POST(self):
@@ -61,13 +73,34 @@ class _Source(BaseHTTPRequestHandler):
         self._reply(200, b'{"ok": true}')
 
 
+class _Elsewhere(BaseHTTPRequestHandler):
+    """Where a redirecting source points. Records every request that arrives."""
+
+    seen: list[dict] = []
+
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        _Elsewhere.seen.append({"path": self.path, "auth": self.headers.get("Authorization")})
+        self.send_response(200)
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+        self.wfile.write(b"{}")
+
+
 @pytest.fixture
 def source():
     _Source.seen = []
+    _Elsewhere.seen = []
+    other = ThreadingHTTPServer(("127.0.0.1", 0), _Elsewhere)
+    threading.Thread(target=other.serve_forever, args=(0.01,), daemon=True).start()
+    _Source.elsewhere = f"http://127.0.0.1:{other.server_address[1]}"
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Source)
     threading.Thread(target=httpd.serve_forever, args=(0.01,), daemon=True).start()
     yield f"http://127.0.0.1:{httpd.server_address[1]}"
     httpd.shutdown()
+    other.shutdown()
 
 
 @pytest.fixture
@@ -167,6 +200,24 @@ def test_a_source_that_sends_no_policy_still_gets_one(tmp_path):
     lines = relay_headers({"Content-Type": "text/html"})
     assert ("Content-Security-Policy", "sandbox allow-scripts") in lines
     assert ("X-Content-Type-Options", "nosniff") in lines
+
+
+def test_a_redirect_is_refused_and_the_token_goes_nowhere(console):
+    """urllib's redirect handler copies Authorization onto the new request."""
+    status, _, data = _request(console, "GET", "/api/jobs/redirect")
+    assert status == 502 and "redirected" in json.loads(data)["error"]
+    assert _Elsewhere.seen == []
+
+
+def test_a_truncated_reply_is_a_failure_not_a_short_answer(console):
+    status, _, data = _request(console, "GET", "/api/jobs/short")
+    assert status == 502 and "truncated" in json.loads(data)["error"]
+
+
+def test_a_reply_past_the_cap_is_a_failure_not_a_cut_answer(source, monkeypatch):
+    monkeypatch.setattr(jobs_source, "MAX_BODY", 5)
+    reply = jobs_source.forward(source, None, "GET", "jobs")
+    assert reply.status == 502 and b"too large" in reply.body
 
 
 def test_the_sources_refusal_comes_back_as_it_was_sent(console):
