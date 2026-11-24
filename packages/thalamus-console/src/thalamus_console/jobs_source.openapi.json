@@ -3431,7 +3431,7 @@
      "items",
      "more"
     ],
-    "description": "J3. The job's versions, newest first, `limit` of them: a commit is a version of a job when it touches the job's registry file, its prompts or the code paths its registry entry declares, or when the job's tuning applied it. Shared-code commits between two versions fold into one shared item; a run sits under the job version it ran on.",
+    "description": "J3. The job's versions, newest first, `limit` of them: a commit is a version of a job when it touches the job's registry file, its prompts or the code paths its registry entry declares, or when a tuning decision for the job names it. Shared-code commits between two versions fold into one shared item; a run sits under the job version it ran on.",
     "examples": [
      {
       "columns": [
