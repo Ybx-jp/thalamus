@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Relative URLs, like the roster's shell: the console is mounted under a path.
+     This page is reached as a file (`board.html`), so the roster's trailing-slash
+     canonicalization has nothing to do here — and an inline script could not run
+     under the policy below anyway. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1116">
+<!-- The board hosts app widgets: pages a person or a job built, in
+     <iframe sandbox="allow-scripts"> with no allow-same-origin, so each runs in an
+     opaque origin and reaches the console only through postMessage (board.js,
+     "App widget host").
+
+     frame-src 'self', MEASURED 2026-11-23 (Chromium build 1248 under playwright; the
+     console on http://127.0.0.1:<port>, a probe app tile whose script runs
+     `location.href = "http://localhost:<source port>/elsewhere.html"` 300 ms after
+     load, and elsewhere.html's script posts {thalamus: "app/open"} to its parent; the
+     control is this same page with only the meta below removed, by a route intercept):
+       with the policy    Chromium logs "Framing 'http://localhost:<port>/' violates
+                          ... frame-src 'self'. The request has been blocked.", the
+                          frame ends on chrome-error://chromewebdata/, and no overlay
+                          opens — nothing of the other origin ran in that frame;
+       without it         the frame ends on http://localhost:<port>/elsewhere.html and
+                          the full-screen overlay opens: the other origin's message
+                          arrived with event.source === the registered window and the
+                          host acted on it.
+     So the policy is load-bearing for "route by source only": a contentWindow keeps
+     its identity across navigations, and frame-src 'self' is what stops a tile from
+     handing its registered window to a document of another origin.
+     What it does not stop, measured the same way: a tile navigating itself to another
+     path on this origin. A probe that went to ../../chess-positions/files/index.html
+     loaded it, stayed sandboxed (self.origin === "null" inside), and was answered with
+     the PROBE's granted data, because the host routes by window and not by what the
+     window has loaded. An app can therefore run another app's page inside its own
+     grant; it cannot reach another app's grant, nor anything off this origin. -->
+
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self'">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="surface.css">
+<link rel="stylesheet" href="board.css">
+<title>Board · Thalamus Console</title>
+</head>
+<body class="surface board">
+<header class="s-head b-head">
+  <a class="s-back" id="back" href="./" aria-label="Back to the roster">‹</a>
+  <span class="s-title" id="title">Board</span>
+  <span class="b-hint muted" id="hint" hidden>editing · drag to move, corner to resize</span>
+  <button type="button" class="s-head-act b-edit" id="edit">edit</button>
+</header>
+<div class="b-chips" id="chips"></div>
+<div class="b-wrap">
+  <main class="b-main" id="main" aria-live="polite"></main>
+  <aside class="b-dock" id="dock" hidden></aside>
+</div>
+<script src="surface.js"></script>
+<script src="board.js"></script>
+</body>
+</html>

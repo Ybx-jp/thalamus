@@ -59,6 +59,7 @@ body.surface {
 .tone-ok { color: var(--ok); }
 .tone-danger { color: var(--danger-text); }
 .tone-pending { color: var(--pending); }
+.tone-faint { color: var(--faint); }
 .tone-muted { color: var(--muted); }
 .tone-accent { color: var(--accent); }
 

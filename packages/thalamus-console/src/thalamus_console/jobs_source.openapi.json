@@ -1,0 +1,6182 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Thalamus console jobs source",
+  "version": "1.0.0",
+  "description": "The paths a jobs source serves to the Thalamus console. The console forwards /api/jobs/<path> to <source>/v1/console/<path> with the bearer token attached. The rules every answer follows are in docs/console-jobs-source.md: the source composes the words and picks the tones, and the pages print them as text."
+ },
+ "servers": [
+  {
+   "url": "/v1/console"
+  }
+ ],
+ "security": [
+  {
+   "bearer": []
+  }
+ ],
+ "paths": {
+  "/jobs": {
+   "get": {
+    "operationId": "listJobs",
+    "summary": "J1: the jobs, grouped by scope",
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobList"
+        },
+        "example": {
+         "as_of_ms": 1795400000000,
+         "banner": {
+          "title": "tune changed weekly-digest:draft",
+          "line": "43ade4c · 10 h ago · replay gate passed",
+          "change": "43ade4c"
+         },
+         "summary": "3 jobs · 1 scope",
+         "groups": [
+          {
+           "name": "news",
+           "note": "notifications muted to Dec 7",
+           "jobs": [
+            {
+             "id": "weekly-digest",
+             "name": "weekly-digest",
+             "line": "weekly Mon 20:00 · 3 stages · on 43ade4c · ran 10 h ago",
+             "status": {
+              "word": "notable",
+              "tone": "ok"
+             },
+             "kind": "model",
+             "runnable": true
+            },
+            {
+             "id": "feed-poll",
+             "name": "feed poll",
+             "line": "collector · daily 06:30",
+             "status": {
+              "word": "143 of 144 answered",
+              "tone": "muted"
+             },
+             "kind": "collector",
+             "runnable": true
+            }
+           ]
+          },
+          {
+           "name": "",
+           "note": "1 job",
+           "jobs": [
+            {
+             "id": "phone-sync",
+             "name": "phone sync",
+             "line": "collector · every 15 min",
+             "status": {
+              "word": "2 min ago",
+              "tone": "muted"
+             },
+             "kind": "collector",
+             "runnable": false
+            }
+           ]
+          }
+         ]
+        }
+       }
+      },
+      "links": {
+       "getJob": {
+        "operationId": "getJob",
+        "parameters": {
+         "job": "$response.body#/groups/0/jobs/0/id"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   }
+  },
+  "/jobs/{job}": {
+   "get": {
+    "operationId": "getJob",
+    "summary": "J2: one job and its stages for a run",
+    "parameters": [
+     {
+      "name": "job",
+      "in": "path",
+      "required": true,
+      "description": "A job id, or a staged job's stage key such as weekly-digest:draft.",
+      "schema": {
+       "type": "string",
+       "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "description": "The run to show; the newest live run by default.",
+      "schema": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{4,32}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Job"
+        },
+        "example": {
+         "id": "weekly-digest",
+         "name": "weekly-digest",
+         "scope": "news",
+         "kind": "model",
+         "header": {
+          "line": "news · weekly Mon 20:00 · next run in 9 h",
+          "sub": "config 43ade4c · 3 prompts"
+         },
+         "runs": [
+          {
+           "id": "a1b2c3d4",
+           "label": "Nov 23 00:51",
+           "version": "b39469d",
+           "code_version": "b39469d",
+           "status": {
+            "word": "notable",
+            "tone": "ok"
+           }
+          }
+         ],
+         "run": {
+          "id": "a1b2c3d4",
+          "label": "Nov 23 00:51",
+          "version": "b39469d",
+          "code_version": "b39469d",
+          "status": {
+           "word": "notable",
+           "tone": "ok"
+          }
+         },
+         "drift": {
+          "title": "draft changed after this run",
+          "line": "43ade4c · by tune",
+          "change": "43ade4c"
+         },
+         "stages": [
+          {
+           "name": "trigger",
+           "status": null,
+           "reached": false,
+           "lines": [
+            "timer · Mon 20:00, or Run now"
+           ],
+           "mono": [],
+           "out": null,
+           "changed": false,
+           "progress": null
+          },
+          {
+           "name": "draft",
+           "status": {
+            "word": "notable",
+            "tone": "ok"
+           },
+           "reached": true,
+           "lines": [
+            "WebSearch · 3 m 5 s · $0.46"
+           ],
+           "mono": [
+            "45 of 60 calls · 12 search · 33 fetch"
+           ],
+           "out": "39 verified quotes",
+           "changed": true,
+           "progress": {
+            "used": 45,
+            "cap": 60,
+            "segments": [
+             {
+              "n": 12,
+              "label": "search"
+             },
+             {
+              "n": 33,
+              "label": "fetch"
+             }
+            ]
+           }
+          }
+         ],
+         "actions": {
+          "run_now": true,
+          "replay": true
+         },
+         "auto_apply": true,
+         "auto_apply_job": "weekly-digest:draft",
+         "gate_rule": "gate: ≥3 pairs · kept not lower · no more failures · cost ≤ 2×",
+         "pinned": {
+          "title": "run Nov 23 00:51 is the replay fixture",
+          "line": "its prompts and inputs are stored"
+         },
+         "pinned_run": "a1b2c3d4",
+         "replay_note": "Re-runs this run's stored input with today's prompts. A replay publishes nothing."
+        }
+       }
+      },
+      "links": {
+       "getRun": {
+        "operationId": "getRun",
+        "parameters": {
+         "run": "$response.body#/run/id"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   }
+  },
+  "/jobs/{job}/history": {
+   "get": {
+    "operationId": "getJobHistory",
+    "summary": "J3: runs grouped under the commits they ran on",
+    "parameters": [
+     {
+      "name": "job",
+      "in": "path",
+      "required": true,
+      "description": "A job id, or a staged job's stage key such as weekly-digest:draft.",
+      "schema": {
+       "type": "string",
+       "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+      }
+     },
+     {
+      "name": "replays",
+      "in": "query",
+      "required": false,
+      "description": "1 (default) includes replays.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "0",
+        "1"
+       ]
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "How many commits.",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 200,
+       "default": 12
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/History"
+        },
+        "example": {
+         "columns": [
+          "gather",
+          "draft",
+          "check"
+         ],
+         "more": true,
+         "items": [
+          {
+           "type": "commit",
+           "sha": "43ade4c",
+           "subject": "Apply a replay-gated change",
+           "line": "by tune · today 01:13 · HEAD",
+           "head": true,
+           "tag": "by tune",
+           "by_tune": true,
+           "change": "43ade4c"
+          },
+          {
+           "type": "empty",
+           "text": "no runs on this version yet · next Mon 20:00"
+          },
+          {
+           "type": "shared",
+           "text": "2 commits to shared code ›",
+           "commits": [
+            {
+             "sha": "c3b92bd",
+             "subject": "Add requirement terms",
+             "line": "today 18:31"
+            },
+            {
+             "sha": "d85167d",
+             "subject": "Run the review as a specialist",
+             "line": "today 18:28"
+            }
+           ]
+          },
+          {
+           "type": "replays",
+           "title": "6 replays of 00:51",
+           "line": "3 baseline · 3 candidate · 1 failed",
+           "replay_of": "a1b2c3d4",
+           "ids": [
+            "e1",
+            "e2"
+           ],
+           "rows": [
+            "baseline",
+            "candidate"
+           ],
+           "grid": [
+            [
+             {
+              "word": "failed",
+              "tone": "danger"
+             },
+             {
+              "word": "notable",
+              "tone": "ok"
+             }
+            ],
+            [
+             {
+              "word": "notable",
+              "tone": "ok"
+             },
+             {
+              "word": "silent",
+              "tone": "faint"
+             }
+            ]
+           ],
+           "note": "draft only"
+          },
+          {
+           "type": "run",
+           "id": "a1b2c3d4",
+           "title": "Nov 23 00:51",
+           "line": "notable · 5 kept · $1.04",
+           "version": "b39469d",
+           "code_version": "b39469d",
+           "cells": [
+            {
+             "text": "$0.27",
+             "tone": "ok"
+            },
+            {
+             "text": "$0.46",
+             "tone": "ok"
+            },
+            null
+           ],
+           "span": null
+          }
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   }
+  },
+  "/jobs/{job}/diff": {
+   "get": {
+    "operationId": "getJobDiff",
+    "summary": "The job's own files between two versions",
+    "parameters": [
+     {
+      "name": "job",
+      "in": "path",
+      "required": true,
+      "description": "A job id, or a staged job's stage key such as weekly-digest:draft.",
+      "schema": {
+       "type": "string",
+       "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+      }
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "required": true,
+      "description": "Older version: a version id the source sent.",
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9._:-]{1,80}$"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "description": "Newer version: a version id the source sent, or HEAD for the job as it stands now.",
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9._:-]{1,80}$",
+       "default": "HEAD"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Diff"
+        },
+        "example": {
+         "from": "b39469d",
+         "to": "43ade4c",
+         "files": [
+          {
+           "path": "prompts/weekly-digest-draft.md",
+           "added": 1,
+           "removed": 1,
+           "truncated": false,
+           "lines": [
+            {
+             "op": "-",
+             "text": "old wording"
+            },
+            {
+             "op": "+",
+             "text": "new wording"
+            }
+           ]
+          }
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "500": {
+      "$ref": "#/components/responses/ServerError"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   }
+  },
+  "/changes/{sha}": {
+   "get": {
+    "operationId": "getChange",
+    "summary": "J4: an applied change and its replay-gate receipt",
+    "parameters": [
+     {
+      "name": "sha",
+      "in": "path",
+      "required": true,
+      "description": "A commit, abbreviated or full.",
+      "schema": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{4,40}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ChangeReceipt"
+        },
+        "example": {
+         "sha": "43ade4c",
+         "job": "weekly-digest",
+         "title": "weekly-digest:draft prompt changed",
+         "line": "applied by tune · today 01:13 · auto-apply is on",
+         "gate": {
+          "status": {
+           "word": "replay gate · passed",
+           "tone": "ok"
+          },
+          "line": "3 paired replays of the Nov 23 00:51 run",
+          "rows": [
+           {
+            "label": "findings kept",
+            "before": "2",
+            "after": "3"
+           }
+          ],
+          "checks": [
+           {
+            "label": "at least 3 pairs",
+            "passed": true
+           }
+          ],
+          "note": null,
+          "decision_id": "82aa86603af5",
+          "fixtures": [
+           "a1b2c3d4"
+          ],
+          "pair_runs": [
+           [
+            "e1",
+            "e2"
+           ]
+          ]
+         },
+         "diff": [
+          {
+           "path": "prompts/weekly-digest-draft.md",
+           "added": 1,
+           "removed": 1,
+           "truncated": false,
+           "lines": [
+            {
+             "op": "-",
+             "text": "old wording"
+            },
+            {
+             "op": "+",
+             "text": "new wording"
+            }
+           ]
+          }
+         ],
+         "auto_apply": true,
+         "auto_apply_job": "weekly-digest:draft",
+         "revert": {
+          "available": true,
+          "reason": null
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "500": {
+      "$ref": "#/components/responses/ServerError"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   }
+  },
+  "/commits/{sha}": {
+   "get": {
+    "operationId": "getCommit",
+    "summary": "One commit, its runs and its diff",
+    "parameters": [
+     {
+      "name": "sha",
+      "in": "path",
+      "required": true,
+      "description": "A commit, abbreviated or full.",
+      "schema": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{4,40}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Commit"
+        },
+        "example": {
+         "sha": "43ade4c",
+         "subject": "Apply a replay-gated change",
+         "body": "Applied-by: sensorium tune",
+         "line": "today 01:13",
+         "tag": "by tune",
+         "by_tune": true,
+         "change": "43ade4c",
+         "runs": [
+          {
+           "id": "a1b2c3d4",
+           "label": "Nov 23 00:51",
+           "status": {
+            "word": "notable",
+            "tone": "ok"
+           }
+          }
+         ],
+         "files": [
+          {
+           "path": "prompts/weekly-digest-draft.md",
+           "added": 1,
+           "removed": 1,
+           "truncated": false,
+           "lines": [
+            {
+             "op": "-",
+             "text": "old wording"
+            },
+            {
+             "op": "+",
+             "text": "new wording"
+            }
+           ]
+          }
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "500": {
+      "$ref": "#/components/responses/ServerError"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   }
+  },
+  "/runs/{run}": {
+   "get": {
+    "operationId": "getRun",
+    "summary": "J5: a run's telemetry and findings",
+    "parameters": [
+     {
+      "name": "run",
+      "in": "path",
+      "required": true,
+      "description": "A run id or an unambiguous prefix.",
+      "schema": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{4,32}$"
+      }
+     },
+     {
+      "name": "findings",
+      "in": "query",
+      "required": false,
+      "description": "all: every finding; otherwise at most 3 kept plus every rejected one.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "all"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Run"
+        },
+        "example": {
+         "id": "a1b2c3d4",
+         "title": "run Nov 23 00:51",
+         "job": "weekly-digest",
+         "replay_of": null,
+         "version": "b39469d",
+         "code_version": "b39469d",
+         "status": {
+          "word": "notable",
+          "tone": "ok"
+         },
+         "line": "on b39469d · 3 stage configs stored · replayable",
+         "tiles": [
+          {
+           "label": "cost",
+           "value": "$1.04",
+           "sub": "gather .27 · draft .46 · check .32"
+          }
+         ],
+         "findings": {
+          "heading": "findings · 2 kept · 1 rejected",
+          "more": 0,
+          "items": [
+           {
+            "id": "f1",
+            "title": "A finding",
+            "kind": "vocabulary",
+            "label": "useful",
+            "rejected": null
+           },
+           {
+            "id": "f2",
+            "title": "A rejected finding",
+            "kind": "belief update",
+            "label": null,
+            "rejected": {
+             "word": "rejected · numbers not in the input",
+             "line": null
+            }
+           }
+          ]
+         },
+         "events": 162,
+         "replayable": true
+        }
+       }
+      },
+      "links": {
+       "labelFinding": {
+        "operationId": "labelFinding",
+        "parameters": {
+         "finding": "$response.body#/findings/items/0/id"
+        }
+       },
+       "getRunEvents": {
+        "operationId": "getRunEvents",
+        "parameters": {
+         "run": "$response.body#/id"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   }
+  },
+  "/runs/{run}/events": {
+   "get": {
+    "operationId": "getRunEvents",
+    "summary": "A run's raw stream, 200 events at a time",
+    "parameters": [
+     {
+      "name": "run",
+      "in": "path",
+      "required": true,
+      "description": "A run id or an unambiguous prefix.",
+      "schema": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{4,32}$"
+      }
+     },
+     {
+      "name": "after",
+      "in": "query",
+      "required": false,
+      "description": "Return events after this seq.",
+      "schema": {
+       "type": "integer",
+       "minimum": -1,
+       "maximum": 1000000000,
+       "default": -1
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Events"
+        },
+        "example": {
+         "events": [
+          {
+           "seq": 0,
+           "type": "system",
+           "subtype": "init",
+           "stage": "draft",
+           "text": "session started"
+          }
+         ],
+         "more": false
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   }
+  },
+  "/repo": {
+   "get": {
+    "operationId": "getRepo",
+    "summary": "J6: the repository the jobs run from",
+    "parameters": [
+     {
+      "name": "jobs_only",
+      "in": "query",
+      "required": false,
+      "description": "1 (default): only commits that touched a job's files or src/.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "0",
+        "1"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Repo"
+        },
+        "example": {
+         "name": "jobs-repo",
+         "status": {
+          "word": "clean",
+          "tone": "muted"
+         },
+         "line": "main · no remote · last commit 10 h ago",
+         "summary": "11 · 1 by tune",
+         "jobs": 3,
+         "commits": [
+          {
+           "sha": "43ade4c",
+           "subject": "Apply a replay-gated change",
+           "line": "01:13 · prompts · no runs yet",
+           "tag": "by tune",
+           "by_tune": true,
+           "change": "43ade4c"
+          }
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "500": {
+      "$ref": "#/components/responses/ServerError"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   }
+  },
+  "/graph": {
+   "get": {
+    "operationId": "getGraph",
+    "summary": "D1: the jobs as a graph, and the version lane",
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Graph"
+        },
+        "example": {
+         "columns": [
+          "sources",
+          "collectors",
+          "tables",
+          "derived",
+          "model jobs",
+          "outputs",
+          "phone"
+         ],
+         "nodes": [
+          {
+           "id": "feed",
+           "col": 0,
+           "row": 0,
+           "title": "feed",
+           "line": "public",
+           "scope": null,
+           "status": null,
+           "planned": false,
+           "job": null,
+           "stages": null
+          },
+          {
+           "id": "weekly-digest",
+           "col": 4,
+           "row": 0,
+           "title": "weekly-digest",
+           "line": "Mon 20:00 · 3 stages",
+           "scope": "news",
+           "status": {
+            "word": "notable",
+            "tone": "ok"
+           },
+           "planned": false,
+           "job": "weekly-digest",
+           "stages": [
+            {
+             "name": "draft",
+             "text": "$0.46"
+            }
+           ]
+          }
+         ],
+         "edges": [
+          [
+           "feed",
+           "weekly-digest"
+          ]
+         ],
+         "note": [
+          {
+           "col": 0,
+           "row": 0,
+           "text": "a caption"
+          }
+         ],
+         "lane": {
+          "repo": "jobs-repo main",
+          "commits": [
+           {
+            "sha": "43ade4c",
+            "time": "01:13",
+            "tag": "by tune",
+            "by_tune": true
+           }
+          ],
+          "jobs": [
+           {
+            "name": "weekly-digest",
+            "marks": [
+             {
+              "sha": "43ade4c",
+              "text": "next",
+              "tone": "accent"
+             }
+            ]
+           }
+          ]
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "500": {
+      "$ref": "#/components/responses/ServerError"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   }
+  },
+  "/board": {
+   "get": {
+    "operationId": "getBoard",
+    "summary": "The saved board",
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Board"
+        },
+        "example": {
+         "widgets": [
+          {
+           "id": "games-lost-on-time",
+           "kind": "number",
+           "title": "Games lost on time",
+           "binding": {
+            "source": "games_weekly",
+            "value": "lost_on_time/games",
+            "where": [
+             {
+              "column": "time_class",
+              "value": "blitz"
+             }
+            ],
+            "window": "latest",
+            "compare": 6
+           },
+           "x": 0,
+           "y": 0,
+           "w": 1,
+           "h": 2
+          }
+         ],
+         "version": "a70f5be",
+         "suggestions": [
+          {
+           "title": "Games lost on time",
+           "line": "Number · games_weekly",
+           "widget": {
+            "id": "games-lost-on-time",
+            "kind": "number",
+            "title": "Games lost on time",
+            "binding": {
+             "source": "games_weekly",
+             "value": "lost_on_time/games",
+             "where": [
+              {
+               "column": "time_class",
+               "value": "blitz"
+              }
+             ],
+             "window": "latest",
+             "compare": 6
+            },
+            "x": 0,
+            "y": 0,
+            "w": 1,
+            "h": 2
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   },
+   "post": {
+    "operationId": "saveBoard",
+    "summary": "Save the board's layout as a commit",
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "ok": {
+           "const": true
+          },
+          "version": {
+           "type": "string",
+           "pattern": "^[0-9a-f]{4,40}$"
+          }
+         },
+         "required": [
+          "ok",
+          "version"
+         ]
+        },
+        "example": {
+         "ok": true,
+         "version": "b81c2d0"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     },
+     "500": {
+      "$ref": "#/components/responses/ServerError"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+         "widgets": {
+          "type": "array",
+          "maxItems": 40,
+          "items": {
+           "$ref": "#/components/schemas/Widget"
+          }
+         },
+         "base": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "null"
+           }
+          ]
+         }
+        },
+        "required": [
+         "widgets",
+         "base"
+        ]
+       },
+       "example": {
+        "widgets": [
+         {
+          "id": "games-lost-on-time",
+          "kind": "number",
+          "title": "Games lost on time",
+          "binding": {
+           "source": "games_weekly",
+           "value": "lost_on_time/games",
+           "where": [
+            {
+             "column": "time_class",
+             "value": "blitz"
+            }
+           ],
+           "window": "latest",
+           "compare": 6
+          },
+          "x": 0,
+          "y": 0,
+          "w": 1,
+          "h": 2
+         }
+        ],
+        "base": "a70f5be"
+       }
+      }
+     }
+    },
+    "x-side-effect": true
+   }
+  },
+  "/board/sources": {
+   "get": {
+    "operationId": "getBoardSources",
+    "summary": "What a widget may bind to",
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BoardSources"
+        },
+        "example": {
+         "sources": [
+          {
+           "name": "games_weekly",
+           "columns": [
+            "week",
+            "time_class",
+            "games",
+            "lost_on_time"
+           ],
+           "values": [
+            {
+             "id": "count",
+             "label": "rows"
+            },
+            {
+             "id": "lost_on_time/games",
+             "label": "lost_on_time ÷ games"
+            }
+           ],
+           "filters": [
+            {
+             "column": "time_class",
+             "values": [
+              "blitz",
+              "rapid"
+             ]
+            }
+           ],
+           "time": "week"
+          }
+         ],
+         "kinds": [
+          "number",
+          "series",
+          "table",
+          "tail",
+          "inbox",
+          "control",
+          "note",
+          "app"
+         ],
+         "periods": [
+          "day",
+          "week",
+          "month"
+         ],
+         "windows": [
+          "latest",
+          "current",
+          "all"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   }
+  },
+  "/board/eval": {
+   "post": {
+    "operationId": "evalWidget",
+    "summary": "What one widget shows",
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Eval"
+        },
+        "example": {
+         "value": "7 of 16",
+         "compare": "previous 6 weeks: 10 of 64",
+         "period": "W47",
+         "foot": "games_weekly"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+         "widget": {
+          "$ref": "#/components/schemas/Widget"
+         },
+         "range": {
+          "type": "string"
+         },
+         "scope": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "widget"
+        ]
+       },
+       "example": {
+        "widget": {
+         "id": "games-lost-on-time",
+         "kind": "number",
+         "title": "Games lost on time",
+         "binding": {
+          "source": "games_weekly",
+          "value": "lost_on_time/games",
+          "where": [
+           {
+            "column": "time_class",
+            "value": "blitz"
+           }
+          ],
+          "window": "latest",
+          "compare": 6
+         },
+         "x": 0,
+         "y": 0,
+         "w": 1,
+         "h": 2
+        },
+        "range": "8w",
+        "scope": "all"
+       }
+      }
+     }
+    },
+    "x-side-effect": false
+   }
+  },
+  "/apps": {
+   "get": {
+    "operationId": "listApps",
+    "summary": "App widgets and their grants",
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Apps"
+        },
+        "example": {
+         "apps": [
+          {
+           "id": "chess-positions",
+           "title": "Chess positions",
+           "grant": {
+            "read": [
+             "run_id",
+             "week",
+             "positions.n",
+             "positions.fen"
+            ],
+            "write": [
+             "run_id",
+             "n",
+             "move"
+            ]
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   }
+  },
+  "/apps/{app}/data": {
+   "get": {
+    "operationId": "getAppData",
+    "summary": "An app's read grant",
+    "parameters": [
+     {
+      "name": "app",
+      "in": "path",
+      "required": true,
+      "description": "An app id.",
+      "schema": {
+       "type": "string",
+       "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AppData"
+        },
+        "example": {
+         "run_id": "947d9612",
+         "week": "2026-W48",
+         "positions": [
+          {
+           "n": 1,
+           "fen": "8/8/8/8/8/8/6k1/4K2R w K - 0 1",
+           "colour": "white",
+           "move_number": 32,
+           "phase": "endgame",
+           "game_move": "Re1",
+           "engine_move": "Kh6",
+           "engine_line": [
+            "Kh6",
+            "Rf7"
+           ],
+           "ep_lost": 0.81,
+           "clock_s": 3.1
+          }
+         ],
+         "tries": [
+          {
+           "n": 1,
+           "move": "Kh6",
+           "found": true,
+           "ep_lost": 0.0,
+           "seconds": 18
+          }
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   }
+  },
+  "/apps/{app}/write": {
+   "post": {
+    "operationId": "writeApp",
+    "summary": "Store one row from an app (the body is the row)",
+    "parameters": [
+     {
+      "name": "app",
+      "in": "path",
+      "required": true,
+      "description": "An app id.",
+      "schema": {
+       "type": "string",
+       "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "ok": {
+           "const": true
+          },
+          "data": {
+           "$ref": "#/components/schemas/AppData"
+          }
+         },
+         "required": [
+          "ok",
+          "data"
+         ]
+        },
+        "example": {
+         "ok": true,
+         "data": {
+          "run_id": "947d9612",
+          "week": "2026-W48",
+          "positions": [
+           {
+            "n": 1,
+            "fen": "8/8/8/8/8/8/6k1/4K2R w K - 0 1",
+            "colour": "white",
+            "move_number": 32,
+            "phase": "endgame",
+            "game_move": "Re1",
+            "engine_move": "Kh6",
+            "engine_line": [
+             "Kh6",
+             "Rf7"
+            ],
+            "ep_lost": 0.81,
+            "clock_s": 3.1
+           }
+          ],
+          "tries": [
+           {
+            "n": 1,
+            "move": "Kh6",
+            "found": true,
+            "ep_lost": 0.0,
+            "seconds": 18
+           }
+          ]
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AppRow"
+       },
+       "example": {
+        "run_id": "947d9612",
+        "n": 1,
+        "move": "Kh6",
+        "uci": "g5h6",
+        "found": true,
+        "ep_lost": 0.0,
+        "engine_move": true,
+        "nodes": 250000,
+        "engine": "Stockfish 18 lite single",
+        "seconds": 18,
+        "engine_ms": 1650,
+        "submitted_ms": 1795400000000
+       }
+      }
+     }
+    },
+    "x-side-effect": true
+   }
+  },
+  "/findings/{finding}/label": {
+   "post": {
+    "operationId": "labelFinding",
+    "summary": "Label a finding",
+    "parameters": [
+     {
+      "name": "finding",
+      "in": "path",
+      "required": true,
+      "description": "A finding id.",
+      "schema": {
+       "type": "string",
+       "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "ok": {
+           "const": true
+          },
+          "label": {
+           "$ref": "#/components/schemas/Label"
+          }
+         },
+         "required": [
+          "ok",
+          "label"
+         ]
+        },
+        "example": {
+         "ok": true,
+         "label": "useful"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+         "label": {
+          "$ref": "#/components/schemas/Label"
+         }
+        },
+        "required": [
+         "label"
+        ]
+       },
+       "example": {
+        "label": "useful"
+       }
+      }
+     }
+    },
+    "x-side-effect": true
+   }
+  },
+  "/jobs/{job}/run": {
+   "post": {
+    "operationId": "runJob",
+    "summary": "Start a live run now; the job's own preflight applies",
+    "parameters": [
+     {
+      "name": "job",
+      "in": "path",
+      "required": true,
+      "description": "A job id, or a staged job's stage key such as weekly-digest:draft.",
+      "schema": {
+       "type": "string",
+       "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "ok": {
+           "const": true
+          },
+          "unit": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "ok",
+          "unit"
+         ]
+        },
+        "example": {
+         "ok": true,
+         "unit": "jobs-console-weekly-digest-1795400000"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+       },
+       "example": {}
+      }
+     }
+    },
+    "x-side-effect": true
+   }
+  },
+  "/runs/{run}/replay": {
+   "post": {
+    "operationId": "replayRun",
+    "summary": "Re-run a stored run's input on HEAD",
+    "parameters": [
+     {
+      "name": "run",
+      "in": "path",
+      "required": true,
+      "description": "A run id or an unambiguous prefix.",
+      "schema": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{4,32}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "ok": {
+           "const": true
+          },
+          "unit": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "ok",
+          "unit"
+         ]
+        },
+        "example": {
+         "ok": true,
+         "unit": "jobs-console-replay-a1b2c3d4-1795400000"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+         "on": {
+          "const": "HEAD"
+         }
+        },
+        "required": []
+       },
+       "example": {
+        "on": "HEAD"
+       }
+      }
+     }
+    },
+    "x-side-effect": true
+   }
+  },
+  "/jobs/{job}/auto-apply": {
+   "post": {
+    "operationId": "setAutoApply",
+    "summary": "Turn auto-apply of gated changes on or off",
+    "parameters": [
+     {
+      "name": "job",
+      "in": "path",
+      "required": true,
+      "description": "A job id, or a staged job's stage key such as weekly-digest:draft.",
+      "schema": {
+       "type": "string",
+       "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "ok": {
+           "const": true
+          },
+          "on": {
+           "type": "boolean"
+          },
+          "commit": {
+           "anyOf": [
+            {
+             "type": "string",
+             "pattern": "^[0-9a-f]{4,40}$"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          }
+         },
+         "required": [
+          "ok",
+          "on",
+          "commit"
+         ]
+        },
+        "example": {
+         "ok": true,
+         "on": false,
+         "commit": "c0ffee1"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     },
+     "500": {
+      "$ref": "#/components/responses/ServerError"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+         "on": {
+          "type": "boolean"
+         }
+        },
+        "required": [
+         "on"
+        ]
+       },
+       "example": {
+        "on": false
+       }
+      }
+     }
+    },
+    "x-side-effect": true
+   }
+  },
+  "/changes/{sha}/revert": {
+   "post": {
+    "operationId": "revertChange",
+    "summary": "Pause auto-apply for the job, then revert the change as a new commit",
+    "parameters": [
+     {
+      "name": "sha",
+      "in": "path",
+      "required": true,
+      "description": "A commit, abbreviated or full.",
+      "schema": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{4,40}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "ok": {
+           "const": true
+          },
+          "auto_apply": {
+           "const": false
+          },
+          "commit": {
+           "type": "string",
+           "pattern": "^[0-9a-f]{4,40}$"
+          },
+          "pause_commit": {
+           "anyOf": [
+            {
+             "type": "string",
+             "pattern": "^[0-9a-f]{4,40}$"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          }
+         },
+         "required": [
+          "ok",
+          "auto_apply",
+          "commit",
+          "pause_commit"
+         ]
+        },
+        "example": {
+         "ok": true,
+         "auto_apply": false,
+         "commit": "d00d123",
+         "pause_commit": "c0ffee1"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     },
+     "500": {
+      "$ref": "#/components/responses/ServerError"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+       },
+       "example": {}
+      }
+     }
+    },
+    "x-side-effect": true
+   }
+  },
+  "/scopes/{scope}/notifications": {
+   "post": {
+    "operationId": "setNotifications",
+    "summary": "Mute a scope's notifications, or turn them back on",
+    "parameters": [
+     {
+      "name": "scope",
+      "in": "path",
+      "required": true,
+      "description": "A scope.",
+      "schema": {
+       "type": "string",
+       "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "ok": {
+           "const": true
+          },
+          "on": {
+           "type": "boolean"
+          },
+          "muted_until": {
+           "anyOf": [
+            {
+             "type": "string",
+             "format": "date"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "commit": {
+           "anyOf": [
+            {
+             "type": "string",
+             "pattern": "^[0-9a-f]{4,40}$"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          }
+         },
+         "required": [
+          "ok",
+          "on",
+          "muted_until",
+          "commit"
+         ]
+        },
+        "example": {
+         "ok": true,
+         "on": false,
+         "muted_until": "2026-12-07",
+         "commit": "c0ffee2"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     },
+     "500": {
+      "$ref": "#/components/responses/ServerError"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+         "on": {
+          "type": "boolean"
+         },
+         "until": {
+          "type": "string",
+          "format": "date"
+         }
+        },
+        "required": [
+         "on"
+        ]
+       },
+       "example": {
+        "on": false,
+        "until": "2026-12-07"
+       }
+      }
+     }
+    },
+    "x-side-effect": true
+   }
+  },
+  "/apps/{app}/files/{path}": {
+   "get": {
+    "operationId": "getAppFile",
+    "summary": "An app's static file, served into a sandboxed frame",
+    "description": "`path` may span segments (a/b.js). The console's forwarder refuses any path containing `..` or `//`, or starting with `/`, with 400 before it reaches a source.",
+    "parameters": [
+     {
+      "name": "app",
+      "in": "path",
+      "required": true,
+      "description": "An app id.",
+      "schema": {
+       "type": "string",
+       "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+      }
+     },
+     {
+      "name": "path",
+      "in": "path",
+      "required": true,
+      "x-multi-segment": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^(?!.*\\.\\.)(?!.*//)[A-Za-z0-9._:-]+(/[A-Za-z0-9._:-]+)*$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The file. Every response carries the sandbox policy and the CORS header.",
+      "headers": {
+       "Content-Security-Policy": {
+        "required": true,
+        "schema": {
+         "type": "string",
+         "pattern": "^sandbox allow-scripts;",
+         "not": {
+          "pattern": "allow-same-origin"
+         }
+        },
+        "example": "sandbox allow-scripts; default-src 'none'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src blob:; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'"
+       },
+       "Access-Control-Allow-Origin": {
+        "required": true,
+        "schema": {
+         "const": "*"
+        }
+       },
+       "X-Content-Type-Options": {
+        "schema": {
+         "const": "nosniff"
+        }
+       }
+      },
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "text/javascript": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "text/css": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "application/wasm": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "application/json": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "font/woff2": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "502": {
+      "$ref": "#/components/responses/ProxyUnreachable"
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "Error": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "error": {
+      "type": "string",
+      "description": "A sentence the page prints."
+     }
+    },
+    "required": [
+     "error"
+    ],
+    "description": "Every error, from the source or from the console's proxy.",
+    "examples": [
+     {
+      "error": "no job weekly-digestx"
+     }
+    ]
+   },
+   "Tone": {
+    "type": "string",
+    "enum": [
+     "ok",
+     "faint",
+     "danger",
+     "pending",
+     "muted",
+     "accent"
+    ],
+    "description": "The colour a word is printed in. It only ever repeats the word beside it. ok: a run that found something (notable). faint: a run that stayed silent. danger: a failure. pending: running, or changed and not yet re-run. muted: a neutral fact with no status, such as when a collector last moved. accent: the console's own emphasis, for a tagged commit or the next run. A new tone is a design decision: it is added here only after the designer assigns it a meaning. A page shown a tone it does not know prints the word muted."
+   },
+   "Status": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "word": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Printed verbatim."
+     },
+     "tone": {
+      "$ref": "#/components/schemas/Tone"
+     }
+    },
+    "required": [
+     "word",
+     "tone"
+    ],
+    "description": "A status: the word the source chose, and its tone."
+   },
+   "RunStatus": {
+    "description": "A run's status. The word set is closed, and each word has one tone (x-tones). A run made of stages is failed if any stage failed, else running if any stage runs, else the status of its last stage that ran. skipped is faint, like silent: nothing ran.",
+    "oneOf": [
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "word": {
+        "const": "notable"
+       },
+       "tone": {
+        "const": "ok"
+       }
+      },
+      "required": [
+       "word",
+       "tone"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "word": {
+        "const": "silent"
+       },
+       "tone": {
+        "const": "faint"
+       }
+      },
+      "required": [
+       "word",
+       "tone"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "word": {
+        "const": "failed"
+       },
+       "tone": {
+        "const": "danger"
+       }
+      },
+      "required": [
+       "word",
+       "tone"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "word": {
+        "const": "running"
+       },
+       "tone": {
+        "const": "pending"
+       }
+      },
+      "required": [
+       "word",
+       "tone"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "word": {
+        "const": "skipped"
+       },
+       "tone": {
+        "const": "faint"
+       }
+      },
+      "required": [
+       "word",
+       "tone"
+      ]
+     }
+    ],
+    "x-tones": {
+     "notable": "ok",
+     "silent": "faint",
+     "failed": "danger",
+     "running": "pending",
+     "skipped": "faint"
+    }
+   },
+   "Label": {
+    "type": "string",
+    "enum": [
+     "useful",
+     "not_useful",
+     "wrong"
+    ],
+    "description": "The operator's verdict on a finding."
+   },
+   "Cell": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "text": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "tone": {
+      "$ref": "#/components/schemas/Tone"
+     }
+    },
+    "required": [
+     "text",
+     "tone"
+    ]
+   },
+   "DiffLine": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "op": {
+      "type": "string",
+      "enum": [
+       "+",
+       "-",
+       " ",
+       "⋯"
+      ],
+      "description": "+ added, - removed, a space for context, ⋯ between hunks."
+     },
+     "text": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "op",
+     "text"
+    ]
+   },
+   "File": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "path": {
+      "type": "string"
+     },
+     "added": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "removed": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "truncated": {
+      "type": "boolean",
+      "description": "The source cut the diff short."
+     },
+     "lines": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/DiffLine"
+      }
+     }
+    },
+    "required": [
+     "path",
+     "added",
+     "removed",
+     "truncated",
+     "lines"
+    ]
+   },
+   "RunRef": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "label": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9._:-]+$",
+      "description": "The job version the run used: an opaque id the source defines. The page prints it and passes it back (as jobs/{job}/diff's from or to); it never parses it."
+     },
+     "code_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "description": "Optional. The code the run executed, as the source names it; opaque to the page."
+     },
+     "status": {
+      "$ref": "#/components/schemas/RunStatus"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "version",
+     "status"
+    ]
+   },
+   "Change": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "title": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "line": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "change": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{4,40}$"
+     }
+    },
+    "required": [
+     "title",
+     "line",
+     "change"
+    ],
+    "description": "An applied change, linking to its receipt."
+   },
+   "JobRow": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+     },
+     "name": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "line": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "status": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Status"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "model",
+       "collector",
+       "code"
+      ]
+     },
+     "runnable": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "line",
+     "status",
+     "kind",
+     "runnable"
+    ]
+   },
+   "JobList": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "as_of_ms": {
+      "type": "integer"
+     },
+     "banner": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Change"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "summary": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "groups": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "properties": {
+        "name": {
+         "type": "string",
+         "description": "A scope; empty for jobs with none."
+        },
+        "note": {
+         "type": "string",
+         "description": "Display text the source composed for this place. Printed as text."
+        },
+        "jobs": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/JobRow"
+         }
+        }
+       },
+       "required": [
+        "name",
+        "note",
+        "jobs"
+       ]
+      }
+     }
+    },
+    "required": [
+     "as_of_ms",
+     "banner",
+     "summary",
+     "groups"
+    ],
+    "description": "J1. The banner is the newest applied change from the last 7 days that has not been reverted. The page hides it on a device once that change's receipt (getChange) has been opened there.",
+    "examples": [
+     {
+      "as_of_ms": 1795400000000,
+      "banner": {
+       "title": "tune changed weekly-digest:draft",
+       "line": "43ade4c · 10 h ago · replay gate passed",
+       "change": "43ade4c"
+      },
+      "summary": "3 jobs · 1 scope",
+      "groups": [
+       {
+        "name": "news",
+        "note": "notifications muted to Dec 7",
+        "jobs": [
+         {
+          "id": "weekly-digest",
+          "name": "weekly-digest",
+          "line": "weekly Mon 20:00 · 3 stages · on 43ade4c · ran 10 h ago",
+          "status": {
+           "word": "notable",
+           "tone": "ok"
+          },
+          "kind": "model",
+          "runnable": true
+         },
+         {
+          "id": "feed-poll",
+          "name": "feed poll",
+          "line": "collector · daily 06:30",
+          "status": {
+           "word": "143 of 144 answered",
+           "tone": "muted"
+          },
+          "kind": "collector",
+          "runnable": true
+         }
+        ]
+       },
+       {
+        "name": "",
+        "note": "1 job",
+        "jobs": [
+         {
+          "id": "phone-sync",
+          "name": "phone sync",
+          "line": "collector · every 15 min",
+          "status": {
+           "word": "2 min ago",
+           "tone": "muted"
+          },
+          "kind": "collector",
+          "runnable": false
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "Progress": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "used": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "cap": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "segments": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "properties": {
+        "n": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "label": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "n",
+        "label"
+       ]
+      }
+     }
+    },
+    "required": [
+     "used",
+     "cap",
+     "segments"
+    ]
+   },
+   "Stage": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "status": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/RunStatus"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "reached": {
+      "type": "boolean",
+      "description": "False for a stage the run never reached, and for trigger and deliver."
+     },
+     "lines": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "description": "Display text the source composed for this place. Printed as text."
+      }
+     },
+     "mono": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "description": "Display text the source composed for this place. Printed as text."
+      }
+     },
+     "out": {
+      "anyOf": [
+       {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "changed": {
+      "type": "boolean",
+      "description": "This stage's prompt or knobs changed after the run."
+     },
+     "progress": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Progress"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "name",
+     "status",
+     "reached",
+     "lines",
+     "mono",
+     "out",
+     "changed",
+     "progress"
+    ]
+   },
+   "Job": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+     },
+     "name": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "scope": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "model",
+       "collector",
+       "code"
+      ]
+     },
+     "header": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "line": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       "sub": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       }
+      },
+      "required": [
+       "line",
+       "sub"
+      ]
+     },
+     "runs": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/RunRef"
+      },
+      "description": "Live runs, newest first."
+     },
+     "run": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/RunRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "drift": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Change"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "stages": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Stage"
+      }
+     },
+     "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "run_now": {
+        "type": "boolean"
+       },
+       "replay": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "run_now",
+       "replay"
+      ]
+     },
+     "auto_apply": {
+      "type": "boolean"
+     },
+     "auto_apply_job": {
+      "anyOf": [
+       {
+        "type": "string",
+        "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "gate_rule": {
+      "anyOf": [
+       {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "pinned": {
+      "anyOf": [
+       {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+         "title": {
+          "type": "string",
+          "description": "Display text the source composed for this place. Printed as text."
+         },
+         "line": {
+          "anyOf": [
+           {
+            "type": "string",
+            "description": "Display text the source composed for this place. Printed as text."
+           },
+           {
+            "type": "null"
+           }
+          ]
+         }
+        },
+        "required": [
+         "title",
+         "line"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "pinned_run": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "replay_note": {
+      "anyOf": [
+       {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "scope",
+     "kind",
+     "header",
+     "runs",
+     "run",
+     "drift",
+     "stages",
+     "actions",
+     "auto_apply",
+     "auto_apply_job",
+     "gate_rule",
+     "pinned",
+     "pinned_run",
+     "replay_note"
+    ],
+    "description": "J2.",
+    "examples": [
+     {
+      "id": "weekly-digest",
+      "name": "weekly-digest",
+      "scope": "news",
+      "kind": "model",
+      "header": {
+       "line": "news · weekly Mon 20:00 · next run in 9 h",
+       "sub": "config 43ade4c · 3 prompts"
+      },
+      "runs": [
+       {
+        "id": "a1b2c3d4",
+        "label": "Nov 23 00:51",
+        "version": "b39469d",
+        "code_version": "b39469d",
+        "status": {
+         "word": "notable",
+         "tone": "ok"
+        }
+       }
+      ],
+      "run": {
+       "id": "a1b2c3d4",
+       "label": "Nov 23 00:51",
+       "version": "b39469d",
+       "code_version": "b39469d",
+       "status": {
+        "word": "notable",
+        "tone": "ok"
+       }
+      },
+      "drift": {
+       "title": "draft changed after this run",
+       "line": "43ade4c · by tune",
+       "change": "43ade4c"
+      },
+      "stages": [
+       {
+        "name": "trigger",
+        "status": null,
+        "reached": false,
+        "lines": [
+         "timer · Mon 20:00, or Run now"
+        ],
+        "mono": [],
+        "out": null,
+        "changed": false,
+        "progress": null
+       },
+       {
+        "name": "draft",
+        "status": {
+         "word": "notable",
+         "tone": "ok"
+        },
+        "reached": true,
+        "lines": [
+         "WebSearch · 3 m 5 s · $0.46"
+        ],
+        "mono": [
+         "45 of 60 calls · 12 search · 33 fetch"
+        ],
+        "out": "39 verified quotes",
+        "changed": true,
+        "progress": {
+         "used": 45,
+         "cap": 60,
+         "segments": [
+          {
+           "n": 12,
+           "label": "search"
+          },
+          {
+           "n": 33,
+           "label": "fetch"
+          }
+         ]
+        }
+       }
+      ],
+      "actions": {
+       "run_now": true,
+       "replay": true
+      },
+      "auto_apply": true,
+      "auto_apply_job": "weekly-digest:draft",
+      "gate_rule": "gate: ≥3 pairs · kept not lower · no more failures · cost ≤ 2×",
+      "pinned": {
+       "title": "run Nov 23 00:51 is the replay fixture",
+       "line": "its prompts and inputs are stored"
+      },
+      "pinned_run": "a1b2c3d4",
+      "replay_note": "Re-runs this run's stored input with today's prompts. A replay publishes nothing."
+     }
+    ]
+   },
+   "HistoryItem": {
+    "oneOf": [
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "type": {
+        "const": "commit"
+       },
+       "sha": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{4,40}$"
+       },
+       "subject": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       "line": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       "head": {
+        "type": "boolean"
+       },
+       "tag": {
+        "anyOf": [
+         {
+          "type": "string",
+          "description": "Display text the source composed for this place. Printed as text."
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "by_tune": {
+        "type": "boolean"
+       },
+       "change": {
+        "anyOf": [
+         {
+          "type": "string",
+          "pattern": "^[0-9a-f]{4,40}$"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "type",
+       "sha",
+       "subject",
+       "line",
+       "head",
+       "tag",
+       "by_tune",
+       "change"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "type": {
+        "const": "empty"
+       },
+       "text": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       }
+      },
+      "required": [
+       "type",
+       "text"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "type": {
+        "const": "shared"
+       },
+       "text": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       "commits": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "sha": {
+           "type": "string",
+           "pattern": "^[0-9a-f]{4,40}$"
+          },
+          "subject": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          },
+          "line": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          }
+         },
+         "required": [
+          "sha",
+          "subject",
+          "line"
+         ]
+        }
+       }
+      },
+      "required": [
+       "type",
+       "text",
+       "commits"
+      ],
+      "description": "Changes between two of the job's versions that are not versions of it but that the source judges could still affect it, folded into one row."
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "type": {
+        "const": "run"
+       },
+       "id": {
+        "type": "string"
+       },
+       "title": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       "line": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       "version": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "pattern": "^[A-Za-z0-9._:-]+$",
+        "description": "The job version the run used: an opaque id the source defines. The page prints it and passes it back (as jobs/{job}/diff's from or to); it never parses it."
+       },
+       "code_version": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "description": "Optional. The code the run executed, as the source names it; opaque to the page."
+       },
+       "cells": {
+        "anyOf": [
+         {
+          "type": "array",
+          "items": {
+           "anyOf": [
+            {
+             "$ref": "#/components/schemas/Cell"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          }
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "span": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/Cell"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "type",
+       "id",
+       "title",
+       "line",
+       "version",
+       "cells",
+       "span"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "type": {
+        "const": "replays"
+       },
+       "title": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       "line": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       "replay_of": {
+        "type": "string"
+       },
+       "ids": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "rows": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "grid": {
+        "type": "array",
+        "items": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Status"
+         }
+        }
+       },
+       "note": {
+        "anyOf": [
+         {
+          "type": "string",
+          "description": "Display text the source composed for this place. Printed as text."
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "type",
+       "title",
+       "line",
+       "replay_of",
+       "ids",
+       "rows",
+       "grid",
+       "note"
+      ]
+     }
+    ]
+   },
+   "History": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "columns": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/HistoryItem"
+      }
+     },
+     "more": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "columns",
+     "items",
+     "more"
+    ],
+    "description": "J3. The job's versions, newest first, `limit` of them, with a run under the version it ran on. The source decides which changes are versions of a job, and which other changes it folds into a shared item between two versions because they could still affect the job.",
+    "examples": [
+     {
+      "columns": [
+       "gather",
+       "draft",
+       "check"
+      ],
+      "more": true,
+      "items": [
+       {
+        "type": "commit",
+        "sha": "43ade4c",
+        "subject": "Apply a replay-gated change",
+        "line": "by tune · today 01:13 · HEAD",
+        "head": true,
+        "tag": "by tune",
+        "by_tune": true,
+        "change": "43ade4c"
+       },
+       {
+        "type": "empty",
+        "text": "no runs on this version yet · next Mon 20:00"
+       },
+       {
+        "type": "shared",
+        "text": "2 commits to shared code ›",
+        "commits": [
+         {
+          "sha": "c3b92bd",
+          "subject": "Add requirement terms",
+          "line": "today 18:31"
+         },
+         {
+          "sha": "d85167d",
+          "subject": "Run the review as a specialist",
+          "line": "today 18:28"
+         }
+        ]
+       },
+       {
+        "type": "replays",
+        "title": "6 replays of 00:51",
+        "line": "3 baseline · 3 candidate · 1 failed",
+        "replay_of": "a1b2c3d4",
+        "ids": [
+         "e1",
+         "e2"
+        ],
+        "rows": [
+         "baseline",
+         "candidate"
+        ],
+        "grid": [
+         [
+          {
+           "word": "failed",
+           "tone": "danger"
+          },
+          {
+           "word": "notable",
+           "tone": "ok"
+          }
+         ],
+         [
+          {
+           "word": "notable",
+           "tone": "ok"
+          },
+          {
+           "word": "silent",
+           "tone": "faint"
+          }
+         ]
+        ],
+        "note": "draft only"
+       },
+       {
+        "type": "run",
+        "id": "a1b2c3d4",
+        "title": "Nov 23 00:51",
+        "line": "notable · 5 kept · $1.04",
+        "version": "b39469d",
+        "code_version": "b39469d",
+        "cells": [
+         {
+          "text": "$0.27",
+          "tone": "ok"
+         },
+         {
+          "text": "$0.46",
+          "tone": "ok"
+         },
+         null
+        ],
+        "span": null
+       }
+      ]
+     }
+    ]
+   },
+   "Diff": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "from": {
+      "type": "string"
+     },
+     "to": {
+      "type": "string"
+     },
+     "files": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/File"
+      }
+     }
+    },
+    "required": [
+     "from",
+     "to",
+     "files"
+    ],
+    "description": "What changed in the job's definition, settings and prompts between two of its versions.",
+    "examples": [
+     {
+      "from": "b39469d",
+      "to": "43ade4c",
+      "files": [
+       {
+        "path": "prompts/weekly-digest-draft.md",
+        "added": 1,
+        "removed": 1,
+        "truncated": false,
+        "lines": [
+         {
+          "op": "-",
+          "text": "old wording"
+         },
+         {
+          "op": "+",
+          "text": "new wording"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "Gate": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "status": {
+      "$ref": "#/components/schemas/Status"
+     },
+     "line": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "rows": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "properties": {
+        "label": {
+         "type": "string",
+         "description": "Display text the source composed for this place. Printed as text."
+        },
+        "before": {
+         "type": "string",
+         "description": "Display text the source composed for this place. Printed as text."
+        },
+        "after": {
+         "type": "string",
+         "description": "Display text the source composed for this place. Printed as text."
+        }
+       },
+       "required": [
+        "label",
+        "before",
+        "after"
+       ]
+      }
+     },
+     "checks": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "properties": {
+        "label": {
+         "type": "string",
+         "description": "Display text the source composed for this place. Printed as text."
+        },
+        "passed": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "label",
+        "passed"
+       ]
+      }
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "decision_id": {
+      "type": "string"
+     },
+     "fixtures": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "The stored runs the pairs replayed."
+     },
+     "pair_runs": {
+      "type": "array",
+      "items": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "minItems": 2,
+       "maxItems": 2
+      },
+      "description": "[baseline run, candidate run] per pair."
+     }
+    },
+    "required": [
+     "status",
+     "line",
+     "rows",
+     "checks",
+     "note",
+     "decision_id",
+     "fixtures",
+     "pair_runs"
+    ]
+   },
+   "ChangeReceipt": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{4,40}$"
+     },
+     "job": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "line": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "gate": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Gate"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "diff": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/File"
+      }
+     },
+     "auto_apply": {
+      "type": "boolean"
+     },
+     "auto_apply_job": {
+      "anyOf": [
+       {
+        "type": "string",
+        "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "revert": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "available": {
+        "type": "boolean"
+       },
+       "reason": {
+        "anyOf": [
+         {
+          "type": "string",
+          "description": "Display text the source composed for this place. Printed as text."
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "available",
+       "reason"
+      ]
+     }
+    },
+    "required": [
+     "sha",
+     "job",
+     "title",
+     "line",
+     "gate",
+     "diff",
+     "auto_apply",
+     "auto_apply_job",
+     "revert"
+    ],
+    "description": "J4.",
+    "examples": [
+     {
+      "sha": "43ade4c",
+      "job": "weekly-digest",
+      "title": "weekly-digest:draft prompt changed",
+      "line": "applied by tune · today 01:13 · auto-apply is on",
+      "gate": {
+       "status": {
+        "word": "replay gate · passed",
+        "tone": "ok"
+       },
+       "line": "3 paired replays of the Nov 23 00:51 run",
+       "rows": [
+        {
+         "label": "findings kept",
+         "before": "2",
+         "after": "3"
+        }
+       ],
+       "checks": [
+        {
+         "label": "at least 3 pairs",
+         "passed": true
+        }
+       ],
+       "note": null,
+       "decision_id": "82aa86603af5",
+       "fixtures": [
+        "a1b2c3d4"
+       ],
+       "pair_runs": [
+        [
+         "e1",
+         "e2"
+        ]
+       ]
+      },
+      "diff": [
+       {
+        "path": "prompts/weekly-digest-draft.md",
+        "added": 1,
+        "removed": 1,
+        "truncated": false,
+        "lines": [
+         {
+          "op": "-",
+          "text": "old wording"
+         },
+         {
+          "op": "+",
+          "text": "new wording"
+         }
+        ]
+       }
+      ],
+      "auto_apply": true,
+      "auto_apply_job": "weekly-digest:draft",
+      "revert": {
+       "available": true,
+       "reason": null
+      }
+     }
+    ]
+   },
+   "Finding": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "kind": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "label": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Label"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "rejected": {
+      "anyOf": [
+       {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+         "word": {
+          "type": "string",
+          "description": "Display text the source composed for this place. Printed as text."
+         },
+         "line": {
+          "anyOf": [
+           {
+            "type": "string",
+            "description": "Display text the source composed for this place. Printed as text."
+           },
+           {
+            "type": "null"
+           }
+          ]
+         }
+        },
+        "required": [
+         "word",
+         "line"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "id",
+     "title",
+     "kind",
+     "label",
+     "rejected"
+    ]
+   },
+   "Run": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "job": {
+      "type": "string"
+     },
+     "replay_of": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9._:-]+$",
+      "description": "The job version the run used: an opaque id the source defines. The page prints it and passes it back (as jobs/{job}/diff's from or to); it never parses it."
+     },
+     "code_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "description": "Optional. The code the run executed, as the source names it; opaque to the page."
+     },
+     "status": {
+      "$ref": "#/components/schemas/RunStatus"
+     },
+     "line": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "tiles": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "properties": {
+        "label": {
+         "type": "string",
+         "description": "Display text the source composed for this place. Printed as text."
+        },
+        "value": {
+         "type": "string",
+         "description": "Display text the source composed for this place. Printed as text."
+        },
+        "sub": {
+         "type": "string",
+         "description": "Display text the source composed for this place. Printed as text."
+        }
+       },
+       "required": [
+        "label",
+        "value",
+        "sub"
+       ]
+      }
+     },
+     "findings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "heading": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       "items": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/Finding"
+        }
+       },
+       "more": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "heading",
+       "items",
+       "more"
+      ]
+     },
+     "events": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "replayable": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "id",
+     "title",
+     "job",
+     "replay_of",
+     "version",
+     "status",
+     "line",
+     "tiles",
+     "findings",
+     "events",
+     "replayable"
+    ],
+    "description": "J5.",
+    "examples": [
+     {
+      "id": "a1b2c3d4",
+      "title": "run Nov 23 00:51",
+      "job": "weekly-digest",
+      "replay_of": null,
+      "version": "b39469d",
+      "code_version": "b39469d",
+      "status": {
+       "word": "notable",
+       "tone": "ok"
+      },
+      "line": "on b39469d · 3 stage configs stored · replayable",
+      "tiles": [
+       {
+        "label": "cost",
+        "value": "$1.04",
+        "sub": "gather .27 · draft .46 · check .32"
+       }
+      ],
+      "findings": {
+       "heading": "findings · 2 kept · 1 rejected",
+       "more": 0,
+       "items": [
+        {
+         "id": "f1",
+         "title": "A finding",
+         "kind": "vocabulary",
+         "label": "useful",
+         "rejected": null
+        },
+        {
+         "id": "f2",
+         "title": "A rejected finding",
+         "kind": "belief update",
+         "label": null,
+         "rejected": {
+          "word": "rejected · numbers not in the input",
+          "line": null
+         }
+        }
+       ]
+      },
+      "events": 162,
+      "replayable": true
+     }
+    ]
+   },
+   "Events": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "events": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "properties": {
+        "seq": {
+         "type": "integer"
+        },
+        "type": {
+         "type": "string"
+        },
+        "subtype": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "stage": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "text": {
+         "type": "string",
+         "description": "One line. Raw model output: printed as text."
+        }
+       },
+       "required": [
+        "seq",
+        "type",
+        "subtype",
+        "text"
+       ]
+      }
+     },
+     "more": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "events",
+     "more"
+    ],
+    "examples": [
+     {
+      "events": [
+       {
+        "seq": 0,
+        "type": "system",
+        "subtype": "init",
+        "stage": "draft",
+        "text": "session started"
+       }
+      ],
+      "more": false
+     }
+    ]
+   },
+   "CommitRow": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{4,40}$"
+     },
+     "subject": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "line": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "tag": {
+      "anyOf": [
+       {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "by_tune": {
+      "type": "boolean"
+     },
+     "change": {
+      "anyOf": [
+       {
+        "type": "string",
+        "pattern": "^[0-9a-f]{4,40}$"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "sha",
+     "subject",
+     "line",
+     "tag",
+     "by_tune",
+     "change"
+    ]
+   },
+   "Repo": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "status": {
+      "$ref": "#/components/schemas/Status"
+     },
+     "line": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "summary": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "jobs": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "commits": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/CommitRow"
+      }
+     }
+    },
+    "required": [
+     "name",
+     "status",
+     "line",
+     "summary",
+     "jobs",
+     "commits"
+    ],
+    "description": "J6.",
+    "examples": [
+     {
+      "name": "jobs-repo",
+      "status": {
+       "word": "clean",
+       "tone": "muted"
+      },
+      "line": "main · no remote · last commit 10 h ago",
+      "summary": "11 · 1 by tune",
+      "jobs": 3,
+      "commits": [
+       {
+        "sha": "43ade4c",
+        "subject": "Apply a replay-gated change",
+        "line": "01:13 · prompts · no runs yet",
+        "tag": "by tune",
+        "by_tune": true,
+        "change": "43ade4c"
+       }
+      ]
+     }
+    ]
+   },
+   "Commit": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{4,40}$"
+     },
+     "subject": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "body": {
+      "type": "string"
+     },
+     "line": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "tag": {
+      "anyOf": [
+       {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "by_tune": {
+      "type": "boolean"
+     },
+     "change": {
+      "anyOf": [
+       {
+        "type": "string",
+        "pattern": "^[0-9a-f]{4,40}$"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "runs": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "label": {
+         "type": "string",
+         "description": "Display text the source composed for this place. Printed as text."
+        },
+        "status": {
+         "$ref": "#/components/schemas/RunStatus"
+        }
+       },
+       "required": [
+        "id",
+        "label",
+        "status"
+       ]
+      }
+     },
+     "files": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/File"
+      }
+     }
+    },
+    "required": [
+     "sha",
+     "subject",
+     "body",
+     "line",
+     "tag",
+     "by_tune",
+     "change",
+     "files"
+    ],
+    "examples": [
+     {
+      "sha": "43ade4c",
+      "subject": "Apply a replay-gated change",
+      "body": "Applied-by: sensorium tune",
+      "line": "today 01:13",
+      "tag": "by tune",
+      "by_tune": true,
+      "change": "43ade4c",
+      "runs": [
+       {
+        "id": "a1b2c3d4",
+        "label": "Nov 23 00:51",
+        "status": {
+         "word": "notable",
+         "tone": "ok"
+        }
+       }
+      ],
+      "files": [
+       {
+        "path": "prompts/weekly-digest-draft.md",
+        "added": 1,
+        "removed": 1,
+        "truncated": false,
+        "lines": [
+         {
+          "op": "-",
+          "text": "old wording"
+         },
+         {
+          "op": "+",
+          "text": "new wording"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "Graph": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "columns": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "nodes": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "col": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "row": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "title": {
+         "type": "string",
+         "description": "Display text the source composed for this place. Printed as text."
+        },
+        "line": {
+         "type": "string",
+         "description": "Display text the source composed for this place. Printed as text."
+        },
+        "scope": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "status": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/Status"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "planned": {
+         "type": "boolean"
+        },
+        "job": {
+         "anyOf": [
+          {
+           "type": "string",
+           "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "stages": {
+         "anyOf": [
+          {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+             "name": {
+              "type": "string"
+             },
+             "text": {
+              "type": "string",
+              "description": "Display text the source composed for this place. Printed as text."
+             }
+            },
+            "required": [
+             "name",
+             "text"
+            ]
+           }
+          },
+          {
+           "type": "null"
+          }
+         ]
+        }
+       },
+       "required": [
+        "id",
+        "col",
+        "row",
+        "title",
+        "line",
+        "scope",
+        "status",
+        "planned",
+        "job",
+        "stages"
+       ]
+      }
+     },
+     "edges": {
+      "type": "array",
+      "items": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "minItems": 2,
+       "maxItems": 2
+      }
+     },
+     "note": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "properties": {
+        "col": {
+         "type": "integer"
+        },
+        "row": {
+         "type": "integer"
+        },
+        "text": {
+         "type": "string",
+         "description": "Display text the source composed for this place. Printed as text."
+        }
+       },
+       "required": [
+        "col",
+        "row",
+        "text"
+       ]
+      }
+     },
+     "lane": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "repo": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       "commits": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "sha": {
+           "type": "string",
+           "pattern": "^[0-9a-f]{4,40}$"
+          },
+          "time": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          },
+          "tag": {
+           "anyOf": [
+            {
+             "type": "string",
+             "description": "Display text the source composed for this place. Printed as text."
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "by_tune": {
+           "type": "boolean"
+          }
+         },
+         "required": [
+          "sha",
+          "time",
+          "tag",
+          "by_tune"
+         ]
+        }
+       },
+       "jobs": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "name": {
+           "type": "string"
+          },
+          "marks": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+             "sha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{4,40}$"
+             },
+             "text": {
+              "type": "string",
+              "description": "Display text the source composed for this place. Printed as text."
+             },
+             "tone": {
+              "$ref": "#/components/schemas/Tone"
+             }
+            },
+            "required": [
+             "sha",
+             "text",
+             "tone"
+            ]
+           }
+          }
+         },
+         "required": [
+          "name",
+          "marks"
+         ]
+        }
+       }
+      },
+      "required": [
+       "commits",
+       "jobs"
+      ]
+     }
+    },
+    "required": [
+     "columns",
+     "nodes",
+     "edges",
+     "lane"
+    ],
+    "description": "D1.",
+    "examples": [
+     {
+      "columns": [
+       "sources",
+       "collectors",
+       "tables",
+       "derived",
+       "model jobs",
+       "outputs",
+       "phone"
+      ],
+      "nodes": [
+       {
+        "id": "feed",
+        "col": 0,
+        "row": 0,
+        "title": "feed",
+        "line": "public",
+        "scope": null,
+        "status": null,
+        "planned": false,
+        "job": null,
+        "stages": null
+       },
+       {
+        "id": "weekly-digest",
+        "col": 4,
+        "row": 0,
+        "title": "weekly-digest",
+        "line": "Mon 20:00 · 3 stages",
+        "scope": "news",
+        "status": {
+         "word": "notable",
+         "tone": "ok"
+        },
+        "planned": false,
+        "job": "weekly-digest",
+        "stages": [
+         {
+          "name": "draft",
+          "text": "$0.46"
+         }
+        ]
+       }
+      ],
+      "edges": [
+       [
+        "feed",
+        "weekly-digest"
+       ]
+      ],
+      "note": [
+       {
+        "col": 0,
+        "row": 0,
+        "text": "a caption"
+       }
+      ],
+      "lane": {
+       "repo": "jobs-repo main",
+       "commits": [
+        {
+         "sha": "43ade4c",
+         "time": "01:13",
+         "tag": "by tune",
+         "by_tune": true
+        }
+       ],
+       "jobs": [
+        {
+         "name": "weekly-digest",
+         "marks": [
+          {
+           "sha": "43ade4c",
+           "text": "next",
+           "tone": "accent"
+          }
+         ]
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "Where": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "column": {
+      "type": "string"
+     },
+     "value": {
+      "type": [
+       "string",
+       "number",
+       "boolean"
+      ]
+     }
+    },
+    "required": [
+     "column",
+     "value"
+    ]
+   },
+   "ControlItem": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "type": {
+      "type": "string",
+      "enum": [
+       "mute",
+       "run",
+       "auto_apply"
+      ]
+     },
+     "scope": {
+      "type": "string"
+     },
+     "job": {
+      "type": "string"
+     },
+     "label": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     }
+    },
+    "required": [
+     "type"
+    ]
+   },
+   "Binding": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "source": {
+      "type": "string"
+     },
+     "value": {
+      "type": "string"
+     },
+     "where": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+       "$ref": "#/components/schemas/Where"
+      }
+     },
+     "window": {
+      "type": "string",
+      "enum": [
+       "latest",
+       "current",
+       "all"
+      ]
+     },
+     "compare": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 52,
+      "description": "Previous periods to sum."
+     },
+     "period": {
+      "type": "string",
+      "enum": [
+       "day",
+       "week",
+       "month"
+      ]
+     },
+     "count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 60
+     },
+     "style": {
+      "type": "string",
+      "enum": [
+       "bars",
+       "line"
+      ]
+     },
+     "end": {
+      "type": "string",
+      "enum": [
+       "current",
+       "latest"
+      ]
+     },
+     "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+     },
+     "group": {
+      "type": "string"
+     },
+     "values": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "columns": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+       "type": "string"
+      }
+     },
+     "order": {
+      "type": "string"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ControlItem"
+      }
+     },
+     "text": {
+      "type": "string",
+      "maxLength": 500
+     },
+     "app": {
+      "type": "string",
+      "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+     }
+    },
+    "required": [],
+    "description": "Structured only: the source never runs query text a client sent. Each kind reads the fields it needs."
+   },
+   "Widget": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "number",
+       "series",
+       "table",
+       "tail",
+       "inbox",
+       "control",
+       "note",
+       "app"
+      ]
+     },
+     "title": {
+      "type": "string",
+      "maxLength": 120
+     },
+     "binding": {
+      "$ref": "#/components/schemas/Binding"
+     },
+     "x": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3,
+      "description": "Column on the 4-column desktop grid."
+     },
+     "y": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 512,
+      "description": "Row; a row is 72 CSS px on the desktop grid."
+     },
+     "w": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4,
+      "description": "Columns wide."
+     },
+     "h": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3,
+      "description": "Rows tall: 2 is a card (160 px), 3 a tall card (248 px)."
+     }
+    },
+    "required": [
+     "id",
+     "kind",
+     "title",
+     "binding",
+     "x",
+     "y",
+     "w",
+     "h"
+    ]
+   },
+   "Suggestion": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "title": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "line": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "widget": {
+      "$ref": "#/components/schemas/Widget"
+     }
+    },
+    "required": [
+     "title",
+     "line",
+     "widget"
+    ]
+   },
+   "Board": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "widgets": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+       "$ref": "#/components/schemas/Widget"
+      }
+     },
+     "version": {
+      "anyOf": [
+       {
+        "type": "string",
+        "pattern": "^[0-9a-f]{4,40}$"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "suggestions": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Suggestion"
+      }
+     }
+    },
+    "required": [
+     "widgets",
+     "version",
+     "suggestions"
+    ],
+    "examples": [
+     {
+      "widgets": [
+       {
+        "id": "games-lost-on-time",
+        "kind": "number",
+        "title": "Games lost on time",
+        "binding": {
+         "source": "games_weekly",
+         "value": "lost_on_time/games",
+         "where": [
+          {
+           "column": "time_class",
+           "value": "blitz"
+          }
+         ],
+         "window": "latest",
+         "compare": 6
+        },
+        "x": 0,
+        "y": 0,
+        "w": 1,
+        "h": 2
+       }
+      ],
+      "version": "a70f5be",
+      "suggestions": [
+       {
+        "title": "Games lost on time",
+        "line": "Number · games_weekly",
+        "widget": {
+         "id": "games-lost-on-time",
+         "kind": "number",
+         "title": "Games lost on time",
+         "binding": {
+          "source": "games_weekly",
+          "value": "lost_on_time/games",
+          "where": [
+           {
+            "column": "time_class",
+            "value": "blitz"
+           }
+          ],
+          "window": "latest",
+          "compare": 6
+         },
+         "x": 0,
+         "y": 0,
+         "w": 1,
+         "h": 2
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "BoardSources": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "sources": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "columns": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        },
+        "values": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+           "id": {
+            "type": "string"
+           },
+           "label": {
+            "type": "string",
+            "description": "Display text the source composed for this place. Printed as text."
+           }
+          },
+          "required": [
+           "id",
+           "label"
+          ]
+         }
+        },
+        "filters": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+           "column": {
+            "type": "string"
+           },
+           "values": {
+            "type": "array",
+            "items": {
+             "type": [
+              "string",
+              "number",
+              "boolean"
+             ]
+            }
+           }
+          },
+          "required": [
+           "column",
+           "values"
+          ]
+         }
+        },
+        "time": {
+         "type": "string",
+         "description": "week or month for a table already bucketed so, else the name of its epoch time column."
+        }
+       },
+       "required": [
+        "name",
+        "columns",
+        "values",
+        "filters",
+        "time"
+       ]
+      }
+     },
+     "kinds": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "periods": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "windows": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    },
+    "required": [
+     "sources",
+     "kinds",
+     "periods",
+     "windows"
+    ],
+    "examples": [
+     {
+      "sources": [
+       {
+        "name": "games_weekly",
+        "columns": [
+         "week",
+         "time_class",
+         "games",
+         "lost_on_time"
+        ],
+        "values": [
+         {
+          "id": "count",
+          "label": "rows"
+         },
+         {
+          "id": "lost_on_time/games",
+          "label": "lost_on_time ÷ games"
+         }
+        ],
+        "filters": [
+         {
+          "column": "time_class",
+          "values": [
+           "blitz",
+           "rapid"
+          ]
+         }
+        ],
+        "time": "week"
+       }
+      ],
+      "kinds": [
+       "number",
+       "series",
+       "table",
+       "tail",
+       "inbox",
+       "control",
+       "note",
+       "app"
+      ],
+      "periods": [
+       "day",
+       "week",
+       "month"
+      ],
+      "windows": [
+       "latest",
+       "current",
+       "all"
+      ]
+     }
+    ]
+   },
+   "Eval": {
+    "oneOf": [
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "value": {
+        "anyOf": [
+         {
+          "type": "string",
+          "description": "Display text the source composed for this place. Printed as text."
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "compare": {
+        "anyOf": [
+         {
+          "type": "string",
+          "description": "Display text the source composed for this place. Printed as text."
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "period": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       "foot": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       }
+      },
+      "required": [
+       "value",
+       "compare",
+       "period",
+       "foot"
+      ],
+      "description": "number"
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "bars": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "label": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          },
+          "value": {
+           "anyOf": [
+            {
+             "type": "number"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "text": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          }
+         },
+         "required": [
+          "label",
+          "value",
+          "text"
+         ]
+        }
+       },
+       "foot": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       }
+      },
+      "required": [
+       "bars",
+       "foot"
+      ],
+      "description": "series, bars"
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "line": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "label": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          },
+          "value": {
+           "anyOf": [
+            {
+             "type": "number"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "text": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          }
+         },
+         "required": [
+          "label",
+          "value",
+          "text"
+         ]
+        }
+       },
+       "foot": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       }
+      },
+      "required": [
+       "line",
+       "foot"
+      ],
+      "description": "series, line"
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "columns": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "rows": {
+        "type": "array",
+        "items": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        }
+       },
+       "foot": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       }
+      },
+      "required": [
+       "columns",
+       "rows",
+       "foot"
+      ],
+      "description": "table"
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "rows": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "time": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          },
+          "source": {
+           "type": "string"
+          },
+          "kind": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "time",
+          "source",
+          "kind"
+         ]
+        }
+       },
+       "foot": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       }
+      },
+      "required": [
+       "rows",
+       "foot"
+      ],
+      "description": "tail: kinds only, never an event's data"
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "items": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "id": {
+           "type": "string"
+          },
+          "title": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          },
+          "kind": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          },
+          "label": {
+           "anyOf": [
+            {
+             "$ref": "#/components/schemas/Label"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          }
+         },
+         "required": [
+          "id",
+          "title",
+          "kind",
+          "label"
+         ]
+        }
+       },
+       "foot": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       }
+      },
+      "required": [
+       "items",
+       "foot"
+      ],
+      "description": "inbox: kept findings with no label yet"
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "items": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "type": {
+           "type": "string",
+           "enum": [
+            "mute",
+            "run",
+            "auto_apply"
+           ]
+          },
+          "scope": {
+           "type": "string"
+          },
+          "job": {
+           "type": "string"
+          },
+          "label": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          },
+          "line": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          },
+          "on": {
+           "type": "boolean"
+          }
+         },
+         "required": [
+          "type",
+          "label"
+         ]
+        }
+       },
+       "foot": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       }
+      },
+      "required": [
+       "items",
+       "foot"
+      ],
+      "description": "control"
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "text": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       }
+      },
+      "required": [
+       "text"
+      ],
+      "description": "note: pinned text, nothing else"
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "app": {
+        "type": "string",
+        "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+       },
+       "tile": {
+        "$ref": "#/components/schemas/AppTile"
+       }
+      },
+      "required": [
+       "app",
+       "tile"
+      ],
+      "description": "app"
+     }
+    ],
+    "description": "What a widget shows, composed.",
+    "examples": [
+     {
+      "value": "7 of 16",
+      "compare": "previous 6 weeks: 10 of 64",
+      "period": "W47",
+      "foot": "games_weekly"
+     }
+    ]
+   },
+   "AppTile": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "title": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "line": {
+      "anyOf": [
+       {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "sub": {
+      "anyOf": [
+       {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "value": {
+      "anyOf": [
+       {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "fen": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "n": {
+      "type": "integer"
+     },
+     "action": {
+      "anyOf": [
+       {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "foot": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     }
+    },
+    "required": [
+     "title",
+     "line",
+     "foot"
+    ]
+   },
+   "Apps": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "apps": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "properties": {
+        "id": {
+         "type": "string",
+         "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$"
+        },
+        "title": {
+         "type": "string",
+         "description": "Display text the source composed for this place. Printed as text."
+        },
+        "grant": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "read": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          },
+          "write": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          }
+         },
+         "required": [
+          "read",
+          "write"
+         ]
+        }
+       },
+       "required": [
+        "id",
+        "title",
+        "grant"
+       ]
+      }
+     }
+    },
+    "required": [
+     "apps"
+    ],
+    "examples": [
+     {
+      "apps": [
+       {
+        "id": "chess-positions",
+        "title": "Chess positions",
+        "grant": {
+         "read": [
+          "run_id",
+          "week",
+          "positions.n",
+          "positions.fen"
+         ],
+         "write": [
+          "run_id",
+          "n",
+          "move"
+         ]
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "ChessData": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "run_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "week": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "positions": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "properties": {
+        "n": {
+         "type": "integer",
+         "minimum": 1
+        },
+        "fen": {
+         "type": "string"
+        },
+        "colour": {
+         "type": "string",
+         "enum": [
+          "white",
+          "black"
+         ]
+        },
+        "move_number": {
+         "type": "integer",
+         "minimum": 1
+        },
+        "phase": {
+         "type": "string",
+         "enum": [
+          "opening",
+          "middlegame",
+          "endgame"
+         ]
+        },
+        "game_move": {
+         "type": "string"
+        },
+        "engine_move": {
+         "type": "string"
+        },
+        "engine_line": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        },
+        "ep_lost": {
+         "type": "number",
+         "minimum": 0
+        },
+        "clock_s": {
+         "anyOf": [
+          {
+           "type": "number",
+           "minimum": 0
+          },
+          {
+           "type": "null"
+          }
+         ]
+        }
+       },
+       "required": [
+        "n",
+        "fen",
+        "colour",
+        "move_number",
+        "phase",
+        "game_move",
+        "engine_move",
+        "engine_line",
+        "ep_lost",
+        "clock_s"
+       ]
+      }
+     },
+     "tries": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "properties": {
+        "n": {
+         "type": "integer",
+         "minimum": 1
+        },
+        "move": {
+         "type": "string"
+        },
+        "found": {
+         "anyOf": [
+          {
+           "type": "boolean"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "ep_lost": {
+         "anyOf": [
+          {
+           "type": "number",
+           "minimum": 0
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "seconds": {
+         "type": "number",
+         "minimum": 0
+        }
+       },
+       "required": [
+        "n",
+        "move",
+        "found",
+        "ep_lost",
+        "seconds"
+       ],
+       "description": "A first try. found and ep_lost are null until the engine has scored it."
+      }
+     }
+    },
+    "required": [
+     "run_id",
+     "week",
+     "positions",
+     "tries"
+    ],
+    "description": "The chess-positions app's read grant, field for field. Opponent names, PGN, comments and chat have no field.",
+    "examples": [
+     {
+      "run_id": "947d9612",
+      "week": "2026-W48",
+      "positions": [
+       {
+        "n": 1,
+        "fen": "8/8/8/8/8/8/6k1/4K2R w K - 0 1",
+        "colour": "white",
+        "move_number": 32,
+        "phase": "endgame",
+        "game_move": "Re1",
+        "engine_move": "Kh6",
+        "engine_line": [
+         "Kh6",
+         "Rf7"
+        ],
+        "ep_lost": 0.81,
+        "clock_s": 3.1
+       }
+      ],
+      "tries": [
+       {
+        "n": 1,
+        "move": "Kh6",
+        "found": true,
+        "ep_lost": 0.0,
+        "seconds": 18
+       }
+      ]
+     }
+    ]
+   },
+   "ChessTry": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "run_id": {
+      "type": "string"
+     },
+     "n": {
+      "type": "integer",
+      "minimum": 1
+     },
+     "move": {
+      "type": "string",
+      "description": "SAN; rendered as text."
+     },
+     "uci": {
+      "type": "string",
+      "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$"
+     },
+     "found": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Must equal ep_lost <= 0.05; null until scored."
+     },
+     "ep_lost": {
+      "anyOf": [
+       {
+        "type": "number",
+        "minimum": 0
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "engine_move": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The try was exactly the engine move; null until scored."
+     },
+     "nodes": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 0
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "engine": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 64
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "seconds": {
+      "anyOf": [
+       {
+        "type": "number",
+        "minimum": 0
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "engine_ms": {
+      "anyOf": [
+       {
+        "type": "number",
+        "minimum": 0
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "submitted_ms": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "run_id",
+     "n",
+     "move",
+     "uci",
+     "found",
+     "ep_lost",
+     "engine_move",
+     "nodes",
+     "engine",
+     "seconds",
+     "engine_ms",
+     "submitted_ms"
+    ],
+    "description": "The chess-positions app's write grant, one row per first try. Submit writes the row at once with the verdict fields null, which locks the position; a later write with the same uci and a verdict scores it. A row that has a verdict is never scored again (409). seconds and submitted_ms are required on the first write and may be null on the scoring write, where the stored values stand.",
+    "examples": [
+     {
+      "run_id": "947d9612",
+      "n": 1,
+      "move": "Kh6",
+      "uci": "g5h6",
+      "found": true,
+      "ep_lost": 0.0,
+      "engine_move": true,
+      "nodes": 250000,
+      "engine": "Stockfish 18 lite single",
+      "seconds": 18,
+      "engine_ms": 1650,
+      "submitted_ms": 1795400000000
+     },
+     {
+      "run_id": "947d9612",
+      "n": 2,
+      "move": "Nxc1",
+      "uci": "e2c1",
+      "found": null,
+      "ep_lost": null,
+      "engine_move": null,
+      "nodes": null,
+      "engine": null,
+      "seconds": 41,
+      "engine_ms": null,
+      "submitted_ms": 1795400000000
+     }
+    ]
+   },
+   "AppData": {
+    "oneOf": [
+     {
+      "$ref": "#/components/schemas/ChessData"
+     }
+    ],
+    "description": "Per app: only the fields its grant reads."
+   },
+   "AppRow": {
+    "oneOf": [
+     {
+      "$ref": "#/components/schemas/ChessTry"
+     }
+    ],
+    "description": "Per app: only the fields its grant writes."
+   },
+   "Ok": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "ok": {
+      "const": true
+     }
+    },
+    "required": [
+     "ok"
+    ]
+   }
+  },
+  "responses": {
+   "BadRequest": {
+    "description": "The request was malformed: a body field, a query value, or a path the console's forwarder refused.",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Error"
+      },
+      "example": {
+       "error": "label: one of useful, not_useful, wrong"
+      }
+     }
+    }
+   },
+   "Unauthorized": {
+    "description": "The bearer token was missing or wrong. The console attaches it; a page never sees this unless the console's token file is stale.",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Error"
+      },
+      "example": {
+       "error": "unauthorized"
+      }
+     }
+    }
+   },
+   "NotFound": {
+    "description": "No such job, run, commit, change, app or file.",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Error"
+      },
+      "example": {
+       "error": "not found"
+      }
+     }
+    }
+   },
+   "Conflict": {
+    "description": "Well formed, but the state does not allow it: the board changed since it was opened, a position already has its first try, a job declares no command, or the change cannot be reverted cleanly.",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Error"
+      },
+      "example": {
+       "error": "the board changed since you opened it; reload and edit again"
+      }
+     }
+    }
+   },
+   "ServerError": {
+    "description": "The source failed, for example a git command.",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Error"
+      },
+      "example": {
+       "error": "git: index.lock exists"
+      }
+     }
+    }
+   },
+   "ProxyUnreachable": {
+    "description": "Answered by the console's proxy, never by a source: the source did not answer, redirected (a source must not; the console never follows one), sent a body shorter than its Content-Length or larger than the console's cap, or the console's token file could not be read.",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Error"
+      },
+      "example": {
+       "error": "jobs source reply truncated: 7 of 500 bytes"
+      }
+     }
+    }
+   }
+  },
+  "securitySchemes": {
+   "bearer": {
+    "type": "http",
+    "scheme": "bearer"
+   }
+  }
+ },
+ "x-text-formats": {
+  "duration": "21 s, 3 m 5 s, 1 h 4 m",
+  "age": "just now, N min ago, N h ago, N d ago",
+  "time": "today 01:13 for today, Nov 22 23:43 for another day",
+  "note": "Formats a source uses for display text. The page never parses them."
+ }
+}
