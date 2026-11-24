@@ -770,12 +770,18 @@ function laneView(lane) {
     h("span.d-tick-dot" + (c.tag || c.head ? ".on" : "")), c.sha, h("br"), c.time,
     c.tag ? h("span.d-tag.small", c.tag) : null));
   const width = LANE.x0 + commits.length * step + 40;
-  return h("section.d-lane",
+  const section = h("section.d-lane",
     h("div.d-lane-in", { style: { width: width + "px" } },
       h("span.s-label.d-lane-label", "versions" + (lane.repo ? " · " + lane.repo : "")),
       h("div.d-lane-rows", { style: { height: Math.min(jobs.length, LANE.rowsMax) * LANE.rowH + "px", width: width + "px" } },
         h("div.d-lane-rows-in", { style: { height: jobs.length * LANE.rowH + "px" } }, rows)),
       h("div.d-lane-axis", { style: { height: LANE.axisH + "px" } }, axis)));
+  // When the commits outgrow the pane, open scrolled to the newest, so it is the oldest
+  // that sit past the edge.
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => { section.scrollLeft = section.scrollWidth; });
+  }
+  return section;
 }
 
 const VERSIONS_SHOWN = 5;
