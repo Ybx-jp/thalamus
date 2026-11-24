@@ -57,6 +57,16 @@ const d = edgePath(boxes.a, boxes.b);
 check("an edge leaves the right edge of its source", d.startsWith(`M${boxes.a.x + boxes.a.w},`));
 check("and ends on the left edge of its target", d.includes(` ${boxes.b.x},`));
 
+suite("the banner hides once its receipt has been read on this device");
+const B = evaluate(extractFunction("sameCommit", jobs) + "\n" + extractFunction("bannerShown", jobs),
+  ["bannerShown"], {});
+const banner = { title: "t", line: "l", change: "43ade4c" };
+check("shown when nothing was read", B.bannerShown(banner, []) === true);
+check("hidden once that commit was read", B.bannerShown(banner, ["43ade4c"]) === false);
+check("an abbreviation of the same commit counts", B.bannerShown(banner, ["43ade4cc6e33"]) === false);
+check("another commit's receipt does not hide it", B.bannerShown(banner, ["5f1f622"]) === true);
+check("no banner, nothing shown", B.bannerShown(null, []) === false);
+
 suite("tones and words");
 const tone = evaluate(extractFunction("toneClass", surface), ["toneClass"],
   { TONES: ["ok", "danger", "pending", "muted", "accent"] });

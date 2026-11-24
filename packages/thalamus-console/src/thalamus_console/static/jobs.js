@@ -107,12 +107,40 @@ function paint(seq, ...nodes) {
 async function renderList(r, seq) {
   setChrome("jobs", "./");
   const data = await api("jobs");
-  paint(seq, listView(data));
+  paint(seq, listView(data, changesRead()));
 }
 
-function listView(data) {
+// The J1 banner announces an applied change until its receipt (J4) has been opened on
+// this device; the source's 7-day window stays the outer limit (designer ruling,
+// 2026-11-24). Kept per device in localStorage, keyed by commit, newest 50.
+const READ_KEY = "thalamus.jobs.changes-read";
+
+function changesRead() {
+  try {
+    const v = JSON.parse(localStorage.getItem(READ_KEY) || "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch (_) { return []; }
+}
+
+function markChangeRead(sha) {
+  if (!sha) return;
+  const read = changesRead().filter((x) => !sameCommit(x, sha));
+  read.push(sha);
+  try { localStorage.setItem(READ_KEY, JSON.stringify(read.slice(-50))); } catch (_) { /* private mode */ }
+}
+
+// Two abbreviations of one commit: one is a prefix of the other.
+function sameCommit(a, b) {
+  return !!a && !!b && (a.startsWith(b) || b.startsWith(a));
+}
+
+function bannerShown(banner, read) {
+  return !!banner && !read.some((sha) => sameCommit(sha, banner.change));
+}
+
+function listView(data, read = []) {
   const out = [];
-  if (data.banner) {
+  if (bannerShown(data.banner, read)) {
     out.push(h("a.j-banner", { href: link("#/change/" + encodeURIComponent(data.banner.change)) },
       h("span.grow",
         h("span.j-banner-title", data.banner.title),
@@ -335,7 +363,7 @@ function historyItem(it, cols) {
 async function renderChange(r, seq) {
   const d = await api("changes/" + encodeURIComponent(r.sha));
   setChrome("change " + d.sha, backTarget(r, { job: (d.job || "").split(":")[0] }));
-  paint(seq, changeView(d));
+  if (paint(seq, changeView(d))) markChangeRead(d.sha);
 }
 
 function changeView(d) {
