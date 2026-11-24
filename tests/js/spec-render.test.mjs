@@ -60,7 +60,8 @@ const constOf = (name, src) => {
 const surfaceFns = ["h", "appendKids", "toneClass", "statusWord", "hashHue", "scopeHue", "switchEl", "toast"];
 const jobsFns = ["listView", "bannerShown", "sameCommit", "jobRow", "link", "jobView", "runPicker", "stageItem", "progressBar", "jobActions",
   "armTwice", "historyView", "historyItem", "changeView", "gateCard", "diffCard", "changeFoot", "runView",
-  "findingRow", "repoView", "graphLayout", "edgePath", "graphView", "graphNode", "laneView", "selectEl"];
+  "findingRow", "repoView", "columnWidths", "graphLayout", "routeEdge", "graphView", "graphNode", "laneView", "selectEl",
+  "sharedItem", "commonIndent", "pickJob"];
 const F = evaluate(
   [...surfaceFns.map((n) => extractFunction(n, surface)), ...jobsFns.map((n) => extractFunction(n, jobs))].join("\n"),
   [...surfaceFns, ...jobsFns],
@@ -68,6 +69,7 @@ const F = evaluate(
     document, Node, window: {}, location: { hash: "" },
     TONES: constOf("TONES", surface), PALETTE: constOf("PALETTE", surface), MAIN_HUE: constOf("MAIN_HUE", surface),
     LABELS: constOf("LABELS", jobs), CANVAS: constOf("CANVAS", jobs), canvasState: constOf("canvasState", jobs),
+    LANE: constOf("LANE", jobs),
     api: async () => ({}), apiPost: async () => ({}), route: () => {}, replayOnHead: () => {},
     setTimeout: () => 0, clearTimeout: () => {},
   },

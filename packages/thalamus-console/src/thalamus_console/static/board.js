@@ -163,6 +163,30 @@ function phoneOrder(widgets) {
   return widgets.slice().sort((a, b) => a.y - b.y || a.x - b.x).map((w) => w.id);
 }
 
+// The phone's flow: reading order, except that a narrow card pulls the next narrow card
+// from its own desktop row up beside it (B1 puts the two numbers side by side and the
+// wide series under them). A narrow card left with no narrow neighbour stretches to
+// both columns rather than leaving a dead one. Display only; the stored layout is
+// untouched. Returns the order and each card's span (1 or 2).
+function phoneFlow(widgets) {
+  const byId = new Map(widgets.map((w) => [w.id, w]));
+  const queue = phoneOrder(widgets).map((id) => byId.get(id));
+  const order = [];
+  const spans = {};
+  while (queue.length) {
+    const w = queue.shift();
+    order.push(w.id);
+    if (Math.min(2, w.w) === 2) { spans[w.id] = 2; continue; }
+    const k = queue.findIndex((o) => o.y === w.y && Math.min(2, o.w) === 1);
+    if (k < 0) { spans[w.id] = 2; continue; }
+    const [mate] = queue.splice(k, 1);
+    order.push(mate.id);
+    spans[w.id] = 1;
+    spans[mate.id] = 1;
+  }
+  return { order, spans };
+}
+
 /** The grid cell under a point, given the grid's box and its metrics. */
 function cellAt(px, py, rect, cols, rowPx, gapPx) {
   const colW = (rect.width - gapPx * (cols - 1)) / cols;
@@ -527,7 +551,7 @@ function renderGrid() {
 /** Position every card from the live layout without rebuilding any of them. */
 function layoutGrid(grid) {
   const ws = live();
-  const order = phoneOrder(ws);
+  const { order, spans } = phoneFlow(ws);
   for (const w of ws) {
     const card = S.cards.get(w.id);
     if (!card) continue;
@@ -535,7 +559,7 @@ function layoutGrid(grid) {
     card.style.setProperty("--y", w.y + 1);
     card.style.setProperty("--w", w.w);
     card.style.setProperty("--h", w.h);
-    card.style.setProperty("--pw", Math.min(2, w.w));
+    card.style.setProperty("--pw", spans[w.id]);
     card.style.order = order.indexOf(w.id);
     card.classList.toggle("sel", editing() && S.selected === w.id);
     card.querySelectorAll(".b-tools").forEach((t) => t.remove());

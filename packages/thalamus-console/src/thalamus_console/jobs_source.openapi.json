@@ -331,6 +331,22 @@
            "text": "no runs on this version yet · next Mon 20:00"
           },
           {
+           "type": "shared",
+           "text": "2 commits to shared code ›",
+           "commits": [
+            {
+             "sha": "c3b92bd",
+             "subject": "Add requirement terms",
+             "line": "today 18:31"
+            },
+            {
+             "sha": "d85167d",
+             "subject": "Run the review as a specialist",
+             "line": "today 18:28"
+            }
+           ]
+          },
+          {
            "type": "replays",
            "title": "6 replays of 00:51",
            "line": "3 baseline · 3 candidate · 1 failed",
@@ -3219,6 +3235,52 @@
       "additionalProperties": false,
       "properties": {
        "type": {
+        "const": "shared"
+       },
+       "text": {
+        "type": "string",
+        "description": "Display text the source composed for this place. Printed as text."
+       },
+       "commits": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "sha": {
+           "type": "string",
+           "pattern": "^[0-9a-f]{4,40}$"
+          },
+          "subject": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          },
+          "line": {
+           "type": "string",
+           "description": "Display text the source composed for this place. Printed as text."
+          }
+         },
+         "required": [
+          "sha",
+          "subject",
+          "line"
+         ]
+        }
+       }
+      },
+      "required": [
+       "type",
+       "text",
+       "commits"
+      ],
+      "description": "Commits between two of the job's versions that touched shared code only, folded into one row."
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "type": {
         "const": "run"
        },
        "id": {
@@ -3369,7 +3431,7 @@
      "items",
      "more"
     ],
-    "description": "J3. Commits that touched the job's files or src/, newest first, `limit` of them; a run sits under the job version it ran on.",
+    "description": "J3. The job's versions, newest first, `limit` of them: a commit is a version of a job when it touches the job's registry file, its prompts or the code paths its registry entry declares, or when the job's tuning applied it. Shared-code commits between two versions fold into one shared item; a run sits under the job version it ran on.",
     "examples": [
      {
       "columns": [
@@ -3392,6 +3454,22 @@
        {
         "type": "empty",
         "text": "no runs on this version yet · next Mon 20:00"
+       },
+       {
+        "type": "shared",
+        "text": "2 commits to shared code ›",
+        "commits": [
+         {
+          "sha": "c3b92bd",
+          "subject": "Add requirement terms",
+          "line": "today 18:31"
+         },
+         {
+          "sha": "d85167d",
+          "subject": "Run the review as a specialist",
+          "line": "today 18:28"
+         }
+        ]
        },
        {
         "type": "replays",

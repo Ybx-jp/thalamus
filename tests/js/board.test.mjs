@@ -17,7 +17,7 @@ const STATIC = path.resolve(HERE, "../../packages/thalamus-console/src/thalamus_
 const src = fs.readFileSync(path.join(STATIC, "board.js"), "utf8");
 const html = fs.readFileSync(path.join(STATIC, "board.html"), "utf8");
 
-const NAMES = ["overlaps", "clampBox", "placeWidget", "firstFreeSlot", "normalizeLayout", "phoneOrder",
+const NAMES = ["overlaps", "clampBox", "placeWidget", "firstFreeSlot", "normalizeLayout", "phoneOrder", "phoneFlow",
   "cellAt", "barsModel", "lineModel", "evalModel", "cardTitle", "windowLabel", "compareLabel", "writeGate",
   "routeAppMessage"];
 const F = evaluate(NAMES.map((n) => extractFunction(n, src)).join("\n"), NAMES);
@@ -64,6 +64,15 @@ suite("board — free slots and stored layouts");
   check("a widget's other fields survive normalizing", fixed[2].kind === "note");
   check("the phone reads boxes row by row, left to right",
     F.phoneOrder([box("x", 3, 0, 1, 2), box("y", 0, 2, 2, 3), box("z", 0, 0, 1, 2), box("w", 1, 0, 2, 2)]).join("") === "zwxy");
+  // B1: two narrow numbers share a row; a narrow card with no narrow neighbour (the
+  // Controls card after a wide inbox) takes the whole row.
+  const flow = F.phoneFlow([box("blitz", 0, 0, 1, 2), box("steps", 3, 0, 1, 2), box("series", 1, 0, 2, 2),
+    box("inbox", 0, 2, 2, 3), box("controls", 2, 2, 1, 3)]);
+  const spans = flow.spans;
+  check("two narrow cards of one desktop row share a phone row", spans.blitz === 1 && spans.steps === 1
+    && flow.order.join(",") === "blitz,steps,series,inbox,controls", flow.order.join(","));
+  check("a narrow card alone on its row stretches to full width", spans.controls === 2, JSON.stringify(spans));
+  check("a wide card stays full width", spans.inbox === 2);
 }
 
 suite("board — the cell under a pointer");
