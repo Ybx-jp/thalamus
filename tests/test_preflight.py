@@ -413,15 +413,24 @@ def test_an_autonomous_run_with_no_home_is_stopped():
     assert json.loads(result.stdout)["continue"] is False
 
 
-def test_an_autonomous_run_without_jq_is_stopped_in_valid_json(tmp_path):
+@pytest.mark.parametrize("declared", [{"THALAMUS_SESSION_TYPE": " Autonomous "},
+                                      {"CLAUDE_CODE_ENTRYPOINT": "sdk-cli"}])
+def test_an_autonomous_run_with_nothing_on_path_is_stopped_in_valid_json(tmp_path, declared):
+    # An empty PATH: no jq, and no coreutils either, so the hook must source its
+    # library and name the session type with builtins alone.
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for tool in ("bash", "cat", "dirname", "tr"):
-        (bin_dir / tool).symlink_to(f"/usr/bin/{tool}")
-    result = _raw_hook('{"session_id": "s1"}',
-                       {"HOME": str(tmp_path), "THALAMUS_SESSION_TYPE": "autonomous"}, path=str(bin_dir))
+    result = _raw_hook('{"session_id": "s1"}', {"HOME": str(tmp_path), **declared},
+                       path=str(bin_dir))
     out = json.loads(result.stdout)
     assert out["continue"] is False and "jq" in out["stopReason"]
+
+
+def test_an_attended_session_with_nothing_on_path_carries_on(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    result = _raw_hook('{"session_id": "s1"}', {"HOME": str(tmp_path)}, path=str(bin_dir))
+    assert result.returncode == 0 and result.stdout.strip() == ""
 
 
 @pytest.mark.parametrize("stdin", ["not json", ""])
