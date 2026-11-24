@@ -58,7 +58,7 @@ const constOf = (name, src) => {
 };
 
 const surfaceFns = ["h", "appendKids", "toneClass", "statusWord", "hashHue", "scopeHue", "switchEl", "toast"];
-const jobsFns = ["listView", "jobRow", "link", "jobView", "runPicker", "stageItem", "progressBar", "jobActions",
+const jobsFns = ["listView", "bannerShown", "sameCommit", "jobRow", "link", "jobView", "runPicker", "stageItem", "progressBar", "jobActions",
   "armTwice", "historyView", "historyItem", "changeView", "gateCard", "diffCard", "changeFoot", "runView",
   "findingRow", "repoView", "graphLayout", "edgePath", "graphView", "graphNode", "laneView", "selectEl"];
 const F = evaluate(
