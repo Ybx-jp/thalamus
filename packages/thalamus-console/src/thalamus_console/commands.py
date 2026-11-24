@@ -325,6 +325,8 @@ def console(args):
         frames_file=args.frames,
         fetch_interval_s=max(0.0, args.fetch_interval) * 60,
         allowed_origins=args.allow_origin,
+        jobs_source=args.jobs_source,
+        jobs_token_file=args.jobs_token_file,
     )
     if subprocess.run(tmux.argv("has-session", "-t", cfg.session),
                       capture_output=True).returncode != 0:

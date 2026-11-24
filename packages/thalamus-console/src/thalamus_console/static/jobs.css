@@ -1,0 +1,295 @@
+/* The jobs pages (jobs.js). Phone first at the comps' 430 px; D1's desktop canvas
+   under body.desk at the end. A scope's identity bar is `--scope`, set per group from
+   the roster's hash; it says which scope, never how it is doing. */
+
+a { color: inherit; text-decoration: none; }
+.grow { flex: 1; min-width: 0; }
+
+/* J1 banner: an applied change waiting to be read. Accent bar, accent "review ›". */
+.j-banner {
+  display: flex; align-items: center; gap: .8rem;
+  padding: .9rem 1rem; background: var(--panel); border-bottom: 1px solid var(--hair);
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+.j-banner-title { display: block; font-weight: 600; font-size: .95rem; }
+.j-banner-line { display: block; font-size: .75rem; color: var(--muted); margin-top: .25rem; }
+.j-banner-go { color: var(--accent); font-weight: 600; font-size: .9rem; }
+
+.j-sect {
+  display: flex; align-items: baseline; gap: .8rem;
+  padding: 1rem 1rem .6rem; border-bottom: 1px solid var(--hair);
+}
+.j-sect-sub { display: block; font-size: .75rem; color: var(--muted); margin-top: .3rem; }
+.j-repo-link { font-size: .8rem; }
+.j-group {
+  display: flex; align-items: baseline; gap: .8rem;
+  padding: 1rem 1rem .7rem; font-size: .95rem; border-bottom: 1px solid var(--hair);
+}
+.j-group-rows { box-shadow: inset 4px 0 0 var(--scope); }
+.j-row {
+  display: flex; align-items: center; gap: .6rem;
+  min-height: 60px; padding: .6rem .6rem .6rem 1.1rem; border-bottom: 1px solid var(--hair);
+}
+.j-row-name { display: block; font-weight: 600; font-size: .92rem; }
+.j-row-line { display: block; font-size: .75rem; color: var(--muted); margin-top: .25rem; }
+.j-row-status { font-size: .88rem; white-space: nowrap; }
+.j-more {
+  color: var(--muted); min-width: 36px; min-height: 36px; display: inline-flex;
+  align-items: center; justify-content: center; letter-spacing: .05em;
+}
+
+/* J2 */
+.j-jobhead {
+  padding: .8rem 1rem; border-bottom: 1px solid var(--hair);
+  box-shadow: inset 4px 0 0 var(--scope);
+}
+.j-jobhead-line { font-size: .9rem; color: var(--muted); }
+.j-jobhead-sub { font-size: .75rem; color: var(--muted); margin-top: .3rem; }
+.j-runhead { display: flex; align-items: baseline; gap: .6rem; }
+.j-runhead-job { font-weight: 600; }
+.j-runpick {
+  display: flex; align-items: center; gap: .6rem; padding: 0 .4rem; min-height: 48px;
+  border-bottom: 1px solid var(--hair); font-size: .88rem;
+}
+.j-runpick-label { white-space: pre; }
+.j-arrow {
+  appearance: none; background: transparent; border: 0; color: var(--ink);
+  min-width: 40px; min-height: 44px; cursor: pointer; font-size: .8rem;
+}
+.j-arrow:disabled { color: var(--hair); cursor: default; }
+.j-drift {
+  display: flex; align-items: center; gap: .6rem; padding: .7rem 1rem;
+  border-bottom: 1px solid var(--hair); background: var(--panel);
+  box-shadow: inset 4px 0 0 var(--pending);
+}
+.j-drift-title { display: block; font-size: .9rem; }
+.j-drift-line { display: block; font-size: .75rem; color: var(--muted); margin-top: .2rem; }
+
+.j-steps { list-style: none; margin: 0; padding: 1rem 1rem 1rem 3.2rem; position: relative; }
+.j-steps::before {
+  content: ""; position: absolute; left: 1.85rem; top: 2rem; bottom: 2rem; width: 2px;
+  background: var(--hair);
+}
+.j-step { position: relative; margin-bottom: .8rem; }
+.j-dot {
+  position: absolute; left: -1.75rem; top: 1.1rem; width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--muted); background: var(--bg);
+}
+/* A reached stage's dot is filled in its status tone; the word in the card is the
+   status, the fill only repeats it. */
+.j-dot.on { border-color: currentColor; background: currentColor; }
+.j-stage {
+  background: var(--panel); border: 1px solid var(--hair); border-radius: 10px; padding: .75rem .9rem;
+}
+.j-stage.changed { border-color: var(--pending); }
+.j-stage.unreached { background: transparent; }
+.j-stage-top { display: flex; justify-content: space-between; gap: .6rem; margin-bottom: .3rem; }
+.j-stage-name { font-weight: 600; font-size: .95rem; }
+.j-stage.unreached .j-stage-name { color: var(--muted); }
+.j-stage-line { font-size: .8rem; margin-top: .2rem; color: var(--muted); }
+.j-stage-out { font-size: .82rem; margin-top: .35rem; }
+.j-stage-changed { color: var(--pending); margin-top: .3rem; }
+.j-bar { display: flex; height: 6px; border-radius: 3px; background: var(--hair); overflow: hidden; margin-top: .6rem; }
+.j-bar-seg.s0 { background: #5c6572; }
+.j-bar-seg.s1 { background: #cdd8e4; }
+.j-actions {
+  position: sticky; bottom: 0; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .6rem;
+  padding: .9rem 1rem calc(.9rem + env(safe-area-inset-bottom));
+  background: var(--panel); border-top: 1px solid var(--hair);
+}
+.j-btnlink { display: inline-flex; align-items: center; justify-content: center; text-align: center; }
+
+.j-sheet {
+  position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 0, .55);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.j-sheet-card {
+  width: 100%; max-width: 520px; background: var(--panel); border: 1px solid var(--hair);
+  border-radius: 14px 14px 0 0; padding: 1.1rem 1rem calc(1rem + env(safe-area-inset-bottom));
+}
+.j-sheet-title { font-weight: 600; margin-bottom: .4rem; }
+.j-sheet-acts { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; margin-top: .8rem; }
+
+/* J3 */
+.j-hist-head {
+  display: flex; gap: .4rem; padding: .7rem 1rem; font-size: .75rem; border-bottom: 1px solid var(--hair);
+}
+.j-hist-col { width: 64px; text-align: center; }
+.j-hist-commit {
+  display: flex; gap: .9rem; align-items: baseline; padding: .8rem 1rem;
+  background: var(--panel); border-bottom: 1px solid var(--hair);
+}
+.j-hist-commit.marked { box-shadow: inset 4px 0 0 var(--accent); }
+.j-sha { font-size: .85rem; font-weight: 600; min-width: 4.6rem; }
+.j-hist-subject { display: block; font-size: .88rem; }
+.j-hist-line { display: block; font-size: .75rem; color: var(--muted); margin-top: .2rem; }
+.j-hist-empty { padding: .9rem 1rem; font-style: italic; color: var(--muted); font-size: .82rem; border-bottom: 1px solid var(--hair); }
+.j-hist-run {
+  display: flex; align-items: center; gap: .6rem; padding: .8rem 1rem; border-bottom: 1px solid var(--hair);
+  flex-wrap: wrap;
+}
+.j-hist-title { display: block; font-weight: 600; font-size: .9rem; }
+.j-cells { display: flex; gap: .4rem; }
+.j-runcell, .j-span {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 58px; min-height: 30px;
+  padding: 0 .4rem; border: 1px solid currentColor; border-radius: 6px; font-size: .78rem;
+  background: var(--panel);
+}
+.j-runcell.none { color: var(--muted); border-style: dashed; }
+.j-span { min-width: 176px; }
+.j-hist-note { width: 100%; text-align: right; }
+.j-grid { display: grid; gap: 4px; }
+.j-grid-row { display: flex; align-items: center; gap: 4px; }
+.j-grid-label { width: 5.2rem; text-align: right; padding-right: .3rem; }
+/* A replay cell carries its status word as text. The comps draw bare coloured squares;
+   a square with no word would make colour the only carrier, so the cell is widened to
+   hold the word ("kept", "failed") instead. */
+.j-cell {
+  min-width: 56px; height: 22px; border-radius: 4px; border: 1px solid currentColor;
+  display: inline-flex; align-items: center; justify-content: center; font-size: .66rem;
+}
+.j-more-link, a.s-link.j-more-link, button.s-link.j-more-link { display: flex; padding: .9rem 1rem; }
+
+/* J4 */
+.j-change { min-height: calc(100dvh - 53px); display: flex; flex-direction: column; }
+.j-change > .j-foot { margin-top: auto; }
+.j-job { min-height: calc(100dvh - 53px); display: flex; flex-direction: column; }
+.j-job > .j-actions { margin-top: auto; }
+.j-change-head { padding: 1rem; }
+.j-h1 { font-size: 1.1rem; margin: 0 0 .3rem; font-weight: 600; }
+.j-gate, .j-diff { margin: 0 1rem 1rem; padding: 1rem; }
+.j-gate-line { font-size: .85rem; color: var(--muted); margin: .4rem 0 .6rem; }
+.j-gate-row { display: grid; grid-template-columns: 1fr 5rem 5rem; padding: .35rem 0; font-size: .88rem; }
+.j-gate-row > span:not(:first-child) { text-align: right; }
+.j-gate-row.head { font-size: .75rem; }
+.strong { font-weight: 600; }
+.j-hr { border: 0; border-top: 1px solid var(--hair); margin: .7rem 0; }
+.j-checks { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .8rem; font-size: .82rem; }
+.j-gate-note {
+  margin: .9rem 0 0; padding-left: .8rem; border-left: 3px solid var(--pending);
+  font-size: .8rem; color: var(--muted);
+}
+.j-diff { padding: 0; overflow: hidden; }
+.j-diff-head { display: flex; gap: .6rem; padding: .8rem 1rem; font-size: .8rem; }
+.j-diff-body { font-size: .74rem; line-height: 1.75; padding: 0 0 .6rem; overflow-x: auto; }
+.j-diff-line { padding: 0 1rem; white-space: pre-wrap; word-break: break-word; }
+/* Removed and added lines: the "−" / "+" prefix is the carrier; the grounds repeat it. */
+.j-diff-line.del { background: #3a2226; color: #f0b6ad; }
+.j-diff-line.add { background: #17332f; color: #a6e3d7; }
+.j-diff-line.ctx { color: var(--muted); }
+.j-foot {
+  position: sticky; bottom: 0; background: var(--panel); border-top: 1px solid var(--hair);
+  padding: .8rem 1rem calc(.6rem + env(safe-area-inset-bottom));
+}
+.j-foot-row { display: flex; align-items: center; gap: .6rem; min-height: 44px; }
+.j-foot-acts { display: grid; grid-template-columns: 1fr 1.4fr; gap: .6rem; margin: .6rem 0 .3rem; }
+.j-foot p { margin: .2rem 0 0; }
+.j-body { margin: 0 1rem 1rem; white-space: pre-wrap; font-size: .78rem; color: var(--muted); }
+
+/* J5 */
+.j-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; padding: .8rem 1rem; }
+.j-tile { padding: .7rem .8rem; }
+.j-tile-label { font-size: .78rem; color: var(--muted); }
+.j-tile-value { font-size: 1.35rem; font-weight: 600; margin: .2rem 0; }
+.j-finding { padding: .8rem 1rem; border-bottom: 1px solid var(--hair); }
+.j-finding.rejected { box-shadow: inset 4px 0 0 var(--danger); }
+.j-finding-title { font-size: .92rem; margin-bottom: .45rem; }
+.j-finding-foot { display: flex; align-items: center; gap: .5rem; }
+.j-labels { display: flex; gap: .4rem; }
+.j-label {
+  appearance: none; min-height: 40px; padding: 0 .9rem; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--hair); background: transparent; color: var(--ink); font: 400 .84rem var(--ui);
+}
+.j-label.on { background: var(--accent); border-color: var(--accent); color: #12101f; font-weight: 600; }
+
+/* J6 */
+.j-commit {
+  display: flex; gap: .9rem; align-items: baseline; padding: .8rem 1rem; border-bottom: 1px solid var(--hair);
+}
+.j-pill {
+  border: 1px solid var(--accent); color: var(--accent); border-radius: 999px;
+  padding: .1rem .6rem; font-size: .75rem; white-space: nowrap; align-self: center;
+}
+
+/* ---- D1: the desktop canvas ---- */
+body.desk .s-main { max-width: none; }
+.d-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 390px; min-height: calc(100dvh - 53px); }
+.d-left { min-width: 0; border-right: 1px solid var(--hair); display: flex; flex-direction: column; }
+.d-bar { display: flex; align-items: center; gap: 1rem; padding: .6rem 1rem; border-bottom: 1px solid var(--hair); }
+.d-seg { display: inline-flex; border: 1px solid var(--hair); border-radius: 8px; overflow: hidden; }
+.d-segbtn {
+  appearance: none; border: 0; background: transparent; color: var(--muted); padding: .45rem 1.2rem;
+  font: 400 .85rem var(--ui); cursor: pointer; min-height: 36px;
+}
+.d-segbtn.on { background: var(--panel-hi); color: var(--ink); }
+.d-select { font-size: .85rem; color: var(--muted); }
+.d-sel {
+  background: var(--panel); color: var(--ink); border: 1px solid var(--hair); border-radius: 6px;
+  font: 400 .85rem var(--ui); min-height: 32px; padding: 0 .4rem;
+}
+.d-graphwrap { overflow: auto; flex: 1; }
+.d-graph { position: relative; }
+.d-edges { position: absolute; inset: 0; pointer-events: none; }
+.d-edges path { fill: none; stroke: #3a4350; stroke-width: 1.5; }
+.d-edges path.on { stroke: var(--accent); stroke-width: 2; }
+.d-col { position: absolute; top: 14px; }
+.d-node {
+  position: absolute; display: flex; flex-direction: column; align-items: stretch; text-align: left;
+  background: var(--panel); border: 1px solid var(--hair); border-radius: 8px;
+  padding: .5rem .6rem .5rem .75rem; color: var(--ink); font: inherit;
+  box-shadow: inset 3px 0 0 var(--scope);
+}
+button.d-node { cursor: pointer; }
+.d-node.planned { border-style: dashed; background: transparent; }
+.d-node.sel { border: 2px solid var(--accent); }
+.d-node-title { font-weight: 600; font-size: .8rem; }
+.d-node-line { font-size: .68rem; color: var(--muted); margin-top: .2rem; }
+.d-node-status { font-size: .68rem; margin-top: .25rem; }
+.d-stages { display: flex; flex-direction: column; gap: 6px; margin-top: .5rem; }
+.d-stage {
+  display: flex; gap: .4rem; font-size: .7rem; border: 1px solid var(--ok); border-radius: 5px;
+  padding: .25rem .4rem;
+}
+.d-note { position: absolute; font-style: italic; }
+.d-lane { position: relative; border-top: 1px solid var(--hair); flex: none; }
+.d-lane-label { position: absolute; left: 1rem; top: .7rem; }
+.d-lane-row { position: absolute; left: 0; right: 0; height: 30px; border-bottom: 1px solid #1d232b; }
+.d-lane-name { position: absolute; left: 1rem; top: 6px; }
+.d-mark {
+  position: absolute; top: 2px; min-width: 40px; height: 24px; padding: 0 .4rem; border: 1px solid currentColor;
+  border-radius: 5px; font-size: .68rem; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--panel);
+}
+.d-tick { position: absolute; width: 56px; text-align: center; font-size: .66rem; line-height: 1.4; }
+.d-tick-dot {
+  display: block; width: 12px; height: 12px; margin: 0 auto .3rem; border-radius: 50%;
+  border: 2px solid var(--muted); background: var(--bg);
+}
+.d-tick-dot.on { border-color: var(--accent); background: var(--accent); }
+.d-tag { display: block; }
+.d-insp { overflow-y: auto; max-height: calc(100dvh - 53px); position: sticky; top: 53px; }
+.d-insp-head { padding: 1rem 1.2rem; border-bottom: 1px solid var(--hair); box-shadow: inset 4px 0 0 var(--scope); }
+.d-insp-title { font-size: 1.1rem; font-weight: 600; display: block; margin-bottom: .3rem; }
+.d-tabs { display: flex; gap: 1.2rem; padding: 0 1.2rem; border-bottom: 1px solid var(--hair); }
+.d-tab {
+  appearance: none; background: transparent; border: 0; color: var(--muted); font: 400 .88rem var(--ui);
+  min-height: 44px; cursor: pointer; border-bottom: 2px solid transparent;
+}
+.d-tab.on { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+.d-insp-body { padding: .4rem 0; }
+.j-steps.compact { padding-top: .6rem; }
+.d-versions { list-style: none; margin: 0; padding: .6rem 1.2rem; }
+.d-version { padding: .55rem 0 .55rem 1.2rem; border-left: 2px solid var(--hair); position: relative; }
+.d-version::before {
+  content: ""; position: absolute; left: -7px; top: .8rem; width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid var(--muted); background: var(--bg);
+}
+.d-version.on::before { border-color: var(--accent); background: var(--accent); }
+.d-insp-sec { padding: 1rem 1.2rem; border-top: 1px solid var(--hair); }
+.d-insp-sec .s-label { margin-bottom: .5rem; display: block; }
+.d-insp-sec .j-diff { margin: .6rem 0 0; }
+.d-insp-sec .j-foot-acts { grid-template-columns: 1fr 1fr; }
+.d-insp-sec .s-btn { font-size: .85rem; padding: 0 .6rem; }
+.j-events { list-style: none; margin: 0; padding: .6rem 1rem; font-size: .72rem; line-height: 1.6; }
+.j-event { white-space: pre-wrap; word-break: break-word; border-bottom: 1px solid #1d232b; padding: .2rem 0; }
+.j-event-type { color: var(--accent); }

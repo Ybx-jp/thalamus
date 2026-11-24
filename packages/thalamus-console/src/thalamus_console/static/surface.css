@@ -1,0 +1,135 @@
+/* The jobs and board pages: page chrome shared by both, over the tokens and faces in
+   style.css (linked first). Unlike the roster, these pages scroll as a document — they
+   are lists to read, not a pane to keep in view — so the body lock is lifted here.
+
+   Tones are the five the jobs source may send (`{word, tone}`); a tone only ever
+   reinforces the word printed beside it, never replaces it. */
+
+body.surface {
+  display: block;
+  height: auto;
+  min-height: 100dvh;
+  overflow: auto;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.s-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  min-height: 52px;
+  padding: 0 1rem 0 .4rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--hair);
+}
+.s-back {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font: 600 1.3rem/1 var(--ui);
+  min-width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.s-title { font: 600 1rem/1.2 var(--ui); color: var(--ink); flex: 1; min-width: 0;
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s-head-act {
+  appearance: none; background: transparent; border: 0; color: var(--muted);
+  font: 400 .9rem var(--ui); min-height: 44px; padding: 0 .2rem; cursor: pointer;
+}
+
+.s-main { max-width: 760px; margin: 0 auto; }
+.s-err {
+  margin: 1rem; padding: .8rem 1rem; border: 1px solid var(--danger);
+  border-radius: 10px; color: var(--danger-text); background: var(--panel);
+  font-size: .9rem;
+}
+.s-empty { margin: 2rem 1rem; color: var(--muted); text-align: center; font-size: .9rem; }
+
+/* Tones. Text colours only; each clears 4.5:1 on --bg, --panel and --panel-hi
+   (measured in tests/test_console_contrast.py for the roster's identical pairs). */
+.tone-ok { color: var(--ok); }
+.tone-danger { color: var(--danger-text); }
+.tone-pending { color: var(--pending); }
+.tone-muted { color: var(--muted); }
+.tone-accent { color: var(--accent); }
+
+.mono { font-family: var(--mono); }
+.muted { color: var(--muted); }
+.small { font-size: .78rem; }
+
+/* Section label: letter-spaced mono caps, the comps' "JOBS", "FINDINGS", "MOVES". */
+.s-label {
+  font: 400 .72rem/1.2 var(--mono);
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.s-card {
+  background: var(--panel);
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+}
+
+/* Buttons: one primary (accent ground, dark ink — the console's one 5.75:1 pair),
+   one outlined, one danger-outlined. 48 px tall, past the 24 px floor and the
+   thumb-target sizes the roster already uses. */
+.s-btn {
+  appearance: none;
+  min-height: 48px;
+  padding: 0 1rem;
+  border-radius: 10px;
+  font: 600 .92rem var(--ui);
+  cursor: pointer;
+  border: 1px solid var(--hair);
+  background: transparent;
+  color: var(--ink);
+}
+.s-btn.primary { background: var(--accent); border-color: var(--accent); color: #12101f; }
+.s-btn.danger { border-color: var(--danger); color: var(--danger-text); }
+.s-btn:disabled { cursor: default; color: var(--muted); border-style: dashed; }
+.s-btn.primary:disabled { background: transparent; border-color: var(--hair); }
+
+/* A switch: a real checkbox drawn as a track. Its state is also spoken by its label's
+   text (the row says what is on), so the knob's position is never the only carrier. */
+.s-switch { position: relative; display: inline-block; width: 46px; height: 28px; flex: none; }
+.s-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; width: 100%; height: 100%; }
+.s-switch .track {
+  position: absolute; inset: 0; border-radius: 14px; background: var(--hair);
+  pointer-events: none;
+}
+.s-switch .knob {
+  position: absolute; top: 4px; left: 4px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--muted); pointer-events: none;
+}
+.s-switch input:checked ~ .track { background: var(--accent); }
+.s-switch input:checked ~ .knob { left: 22px; background: var(--bg); }
+.s-switch input:focus-visible ~ .track { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.s-row {
+  display: flex; align-items: center; gap: .8rem;
+  padding: .9rem 1rem; border-bottom: 1px solid var(--hair);
+}
+.s-row .grow { flex: 1; min-width: 0; }
+.s-toast {
+  position: fixed; left: 50%; bottom: calc(1rem + env(safe-area-inset-bottom));
+  transform: translateX(-50%); z-index: 40;
+  background: var(--panel-hi); border: 1px solid var(--hair); border-radius: 10px;
+  padding: .6rem .9rem; font-size: .85rem; color: var(--ink); max-width: 92vw;
+}
+.s-toast[hidden] { display: none; }
+
+a.s-link, button.s-link {
+  appearance: none; background: transparent; border: 0; padding: 0;
+  color: var(--accent); font: 600 .9rem var(--ui); text-decoration: none; cursor: pointer;
+  min-height: 32px; display: inline-flex; align-items: center;
+}

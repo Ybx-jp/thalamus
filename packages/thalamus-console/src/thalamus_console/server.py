@@ -680,6 +680,14 @@ STATIC = {
     "/app.js": ("app.js", "application/javascript; charset=utf-8"),
     "/style.css": ("style.css", "text/css; charset=utf-8"),
     "/sw.js": ("sw.js", "application/javascript; charset=utf-8"),
+    # The jobs and board pages. Pages of their own rather than views inside the
+    # roster's shell: they read the jobs source, not tmux, and share nothing with the
+    # roster's poll but the tokens in style.css.
+    "/jobs.html": ("jobs.html", "text/html; charset=utf-8"),
+    "/jobs.js": ("jobs.js", "application/javascript; charset=utf-8"),
+    "/jobs.css": ("jobs.css", "text/css; charset=utf-8"),
+    "/surface.css": ("surface.css", "text/css; charset=utf-8"),
+    "/surface.js": ("surface.js", "application/javascript; charset=utf-8"),
     "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
     "/icon-192.png": ("icon-192.png", "image/png"),
     "/icon-512.png": ("icon-512.png", "image/png"),
@@ -748,6 +756,11 @@ class Config:
     # addressed. It exists for the proxy that rewrites `Host` to the upstream, where
     # same-origin is true of the page and unprovable from the headers.
     allowed_origins: list[str] = field(default_factory=list)
+    # The jobs source (`jobs_source.py`): the base URL of the program that runs the
+    # operator's scheduled jobs, and a file holding its bearer token. Empty — the
+    # default — means no jobs, board or app-widget screens; nothing is invented.
+    jobs_source: str = ""
+    jobs_token_file: Path | None = None
 
     def __post_init__(self) -> None:
         pin, windows = pin_module(), windows_module()
@@ -769,6 +782,8 @@ class Config:
             self.favorites_store = Path(self.favorites_store).expanduser()
         if self.frames_file:
             self.frames_file = Path(self.frames_file).expanduser()
+        if self.jobs_token_file:
+            self.jobs_token_file = Path(self.jobs_token_file).expanduser()
 
 
 # ---- Frame themes ----
@@ -2120,7 +2135,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:  # quiet
         pass
 
-    def _send(self, code, body, ctype="application/json", cache=None):
+    def _send(self, code, body, ctype="application/json", cache=None, headers=None):
         self._responded = True
         if isinstance(body, (dict, list)):
             body = json.dumps(body).encode()
@@ -2131,6 +2146,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", cache or
                          ("no-store" if ctype.startswith("application/json") else "no-cache"))
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -2155,6 +2172,18 @@ class Handler(BaseHTTPRequestHandler):
         key = origin_key(claimed)
         return key is not None and any(key == origin_key(allowed)
                                        for allowed in self.cfg.allowed_origins)
+
+    def _jobs(self, path: str, query: str, body: bytes | None = None) -> None:
+        """Forward to the jobs source (`jobs_source.forward`) and relay its reply."""
+        from thalamus_console import jobs_source
+
+        reply = jobs_source.forward(self.cfg.jobs_source, self.cfg.jobs_token_file,
+                                    "POST" if body is not None else "GET",
+                                    path[len("/api/jobs/"):], query, body)
+        headers = dict(reply.headers)
+        ctype = headers.pop("Content-Type", "application/json")
+        cache = headers.pop("Cache-Control", None)
+        self._send(reply.status, reply.body, ctype, cache=cache, headers=headers)
 
     @_answered("GET")
     def do_GET(self):
@@ -2196,7 +2225,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"session": self.cfg.session, "windows": windows,
                                     "distill": distill_rows(),
                                     "tmux_socket": tmux_socket(),
-                                    "grace_s": RECYCLE_GRACE_S})
+                                    "grace_s": RECYCLE_GRACE_S,
+                                    # Whether the jobs and board pages have a source to
+                                    # read; the header links follow it.
+                                    "jobs": bool(self.cfg.jobs_source)})
         if path == "/api/read":
             # The read view: this window's session as prose and collapsed tool
             # calls, read from the transcript rather than the pane. `since` is the
@@ -2293,6 +2325,8 @@ class Handler(BaseHTTPRequestHandler):
                                     # POST would 404 is a button that does nothing.
                                     "shell": True,
                                     "experts": has_experts()})
+        if path.startswith("/api/jobs/"):
+            return self._jobs(path, query)
         if path == "/api/frames":
             # Absolute paths stay server-side; the client addresses a frame by name.
             return self._send(200, {"frames": [{"name": f["name"], "panel": f["panel"]}
@@ -2331,6 +2365,12 @@ class Handler(BaseHTTPRequestHandler):
         # route's first `.get`.
         if not isinstance(data, dict):
             return self._send(400, {"error": "body must be a JSON object"})
+
+        if path.startswith("/api/jobs/"):
+            # Past the Origin gate above, like every write here: the jobs source's
+            # actions (run now, replay, revert, a label) are writes the operator's
+            # own page asked for, and nothing else's.
+            return self._jobs(path, "", json.dumps(data).encode())
 
         if path == "/api/roster":
             ok, output = roster_sync(self.cfg)

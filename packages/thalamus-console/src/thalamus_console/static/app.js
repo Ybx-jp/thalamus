@@ -809,6 +809,8 @@ async function poll() {
     const data = await r.json();
     const next = data.windows || [];
     lastOk = Date.now();
+    // The jobs link exists only where the server has a jobs source.
+    document.getElementById("jobs-link").hidden = !data.jobs;
 
     const changed = next.length !== windows.length ||
       next.some((w, i) => !windows[i] || windows[i].index !== w.index ||
