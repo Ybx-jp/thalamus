@@ -1137,8 +1137,9 @@ def screen_rev(text: str) -> str:
 def recycle_window(cfg: Config, idx: int, shell: bool = False) -> None:
     """Restart the pinned claude process in a window — the MCP/hook re-arm.
 
-    The MCP server and hooks arm per *process*, so wiring
-    changes need a fresh agent. Graceful path: `remain-on-exit on` (the window
+    The MCP server arms per *process*, so a server or env
+    change needs a fresh agent; a hook edit reaches a running Claude Code window
+    without one (A0257, cites-as-live). Graceful path: `remain-on-exit on` (the window
     survives the exit), Escape + C-u (dismiss any dialog, clear the composer),
     `/exit` (fires SessionEnd — a command on both harnesses), wait for pane death,
     then `tmux respawn-window` — which re-runs the window's CREATION command

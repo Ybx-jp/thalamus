@@ -77,6 +77,15 @@ SESSION_START = "session-start"
 FIRST_TOOL_CALL = "first-tool-call"
 _HOOK_EVENT = {SESSION_START: "SessionStart", FIRST_TOOL_CALL: "PreToolUse"}
 
+_REPAIR = (
+    # Claude Code reloads its settings files on change, so a hook repaired there runs
+    # in this session from the next event; the MCP servers and the pin's env were read
+    # when the process started, and only a new process reads them again.
+    # (A0257, cites-as-live) (A0258, cites-as-live)
+    "A hook fixed in its settings file reaches this session on save; a missing MCP "
+    "server, or an env the pin set wrong, needs a relaunch."
+)
+
 
 @dataclass
 class Check:
@@ -563,7 +572,7 @@ def operator_message(checks: list[Check]) -> str:
     return "\n".join([
         "Thalamus preflight — this session is not armed the way its pin promises:",
         *(f"  • {c.name}: {c.detail}" for c in checks),
-        "MCP servers and hooks arm per process; a relaunch is the repair.",
+        _REPAIR,
     ])
 
 
@@ -604,7 +613,7 @@ def hook_output(report: Report, told: set[tuple[str, str]] | frozenset = frozens
                 "PREFLIGHT — this session is not armed the way its pin promises. The "
                 "operator has been shown this; do not rely on what is missing: "
                 + "; ".join(f"{c.name}: {c.detail}" for c in new) + ". "
-                "MCP servers and hooks arm per process; a relaunch is the repair."
+                + _REPAIR
             ),
         },
     }
