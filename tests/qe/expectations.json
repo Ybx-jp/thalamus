@@ -88,6 +88,13 @@
       "witness_contains": "THALAMUS_PROJECT='acme' in a checkout named 'client-site': hook names project='acme', extract records project='client-site'",
       "triaged_at_rev": "8e43554",
       "note": "Issue #360. The SessionStart hooks resolve project=\"${THALAMUS_PROJECT:-$repo_name}\" and tell the agent to recall by it, while transcripts.parse / to_session_graph record Session.project as basename(repo_root) and read no override; recall filters on that recorded value, so an override that is not a substring of the checkout name returns nothing. The pin is the hook naming the override and the write path naming the checkout; the control (override unset, both name the checkout) is asserted in the case. A fix on either side makes the two equal and this entry goes stale."
+    },
+    {
+      "case": "cursor-store-reused-tool-call-id-drops-ingress",
+      "failure_class": "failed-open",
+      "witness_contains": "verdict=verified external_texts=[] ingress_calls=0 tool_calls=1",
+      "triaged_at_rev": "b022e67",
+      "note": "Issue #433. read_path keys calls and results by toolCallId in plain dicts, so a second call/result pair under the same id replaces a WebFetch pair; reconciliation compares id sets and passes, and the reading is VERIFIED with no external text. A fix that refuses a repeated id makes the store UNRECOGNIZED and this entry goes stale."
     }
   ]
 }
