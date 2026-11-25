@@ -81,7 +81,7 @@ function words(obj, out = []) {
   else if (obj && typeof obj === "object") {
     if (typeof obj.word === "string" && typeof obj.tone === "string") out.push(obj.word);
     for (const [k, v] of Object.entries(obj)) {
-      if (["line", "title", "subject", "summary", "heading", "meta", "observation"].includes(k) && typeof v === "string") out.push(v);
+      if (["line", "title", "subject", "summary", "heading", "meta", "observation", "hidden"].includes(k) && typeof v === "string") out.push(v);
       words(v, out);
     }
   }

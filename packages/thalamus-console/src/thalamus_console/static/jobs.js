@@ -472,6 +472,7 @@ function runView(d) {
     (f.items || []).some((x) => !x.rejected)
       ? h("span.j-find-cap", "Rate each one: your ratings tune what this job reports.") : null));
   for (const item of f.items || []) out.push(findingRow(item));
+  if (f.hidden) out.push(h("p.j-find-hidden", f.hidden));
   if (f.more) out.push(h("a.s-link.j-more-link", { href: "#/run/" + encodeURIComponent(d.id) + "?findings=all" },
     `${f.more} more kept findings ›`));
   if (d.events) out.push(h("a.s-link.j-more-link", { href: "#/run/" + encodeURIComponent(d.id) + "?view=events" },

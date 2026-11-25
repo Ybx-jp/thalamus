@@ -784,7 +784,8 @@
              "line": null
             }
            }
-          ]
+          ],
+          "hidden": "1 finding without a readable title isn't shown"
          },
          "events": 162,
          "replayable": true
@@ -4034,12 +4035,24 @@
        "more": {
         "type": "integer",
         "minimum": 0
+       },
+       "hidden": {
+        "anyOf": [
+         {
+          "type": "string",
+          "description": "How many of the run's findings are not drawn because they have no readable headline (\"2 findings without a readable title aren't shown\"), or null. Printed as text."
+         },
+         {
+          "type": "null"
+         }
+        ]
        }
       },
       "required": [
        "heading",
        "items",
-       "more"
+       "more",
+       "hidden"
       ]
      },
      "events": {
@@ -4114,7 +4127,8 @@
           "line": null
          }
         }
-       ]
+       ],
+       "hidden": "1 finding without a readable title isn't shown"
       },
       "events": 162,
       "replayable": true
