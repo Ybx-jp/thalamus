@@ -5,13 +5,27 @@ Session vertex, and attribution needs the retained transcript behind it (Session
 -[DERIVED_FROM]-> Source -> archive). Traces from sessions that have not been distilled
 yet stay in the tap, reported as pending; the tap is append-only and sync is
 content-addressed, so nothing is lost by waiting and nothing duplicates on re-run.
+
+A writing sync holds an exclusive lock beside the tap for its whole run, so two of them
+never write to the graph at once (A0268, cites-as-live). Content addressing makes their
+writes converge on the same vertices, which is exactly what makes them collide: every
+session-end runs a sync over the whole tap, a burst of session-ends therefore re-asserts
+the same Trace vertices concurrently, and TinkerGraph's property replacement is not safe
+under that — the server answers a `mergeV` with a `NullPointerException` from
+`TinkerVertexProperty.remove`. A sync that finds the lock taken waits rather than
+skipping, because the one holding it may have loaded the tap before this session's
+traces were in it.
 """
 
 from __future__ import annotations
 
+import fcntl
 import logging
+import sys
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Iterator
 
 from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import Order, T
@@ -26,7 +40,7 @@ from thalamus.eval.attribution import (
     outputs_after,
 )
 from thalamus.eval.rankers import RankerLedger
-from thalamus.eval.traces import RETRIEVAL_TOOLS, TraceEvent, load_events
+from thalamus.eval.traces import RETRIEVAL_TOOLS, TRACES_DIR, TraceEvent, load_events
 from thalamus.harness.consultation import exchange_vid as _consultation_exchange_vid
 from thalamus.substrate.reader import load_exchange
 from thalamus.substrate.schema import Provenance, Tier
@@ -105,7 +119,44 @@ def sync(
     policy_base: Path | None = None,
     write: bool = True,
 ) -> SyncOutcome:
-    """Sync every landable trace from the tap into the graph."""
+    """Sync every landable trace from the tap into the graph.
+
+    A writing sync runs under `_sync_lock`; a dry run writes nothing and takes no lock.
+    """
+    if not write:
+        return _sync(g, traces_base, rankers_base, policy_base, write)
+    with _sync_lock(traces_base or TRACES_DIR):
+        return _sync(g, traces_base, rankers_base, policy_base, write)
+
+
+@contextmanager
+def _sync_lock(tap: Path) -> Iterator[None]:
+    """Hold the tap's `sync.lock` exclusively, waiting for a sync that already holds it.
+
+    Says so on stderr when it has to wait — the session-end log is where a sync's output
+    lands, and a log that goes quiet behind another session's sync otherwise reads as
+    a hang.
+    """
+    tap.mkdir(parents=True, exist_ok=True)
+    with (tap / "sync.lock").open("a") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("waiting for another eval sync to finish", file=sys.stderr, flush=True)
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _sync(
+    g: GraphTraversalSource,
+    traces_base: Path | None,
+    rankers_base: Path | None,
+    policy_base: Path | None,
+    write: bool,
+) -> SyncOutcome:
     outcome = SyncOutcome()
 
     # Which ranker served each trace is a point-in-time question, answered from the
