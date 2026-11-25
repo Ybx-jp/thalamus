@@ -145,6 +145,18 @@ def test_legacy_match_ignores_a_later_session_in_the_same_place(tmp_path):
     assert idx.legacy_match("main", "/repo", start)["session_id"] == "mine"
 
 
+def test_legacy_match_never_hands_out_a_row_that_names_a_pane(tmp_path):
+    """A row with a pane id belongs to that pane. A window with no row of its own in
+    the same scope and cwd must not be given its live neighbour's session (#415)."""
+    pins = tmp_path / "pins.jsonl"
+    write_jsonl(pins, [ledger_row("neighbour", pane="%1", ts="2026-08-09T00:00:01Z")])
+    idx = tr.LedgerIndex(pins)
+    idx.refresh()
+    start = tr._row_epoch({"ts": "2026-08-09T00:00:00Z"})
+    assert idx.legacy_match("main", "/repo", start) is None
+    assert idx.by_pane("%1")["session_id"] == "neighbour"
+
+
 # ---- identified vs identifiable ----
 
 def test_resolve_reports_a_known_session_with_no_transcript_yet(tmp_path, monkeypatch):

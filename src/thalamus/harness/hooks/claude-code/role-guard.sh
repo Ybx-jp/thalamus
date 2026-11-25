@@ -32,7 +32,8 @@
 # where the pin is resolved means the guard covers every launch path.
 #
 # Scope of enforcement, named rather than papered over. This gates the file-editing
-# tools, `Skill`, and `Artifact`, and each has a live route around it:
+# tools, `Skill`, `Artifact` and the claude-artifacts connector, and each has a live
+# route around it:
 #
 #   - Bash writes files without touching an editing tool, and a repository that does
 #     not put implementation under `src/` escapes qe's `*/src/*` deny.
@@ -64,7 +65,7 @@
 # false positive teaches route-around, and route-around costs more than a gap.
 #
 # Install (user or project settings.json):
-#   {"hooks": {"PreToolUse": [{"matcher": "Edit|Write|NotebookEdit|Skill|Artifact|mcp__penpot__.*",
+#   {"hooks": {"PreToolUse": [{"matcher": "Edit|Write|NotebookEdit|Skill|Artifact|mcp__penpot__.*|mcp__claude-artifacts__.*",
 #     "hooks": [{"type": "command",
 #     "command": ".../hooks/claude-code/role-guard.sh"}]}]}}
 
@@ -99,11 +100,13 @@ case "$tool_name" in
     [ "$(printf '%s' "$input" | jq -r '.tool_input.action // empty')" != "list" ] || exit 0
     kind=tool
     target="$tool_name" ;;
-  mcp__penpot__*)
+  mcp__penpot__*|mcp__claude-artifacts__*)
     # Named individually rather than folded into Artifact's `kind=tool`: the target
     # is the specific MCP tool (`mcp__penpot__create_shape`, not a bare `Artifact`),
     # because `allow_tools` carves permitted names back out of a scope's deny by
     # matching against exactly this string (contract/manifest.CapabilityBoundary).
+    # The claude-artifacts connector publishes the same pages `Artifact` does, so its
+    # read-only tools are carved out that way rather than by an action check here.
     kind=tool
     target="$tool_name" ;;
   *) exit 0 ;;

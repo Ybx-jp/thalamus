@@ -66,6 +66,21 @@ def config_root() -> Path:
     return Path.home() / ".thalamus" / "config"
 
 
+def write_spellings(file_path: str) -> tuple[str, ...]:
+    """The POSIX spellings a path boundary matches a written file under.
+
+    Two: the path as given, with `.` and repeated `/` folded, and the file it resolves
+    to. A boundary over the string alone binds the spelling rather than the file: a
+    `..` through a sibling directory or a symlink into a denied tree names that tree's
+    file without containing its glob. The given spelling is kept beside the resolved
+    one so a glob written against a link path still matches it. One spelling when the
+    two agree.
+    """
+    given = Path(file_path).as_posix()
+    resolved = Path(os.path.realpath(file_path)).as_posix()
+    return (given,) if resolved == given else (given, resolved)
+
+
 def default_project_dir() -> Path:
     """Where a pinned session or the console opens when no directory is named: the
     checkout when running from one, else the directory the command was run in."""

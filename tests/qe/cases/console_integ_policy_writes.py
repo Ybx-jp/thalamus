@@ -412,6 +412,7 @@ AGREE = Case(
 STALE = Case(
     name="console-policy-staleness-flags-a-window-launched-looser-than-the-posture",
     issue=416,
+    fixed=True,
     tier=Tier.FAST, substrate=_SUB, classes=_CLS,
     summary="a window launched under a permissive posture is flagged stale when the "
             "posture is tightened to `manual`, as it is when it changes to another flag",
@@ -420,6 +421,7 @@ STALE = Case(
 LAUNCH_RACE = Case(
     name="console-launch-policy-concurrent-posts-lose-nothing",
     issue=417,
+    fixed=True,
     tier=Tier.FAST, substrate=_SUB, classes=_CLS,
     summary="simultaneous launch-policy POSTs for different harnesses leave a parseable "
             "store holding every selection answered 200",
@@ -428,6 +430,7 @@ LAUNCH_RACE = Case(
 EXTRACTOR_RACE = Case(
     name="console-extractor-policy-concurrent-posts-lose-nothing",
     issue=417,
+    fixed=True,
     tier=Tier.FAST, substrate=_SUB, classes=_CLS,
     summary="simultaneous extractor-policy POSTs for the two passes leave a parseable "
             "store holding both selections",
@@ -436,6 +439,7 @@ EXTRACTOR_RACE = Case(
 FAVORITES_RACE = Case(
     name="console-favorites-concurrent-writes-lose-nothing",
     issue=417,
+    fixed=True,
     tier=Tier.FAST, substrate=_SUB, classes=_CLS,
     summary="simultaneous star toggles on two directories both persist",
     run=run_favorites_race,

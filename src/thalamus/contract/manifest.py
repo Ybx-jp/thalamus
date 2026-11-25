@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fnmatch import fnmatch
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -137,15 +137,21 @@ class WriteBoundary(BaseModel):
     )
 
     def denies(self, file_path: str) -> str | None:
-        """The pattern that blocks this path, or None. Empty globs deny nothing."""
+        """The pattern that blocks this path, or None. Empty globs deny nothing.
+
+        Both spellings of the file are matched (`paths.write_spellings`): the path as
+        given and the file it resolves to. A deny on either blocks, and an allow
+        exempts only when it covers both, so neither a `..` nor a symlink reads a
+        denied file as an allowed one.
+        """
         if not file_path:
             return None
-        target = PurePosixPath(Path(file_path).as_posix()).as_posix()
-        for pattern in self.allow_globs:
-            if fnmatch(target, pattern):
-                return None
+        targets = paths.write_spellings(file_path)
+        if self.allow_globs and all(
+                any(fnmatch(t, pattern) for pattern in self.allow_globs) for t in targets):
+            return None
         for pattern in self.deny_globs:
-            if fnmatch(target, pattern):
+            if any(fnmatch(t, pattern) for t in targets):
                 return pattern
         return None
 
@@ -220,10 +226,17 @@ class CapabilityBoundary(BaseModel):
     )
 
     def denies_skill(self, skill: str) -> str | None:
-        """The pattern that blocks this skill, or None."""
+        """The pattern that blocks this skill, or None.
+
+        A plugin's skill is invoked as `<plugin>:<skill>`, and fnmatch anchors at the
+        start of the string, so the bare skill name after the `:` is matched as well
+        as the full one: `artifact-*` has to deny `anthropic-skills:artifact-emulator`.
+        """
         if not skill:
             return None
-        return next((p for p in self.deny_skills if fnmatch(skill, p)), None)
+        names = (skill, skill.partition(":")[2]) if ":" in skill else (skill,)
+        return next((p for p in self.deny_skills
+                     if any(fnmatch(name, p) for name in names)), None)
 
     def denies_tool(self, tool: str) -> str | None:
         """The pattern that blocks this tool, or None.
@@ -248,7 +261,24 @@ class CapabilityBoundary(BaseModel):
 # count is now derived rather than stated. Every pinned expert inherits this;
 # `designer` opts out in its own manifest; `main` never reaches the guard.
 EXPERT_CAPABILITY_DEFAULT = CapabilityBoundary(
-    deny_tools=["Artifact", "mcp__penpot__*"],
+    deny_tools=["Artifact", "mcp__penpot__*", "mcp__claude-artifacts__*"],
+    # The claude-artifacts connector publishes the pages `Artifact` does. Its reads are
+    # carved back out, as `Artifact`'s `list` is, and anything the server adds later
+    # stays denied until it is named here.
+    allow_tools=[
+        "mcp__claude-artifacts__guide",
+        "mcp__claude-artifacts__get_artifact",
+        "mcp__claude-artifacts__list_artifacts",
+        "mcp__claude-artifacts__read_artifact",
+        "mcp__claude-artifacts__read_shared_artifact",
+        "mcp__claude-artifacts__list_files",
+        "mcp__claude-artifacts__read_file",
+        "mcp__claude-artifacts__list_assets",
+        "mcp__claude-artifacts__read_asset",
+        "mcp__claude-artifacts__read_comments",
+        "mcp__claude-artifacts__list_types",
+        "mcp__claude-artifacts__describe_type",
+    ],
     deny_skills=[
         "artifact-*",
         "frontend-design*",
@@ -263,7 +293,9 @@ EXPERT_CAPABILITY_DEFAULT = CapabilityBoundary(
         "tools are `designer`'s authoring surface for the same reason and are denied "
         "to every expert for the same charter argument, narrower than the skill/Artifact "
         "denial only in that a scope can carve a slice back out via its own "
-        "`allow_tools` — `frontend`'s read/comment grant is the one declared case."
+        "`allow_tools` — `frontend`'s read/comment grant is the one declared case. "
+        "The claude-artifacts connector's publishing tools are `Artifact` by another "
+        "name and are denied with it; its read tools are not."
     ),
 )
 

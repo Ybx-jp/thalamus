@@ -256,6 +256,7 @@ def run() -> Finding | None:
 CASE = Case(
     name="a-generated-get-target-never-crashes-leaks-or-200s-a-stranger",
     issue=419,
+    fixed=True,
     tier=Tier.FAST,
     substrate=(Substrate.NEEDS_TMUX,),
     classes=(FailureClass.FAILED_OPEN, FailureClass.BOUNDARY_LEAK,

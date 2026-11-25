@@ -50,6 +50,30 @@ class TestWriteBoundary:
         boundary = WriteBoundary(deny_globs=["*/src/*"])
         assert boundary.denies("/some/other/checkout/src/main.py") == "*/src/*"
 
+    def test_a_symlink_or_dotdot_spelling_of_a_denied_file_is_denied(self, tmp_path):
+        """The guard matched the string, so `.claude/skills/<name>` (a link into
+        `src/`) and `<sibling>/../src/` passed a `*/src/*` deny (#424)."""
+        src = tmp_path / "repo" / "src" / "pkg"
+        src.mkdir(parents=True)
+        (tmp_path / "repo" / "docs").mkdir()
+        link = tmp_path / "repo" / "skills"
+        link.symlink_to(src)
+        boundary = WriteBoundary(deny_globs=["*/src/*"])
+        assert boundary.denies(str(link / "SKILL.md")) == "*/src/*"
+        assert boundary.denies(f"{tmp_path}/repo/docs/../src/pkg/x.py") == "*/src/*"
+        assert boundary.denies(f"{tmp_path}/repo/docs/x.md") is None
+
+    def test_an_allow_exempts_only_when_it_covers_the_file_it_resolves_to(self, tmp_path):
+        """A link inside an allowed tree that points into a denied one is the same
+        hole the other way round."""
+        (tmp_path / "src").mkdir()
+        allowed = tmp_path / "site"
+        allowed.mkdir()
+        (allowed / "escape").symlink_to(tmp_path / "src")
+        boundary = WriteBoundary(allow_globs=["*/site/*"], deny_globs=["*/src/*", "*.py"])
+        assert boundary.denies(str(allowed / "escape" / "x.py")) == "*/src/*"
+        assert boundary.denies(str(allowed / "page.py")) is None
+
     def test_an_empty_path_is_not_a_match(self):
         """Tool payloads without a file path reach the guard; they are not writes to
         bound."""
@@ -148,6 +172,23 @@ class TestCapabilityBoundary:
             assert EXPERT_CAPABILITY_DEFAULT.denies_skill(skill), f"{skill} is design work"
         assert EXPERT_CAPABILITY_DEFAULT.denies_tool("Artifact")
         assert EXPERT_CAPABILITY_DEFAULT.denies_tool("mcp__penpot__create_shape")
+
+    def test_a_plugin_namespaced_skill_is_matched_by_its_own_name(self):
+        """fnmatch anchors at the start, so `artifact-*` missed
+        `anthropic-skills:artifact-emulator` (#425)."""
+        assert EXPERT_CAPABILITY_DEFAULT.denies_skill(
+            "anthropic-skills:artifact-emulator") == "artifact-*"
+        assert EXPERT_CAPABILITY_DEFAULT.denies_skill("anthropic-skills:pdf") is None
+
+    def test_the_artifacts_connector_publishes_nothing_and_reads_everything(self):
+        """`mcp__claude-artifacts__*` publishes the pages `Artifact` does. Its reads
+        are carved back out the way `Artifact`'s `list` is, and a tool the server
+        adds later stays denied (#425)."""
+        for tool in ("publish_version", "publish_files", "edit_version",
+                     "create_from_type", "delete_artifact", "a_tool_added_next_release"):
+            assert EXPERT_CAPABILITY_DEFAULT.denies_tool(f"mcp__claude-artifacts__{tool}"), tool
+        for tool in ("get_artifact", "list_artifacts", "read_artifact", "read_file"):
+            assert EXPERT_CAPABILITY_DEFAULT.denies_tool(f"mcp__claude-artifacts__{tool}") is None
 
     def test_allow_tools_carves_a_name_back_out_of_a_deny(self):
         """The read/comment grant a scope like `frontend` needs: a deny on the whole
@@ -282,6 +323,17 @@ class TestRoleGuardHook:
         assert result.returncode == 2
         assert "*.js" in result.stderr
         assert "config/experts/designer.yaml" in result.stderr
+
+    def test_it_routes_the_artifacts_connector_to_the_capability_boundary(self, tmp_path):
+        """The case arm sent `mcp__claude-artifacts__*` to `exit 0` before (#425)."""
+        payload = {"tool_name": "mcp__claude-artifacts__publish_version",
+                   "tool_input": {"content": "<!DOCTYPE html>"}, "session_id": "test",
+                   "cwd": str(REPO)}
+        blocked = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-architect"})
+        assert blocked.returncode == 2, blocked.stderr
+        payload["tool_name"] = "mcp__claude-artifacts__read_artifact"
+        read = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-architect"})
+        assert read.returncode == 0, read.stderr
 
     def test_it_passes_a_design_artifact_from_the_same_scope(self, tmp_path):
         result = run_guard(
@@ -525,7 +577,8 @@ def test_the_guard_is_wired_into_the_installer():
                 if (event, script) == ("PreToolUse", "role-guard.sh")]
     assert len(matchers) == 1, "the role guard should be wired exactly once"
     wired = set(matchers[0].split("|"))
-    for tool in ("Edit", "Write", "NotebookEdit", "Skill", "Artifact", "mcp__penpot__.*"):
+    for tool in ("Edit", "Write", "NotebookEdit", "Skill", "Artifact", "mcp__penpot__.*",
+                 "mcp__claude-artifacts__.*"):
         assert tool in wired, f"{tool} is bounded by the guard but never routed to it"
 
 

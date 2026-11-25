@@ -36,9 +36,9 @@ from __future__ import annotations
 
 import json
 from fnmatch import fnmatch
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
-from thalamus.contract.paths import config_root
+from thalamus.contract.paths import config_root, write_spellings
 
 #: The table's file name in the config root. An object of row name to
 #: `{"glob", "owner", "reason"}`; fnmatch over the ABSOLUTE POSIX path, matching
@@ -75,19 +75,18 @@ def rows(root: Path | None = None) -> tuple[tuple[str, str, str], ...]:
     return tuple(out)
 
 
-def _normalise(file_path: str) -> str:
-    return PurePosixPath(Path(file_path).as_posix()).as_posix()
+def _claims(file_path: str, root: Path | None) -> list[tuple[str, str, str]]:
+    """Every ownership row claiming this path, in table order.
 
-
-def owner_of(file_path: str, root: Path | None = None) -> tuple[str, str, str] | None:
-    """The ownership row claiming this path, or None if no row does."""
+    Matched against the path as given and against the file it resolves to
+    (`paths.write_spellings`), so a `..` or a symlink spelling of an owned file is
+    still that file.
+    """
     if not file_path:
-        return None
-    target = _normalise(file_path)
-    for row in rows(root):
-        if fnmatch(target, row[0]):
-            return row
-    return None
+        return []
+    table = rows(root)
+    return [row for target in write_spellings(file_path) for row in table
+            if fnmatch(target, row[0])]
 
 
 def denies(scope: str, file_path: str,
@@ -98,7 +97,4 @@ def denies(scope: str, file_path: str,
     own path. Every other scope is — `main` included, which is the whole point and
     the one thing `WriteBoundary` cannot express.
     """
-    row = owner_of(file_path, root)
-    if row is None or row[1] == scope:
-        return None
-    return row
+    return next((row for row in _claims(file_path, root) if row[1] != scope), None)

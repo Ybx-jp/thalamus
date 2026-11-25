@@ -196,14 +196,14 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
     BoundaryRow(
         "capability_boundary.mcp_tool", "claude", Provision.PROVIDED, _WIRED,
         "Extends the same `kind=tool` gate to a named MCP server's tool surface: "
-        "`role-guard.sh` treats `mcp__penpot__*` tool names the way it treats "
+        "`role-guard.sh` treats `mcp__penpot__*` and `mcp__claude-artifacts__*` "
+        "tool names the way it treats "
         "`Artifact`, so `effective_capability_boundary.denies_tool` runs on the real "
         "MCP-qualified name and a scope's `allow_tools` can carve a slice back out "
         "of the every-expert deny — `frontend`'s read/comment grant is the one "
-        "declared case. Named for one server rather than a blanket `mcp__.*`: no "
-        "other scope declares an MCP server today, and a matcher firing on every "
-        "MCP call would run this guard against `mcp__thalamus__*` too, for a "
-        "boundary that denies nothing there.",
+        "declared case. Named per server rather than a blanket `mcp__.*`: a "
+        "matcher firing on every MCP call would run this guard against "
+        "`mcp__thalamus__*` too, for a boundary that denies nothing there.",
     ),
     BoundaryRow(
         "capability_boundary.skill", "claude", Provision.PROVIDED, _WIRED,

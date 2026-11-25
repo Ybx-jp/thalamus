@@ -41,6 +41,13 @@ none
 - 2026-10-16T22:43:58-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/contract/ownership.py § "denies" =sha256:27838606d38088faf18a6af18cc6ed7394e29a9778b9f48572dcc69fcd80f524
   note: denies now reads the config root's rows and takes an optional root; it still exempts only a row's owner, so the deny survives the owner's manifest being removed. #343 moves the ownership table out of the package into the config root's ownership.json. The assertion is unaffected.
+- 2026-11-24T21:21:13-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/ownership.py § "denies" =sha256:27838606d38088faf18a6af18cc6ed7394e29a9778b9f48572dcc69fcd80f524
+  artifact: sha256:f59c1c59468dca672de2f4fa44b26d50dc95f89b8453d33e24138cf8c17c1c1c
+  note: propagated from a moved ground
+- 2026-11-24T21:21:34-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/ownership.py § "denies" =sha256:f59c1c59468dca672de2f4fa44b26d50dc95f89b8453d33e24138cf8c17c1c1c
+  note: denies now considers every row claiming the path under either spelling, as given and resolved; it still reads only the ownership table and no manifest, so the assertion is unaffected
 
 ## References
 

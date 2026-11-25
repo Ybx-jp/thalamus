@@ -39,6 +39,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -52,7 +53,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 # names are re-exported below, and `panes` reaches nothing but the standard library.
 from thalamus_console import panes
 from thalamus_console.tmux import argv as tmux_argv
-from thalamus_console.tmux import literal_text_args
+from thalamus_console.tmux import literal_text_args, typeable
 from thalamus_console.tmux import socket_name as tmux_socket
 
 STATIC_DIR = Path(__file__).with_name("static")
@@ -1022,7 +1023,8 @@ def parse_windows(raw: str, expected: dict[str, tuple[str, ...]] | None = None) 
             # change cannot reach a running session, and without this the divergence is
             # silent. The restart button already beside it is the fix.
             "policy_stale": bool(
-                harness and want is not None and not _contains_run(start.split(), want)
+                harness and want is not None
+                and _posture_stale(harness, start.split(), want)
             ),
         })
     anchor_idx = min(indexes, default=None)
@@ -1375,7 +1377,7 @@ def open_shell(cfg: Config, directory: Path) -> tuple[bool, str]:
     """
     if tmux("has-session", "-t", cfg.session).returncode != 0:
         return False, NO_ROSTER_SESSION
-    r = tmux("new-window", "-d", "-t", cfg.session, "-P", "-F", "#{window_id}",
+    r = tmux("new-window", "-d", "-t", f"{cfg.session}:", "-P", "-F", "#{window_id}",
              "-n", SHELL_WINDOW_NAME, "-c", str(directory))
     if r.returncode != 0:
         return False, (r.stderr or r.stdout).strip() or "tmux would not open the window"
@@ -1498,6 +1500,36 @@ HARNESS_BINARIES = panes.HARNESS_BINARIES
 window_harness = panes.harness_of
 
 
+def _posture_ladders() -> dict[str, tuple[tuple[str, ...], ...]]:
+    """Every rung's argv, per harness, from the launcher's own capability table."""
+    try:
+        from thalamus.harness.launcher import LAUNCH_SHAPES
+    except Exception:  # noqa: BLE001 — no launcher, no ladder to read a window against
+        return {}
+    return {h: tuple(tuple(o.argv) for c in shape.capabilities for o in c.options)
+            for h, shape in LAUNCH_SHAPES.items()}
+
+
+def _posture_stale(harness: str, tokens: list[str], want: tuple[str, ...]) -> bool:
+    """Was this window started at a posture rung other than the one now wanted?
+
+    The rung is read off the start command: the longest rung whose argv appears there
+    as a contiguous run. Asking only "is the wanted argv present?" is not enough. The
+    strictest rung of every ladder passes no flag, so its empty argv is contained in
+    every start command, and a window launched looser than a posture since tightened
+    to it would never be flagged; on codex, whose `auto` argv extends
+    `workspace-write`'s, the same question misses a tightening between those two. A
+    harness with no ladder falls back to that question, since there is nothing else to
+    read.
+    """
+    ladder = _posture_ladders().get(harness)
+    if not ladder:
+        return not _contains_run(tokens, want)
+    launched = max((argv for argv in ladder if _contains_run(tokens, argv)), key=len,
+                   default=())
+    return launched != want
+
+
 def _contains_run(tokens: list[str], want: tuple[str, ...]) -> bool:
     """Does `want` appear as a contiguous run in `tokens`?
 
@@ -1515,6 +1547,8 @@ def _contains_run(tokens: list[str], want: tuple[str, ...]) -> bool:
 # root, and the same shape: a version and the fact, nothing derived.
 FAVORITES_STORE = Path.home() / ".thalamus" / "console" / "favorites.json"
 FAVORITES_VERSION = 1
+# Serialises `set_favorite`. In-process is enough: the console is the store's only writer.
+FAVORITES_LOCK = threading.Lock()
 
 
 class NoFavoritesStore(RuntimeError):
@@ -1555,15 +1589,25 @@ def set_favorite(cfg: Config, path: str, favorite: bool) -> None:
             "this console has no favorites store, so a star cannot be kept — "
             "start it with `thalamus console`, which names one")
     real = os.path.realpath(path)
-    current = [p for p in effective_favorites(cfg) if p != real]
-    if favorite:
-        current.append(real)
     store = Path(cfg.favorites_store)
-    store.parent.mkdir(parents=True, exist_ok=True)
-    tmp = store.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"version": FAVORITES_VERSION, "paths": current},
-                              indent=2) + "\n")
-    os.replace(tmp, store)
+    # One writer at a time, and a temp name no other writer shares: the server runs
+    # each POST on its own thread, and two unlocked read-edit-replace passes each
+    # write back what they read, so one star is acknowledged and then lost.
+    with FAVORITES_LOCK:
+        current = [p for p in effective_favorites(cfg) if p != real]
+        if favorite:
+            current.append(real)
+        store.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=store.parent, prefix=f".{store.name}.",
+                                   suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as handle:
+                handle.write(json.dumps({"version": FAVORITES_VERSION,
+                                         "paths": current}, indent=2) + "\n")
+            os.replace(tmp, store)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
 
 
 def spawn_dirs(cfg: Config) -> tuple[list[dict], set[str]]:
@@ -2070,15 +2114,67 @@ def same_origin(origin: str, host_header: str) -> bool:
     TLS-terminating proxy on 443 sends a bare hostname, and the origin's own default
     port is then the only port either side could mean.
     """
-    parts = urlsplit(origin)
-    if not parts.scheme or not parts.hostname:
+    scheme, hostname, port = _authority(origin) or ("", None, None)
+    if not scheme or not hostname:
         return False  # "null" (sandboxed frame, file://) and anything unparseable
-    origin_port = str(parts.port) if parts.port else DEFAULT_PORTS.get(parts.scheme)
+    origin_port = str(port) if port else DEFAULT_PORTS.get(scheme)
     # `Host` is authority-only, and urlsplit needs a scheme to read one as authority.
-    target = urlsplit(f"//{host_header}")
-    if not target.hostname or target.hostname.lower() != parts.hostname.lower():
+    _, target_host, target_port = _authority(f"//{host_header}") or ("", None, None)
+    if not target_host or target_host.lower() != hostname.lower():
         return False
-    return target.port is None or str(target.port) == origin_port
+    return target_port is None or str(target_port) == origin_port
+
+
+def _authority(url: str) -> tuple[str, str | None, int | None] | None:
+    """(scheme, hostname, port) of `url`, or None when it does not parse.
+
+    `urlsplit` raises `ValueError` on a bad port, an unterminated IPv6 literal and
+    similar, and reading `.port` raises on more. Both are folded into None here, so
+    the origin gate refuses an unparseable header as a refusal rather than reaching
+    it through an exception — one refactor of the exception path from failing open.
+    """
+    try:
+        parts = urlsplit(url)
+        return parts.scheme, parts.hostname, parts.port
+    except ValueError:
+        return None
+
+
+def offered_dir(directory: object, allowed: set[str]) -> str | None:
+    """`directory` resolved, if it is one the picker offered; else None.
+
+    A NUL or a lone surrogate passes `isinstance(str)` and then makes
+    `os.path.realpath` raise, so both are refused before the path is resolved.
+    """
+    if not isinstance(directory, str) or "\0" in directory or not _encodable(directory):
+        return None
+    real = os.path.realpath(directory)
+    return real if real in allowed else None
+
+
+def _encodable(text: str) -> bool:
+    """Can `text` reach an argv or a path? A lone surrogate cannot be encoded."""
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+_QUERY_INT = re.compile(r"-?[0-9]{1,9}")
+_QUERY_UINT = re.compile(r"[0-9]{1,9}")
+
+
+def query_int(raw: str, *, signed: bool = True) -> int | None:
+    """A query parameter as an int, or None unless it is plain ASCII decimal.
+
+    `str.isdigit` admits superscripts and other digits `int` rejects, `lstrip("-")`
+    admits `--5`, and `int` refuses more than 4300 digits; each of those reached
+    `int` behind a guard that had passed it. Nine digits bound every index a tmux
+    server or a transcript holds.
+    """
+    pattern = _QUERY_INT if signed else _QUERY_UINT
+    return int(raw) if pattern.fullmatch(raw) else None
 
 
 def origin_key(origin: str) -> str | None:
@@ -2088,11 +2184,14 @@ def origin_key(origin: str) -> str | None:
     `--allow-origin`, where both sides are full origins and the scheme is known on
     each — unlike the `Host` comparison above, which has a scheme on one side only.
     """
-    parts = urlsplit(origin)
-    port = str(parts.port) if parts.port else DEFAULT_PORTS.get(parts.scheme)
-    if not parts.hostname or not port:
+    parts = _authority(origin)
+    if parts is None:
         return None
-    return f"{parts.scheme}://{parts.hostname.lower()}:{port}"
+    scheme, hostname, raw_port = parts
+    port = str(raw_port) if raw_port else DEFAULT_PORTS.get(scheme)
+    if not hostname or not port:
+        return None
+    return f"{scheme}://{hostname.lower()}:{port}"
 
 
 class ConsoleServer(ThreadingHTTPServer):
@@ -2197,8 +2296,7 @@ class Handler(BaseHTTPRequestHandler):
         path, _, query = self.path.partition("?")
         if path == "/api/commands":
             # ?index=N scopes project skills to that window's cwd; absent → anchor.
-            raw = parse_qs(query).get("index", [""])[0]
-            idx = int(raw) if raw.lstrip("-").isdigit() else None
+            idx = query_int(parse_qs(query).get("index", [""])[0])
             return self._send(200, {"commands": list_commands(self.cfg, idx)})
         if path == "/api/panes":
             windows = list_windows(self.cfg)
@@ -2239,11 +2337,10 @@ class Handler(BaseHTTPRequestHandler):
             # highest seq the client already holds; 0 means a cold open, which is
             # the only case that gets truncated to a tail.
             q = parse_qs(query)
-            raw = q.get("index", [""])[0]
-            if not raw.lstrip("-").isdigit():
+            index = query_int(q.get("index", [""])[0])
+            if index is None:
                 return self._send(400, {"error": "index required"})
-            since = q.get("since", ["0"])[0]
-            since = int(since) if since.isdigit() else 0
+            since = query_int(q.get("since", ["0"])[0], signed=False) or 0
             # `permission_mode_read` rides every response this endpoint can serve,
             # including the ones that already carry `reason`. The client should
             # never have to combine `available` and `reason` to learn whether the
@@ -2252,7 +2349,7 @@ class Handler(BaseHTTPRequestHandler):
             if tr is None:
                 return self._send(200, {"available": False, "reason": "no-package",
                                         "permission_mode_read": "no-package"})
-            window, feed, reason = read_feed(self.cfg, int(raw))
+            window, feed, reason = read_feed(self.cfg, index)
             if window is None:
                 return self._send(404, {"error": "no such window"})
             if feed is None:
@@ -2285,15 +2382,15 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/read/body":
             # A tool result, fetched only when the reader expands that call.
             q = parse_qs(query)
-            raw = q.get("index", [""])[0]
-            item = q.get("item", [""])[0]
-            if not raw.lstrip("-").isdigit() or not item.isdigit():
+            index = query_int(q.get("index", [""])[0])
+            item = query_int(q.get("item", [""])[0], signed=False)
+            if index is None or item is None:
                 return self._send(400, {"error": "index and item required"})
-            _, feed, reason = read_feed(self.cfg, int(raw))
+            _, feed, reason = read_feed(self.cfg, index)
             if feed is None:
                 return self._send(404, {"error": reason or "unresolved"})
             with READ_LOCK:
-                body = feed.body(int(item))
+                body = feed.body(item)
             if body is None:
                 return self._send(404, {"error": "no such item"})
             return self._send(200, {"body": body})
@@ -2455,7 +2552,7 @@ class Handler(BaseHTTPRequestHandler):
             # The directory must be one the picker offered — recomputed here, never
             # trusted from the request.
             _, allowed = spawn_dirs(self.cfg)
-            if not isinstance(directory, str) or os.path.realpath(directory) not in allowed:
+            if offered_dir(directory, allowed) is None:
                 return self._send(400, {"error": "directory not in the allowed list"})
             ok, output = do_spawn(self.cfg, scope, Path(os.path.realpath(directory)),
                                   room, harness)
@@ -2470,7 +2567,7 @@ class Handler(BaseHTTPRequestHandler):
             # request: this endpoint hands the caller a shell, so the directory it
             # names is the one thing that must not be arbitrary.
             _, allowed = spawn_dirs(self.cfg)
-            if not isinstance(directory, str) or os.path.realpath(directory) not in allowed:
+            if offered_dir(directory, allowed) is None:
                 return self._send(400, {"error": "directory not in the allowed list"})
             ok, output = open_shell(self.cfg, Path(os.path.realpath(directory)))
             return self._send(200 if ok else 500, {"ok": ok, "output": output})
@@ -2481,7 +2578,7 @@ class Handler(BaseHTTPRequestHandler):
             # Same whitelist as a spawn, recomputed here: a star names a directory
             # the picker offered, never one the request made up.
             _, allowed = spawn_dirs(self.cfg)
-            if not isinstance(directory, str) or os.path.realpath(directory) not in allowed:
+            if offered_dir(directory, allowed) is None:
                 return self._send(400, {"error": "directory not in the allowed list"})
             if not isinstance(favorite, bool):
                 return self._send(400, {"error": "favorite must be true or false"})
@@ -2650,17 +2747,28 @@ class Handler(BaseHTTPRequestHandler):
             text = data.get("text", "")
             if not isinstance(text, str):
                 return self._send(400, {"error": "text must be a string"})
-            if text:
+            # A lone surrogate cannot be encoded into tmux's argv at all.
+            if not _encodable(text):
+                return self._send(400, {"error": "text holds a character that cannot "
+                                                 "be encoded (a lone surrogate)"})
+            # The composer's text is data: `literal_text_args` drops the characters
+            # the pane's tty would turn into a signal, and the reply counts them when
+            # there are any, so a client can say so. Keys, Ctrl-C included, are
+            # `/api/key`'s.
+            dropped = len(text) - len(typeable(text))
+            if typeable(text):
                 tmux("send-keys", "-t", target, *literal_text_args(text))
             if data.get("submit", True):
                 win = next((w for w in windows if w["index"] == idx), None)
                 if text and win and win.get("harness") == "codex":
                     time.sleep(CODEX_COMPOSER_SETTLE_S)
                 tmux("send-keys", "-t", target, "Enter")
-            return self._send(200, {"ok": True})
+            return self._send(200, {"ok": True, **({"dropped_controls": dropped}
+                                                   if dropped else {})})
 
         if path == "/api/key":
-            key = KEYMAP.get(data.get("key", ""))
+            name = data.get("key", "")
+            key = KEYMAP.get(name) if isinstance(name, str) else None
             if not key:
                 return self._send(400, {"error": "unknown key"})
             # A held key arrives as one request carrying its repeat count, not as one
@@ -2670,7 +2778,7 @@ class Handler(BaseHTTPRequestHandler):
             # able to ask for an unbounded amount of work.
             try:
                 count = int(data.get("count", 1))
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 count = 1
             count = max(1, min(count, KEY_REPEAT_CAP))
             if count > 1:

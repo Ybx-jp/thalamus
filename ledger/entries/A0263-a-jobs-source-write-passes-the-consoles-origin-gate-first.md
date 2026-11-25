@@ -36,5 +36,13 @@ none
 
 ## Verdicts
 
+- 2026-11-24T21:21:13-08:00 · contested · grade: argued · author: propagation
+  evidence: code: packages/thalamus-console/src/thalamus_console/server.py § "same_origin" =sha256:b3ac4c7e43e4c58dd5c62951f3b499b1ac8e9323be5c19ed2c7b70268011823a
+  artifact: sha256:fccdcf9c4c514f162789245b12fd26c44e480e1504fa829103208977c73906f7
+  note: propagated from a moved ground
+- 2026-11-24T21:21:34-08:00 · corroborated · grade: argued · author: main
+  evidence: code: packages/thalamus-console/src/thalamus_console/server.py § "same_origin" =sha256:fccdcf9c4c514f162789245b12fd26c44e480e1504fa829103208977c73906f7
+  note: urlsplit's parse errors now fold into a refusal through _authority instead of raising; do_POST still runs the Origin check before forwarding /api/jobs/, so the assertion is unaffected
+
 ## References
 - docs/console.md · standing · cites-as-live

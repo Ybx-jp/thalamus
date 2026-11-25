@@ -114,6 +114,7 @@ def run() -> Finding | None:
 CASE = Case(
     name="console-write-gate-answers-403-to-a-malformed-origin",
     issue=418,
+    fixed=True,
     tier=Tier.FAST,
     substrate=(Substrate.NEEDS_TMUX,),
     classes=(FailureClass.INVARIANT_FALSIFIED, FailureClass.FAILED_OPEN,

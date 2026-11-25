@@ -2764,8 +2764,152 @@ def test_a_route_that_raises_answers_500_with_the_exception_named(tmp_path, monk
     escapes a route reaches the client as a status and a reason, and the journal as
     a line, rather than as a closed connection."""
     cfg = Config(project_root=_repo(tmp_path / "alpha"))
+
+    def broken(cfg):
+        raise TypeError("a reader this route calls raised")
+
+    monkeypatch.setattr(server, "spawn_dirs", broken)
     with _serving(cfg, windows=WINDOW_FIELDS) as post:
-        # `key` must be hashable for the allowlist lookup; a list is not.
-        status, answer = post("/api/key", {"index": 0, "key": []})
+        status, answer = post("/api/shell", {"dir": str(tmp_path)})
     assert status == 500
     assert "TypeError" in answer["error"]
+
+
+# ---- defects the qe console arms reproduced (#414-#420) ----
+
+def test_a_window_launched_looser_than_a_tightened_posture_is_marked():
+    """The strictest rung passes no flag, so "is the wanted argv present?" is true of
+    every start command. Tightening to `manual` is the direction where a stale window
+    is less safe than the operator chose, and it has to be flagged too (#416)."""
+    loose = CLAUDE_START.replace("--permission-mode auto", "--permission-mode acceptEdits")
+    assert parse_windows(loose, {"claude": ()})[0]["policy_stale"] is True
+    plain = CLAUDE_START.replace(" --permission-mode auto", "")
+    assert parse_windows(plain, {"claude": ()})[0]["policy_stale"] is False
+
+
+def test_codex_tightened_from_auto_to_accept_edits_is_marked():
+    """Codex's `auto` argv extends `workspace-write`'s, so containment alone cannot
+    tell the two rungs apart."""
+    codex = ("0\tmain\t1\tcodex\t60\t50\t0\t/home/op/code/thalamus\t"
+             "env THALAMUS_SCOPE=main codex --profile thalamus-main --sandbox "
+             "workspace-write --ask-for-approval never\t%0\t991")
+    want = ("--sandbox", "workspace-write")
+    assert parse_windows(codex, {"codex": want})[0]["policy_stale"] is True
+    exact = codex.replace(" --ask-for-approval never", "")
+    assert parse_windows(exact, {"codex": want})[0]["policy_stale"] is False
+
+
+@pytest.mark.parametrize("raw, signed, expected", [
+    ("5", True, 5), ("-1", True, -1), ("0", False, 0),
+    ("--5", True, None), ("²", True, None), ("-1", False, None),
+    ("9" * 5000, True, None), ("", True, None), (" 5", True, None),
+])
+def test_a_query_integer_is_plain_ascii_decimal(raw, signed, expected):
+    """Each rejected shape passed the old `isdigit` guard and then crashed `int` (#419)."""
+    assert server.query_int(raw, signed=signed) == expected
+
+
+@pytest.mark.parametrize("directory", ["\0", "a\0b", "\ud800", [], None])
+def test_a_directory_that_cannot_be_a_path_is_not_offered(tmp_path, directory):
+    """A NUL or a lone surrogate made `os.path.realpath` raise inside the whitelist
+    check, which answered 500 instead of 400 (#419)."""
+    assert server.offered_dir(directory, {str(tmp_path)}) is None
+    assert server.offered_dir(str(tmp_path), {str(tmp_path)}) == str(tmp_path)
+
+
+def test_a_wrong_typed_key_or_an_infinite_count_is_not_a_500(tmp_path):
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        assert post("/api/key", {"index": 0, "key": []})[0] == 400
+        raw = b'{"index": 0, "key": "enter", "count": Infinity}'
+        conn = HTTPConnection("127.0.0.1", post.port, timeout=5)
+        conn.request("POST", "/api/key", body=raw,
+                     headers={"Content-Type": "application/json"})
+        assert conn.getresponse().status == 200
+
+
+def test_send_drops_signalling_characters_and_says_how_many(tmp_path):
+    """`send-keys -l` delivers a control byte literally, and the pane's tty reads
+    `\\x03` as SIGINT. Text is data; keys are `/api/key`'s (#420). An escape
+    sequence is data too, and arrives as it stands (#152)."""
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/send", {"index": 0,
+                                          "text": "a\x03b\x1c\x1a\x04\x1b[A\tc\n",
+                                          "submit": False})
+        sends = [c for c in post.fake.calls if c[0] == "send-keys"]
+        clean_status, clean = post("/api/send", {"index": 0, "text": "x", "submit": False})
+    assert status == 200 and body["dropped_controls"] == 4
+    assert sends[0][-1] == "ab\x1b[A\tc\n"
+    assert clean_status == 200 and clean == {"ok": True}
+
+
+def test_send_of_only_control_characters_types_nothing(tmp_path):
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, _ = post("/api/send", {"index": 0, "text": "\x03\x04", "submit": False})
+        sends = [c for c in post.fake.calls if c[0] == "send-keys"]
+    assert status == 200 and sends == []
+
+
+def test_send_refuses_a_lone_surrogate(tmp_path):
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, _ = post("/api/send", {"index": 0, "text": "\ud800"})
+    assert status == 400
+
+
+@pytest.mark.parametrize("origin", [
+    "http://127.0.0.1:99999", "http://127.0.0.1:-1", "http://127.0.0.1:0x50",
+    "http://[::1", "a:b:c", "http://127.0.0.1:8378.evil.example",
+])
+def test_a_malformed_origin_is_refused_with_the_gates_403(tmp_path, origin):
+    """`urlsplit().port` raises on these. The refusal must be the gate's, not an
+    exception's 500, which is one refactor away from failing open (#418)."""
+    assert server.same_origin(origin, "127.0.0.1:8378") is False
+    assert server.origin_key(origin) is None
+    cfg = Config(session="t", project_root=_repo(tmp_path))
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, _ = post("/api/send", {"index": 0, "text": "x"},
+                         {"Content-Type": "application/json", "Origin": origin})
+        assert status == 403
+        assert not [c for c in post.fake.calls if "send-keys" in c]
+
+
+def test_new_window_addresses_the_session_not_a_window_named_like_it(monkeypatch, tmp_path):
+    """tmux resolves a bare `-t <name>` for new-window to a window called that before
+    the session, so once a window is named like the session every spawn collided on
+    its index (#414)."""
+    seen = []
+
+    def fake_run(cmd, **kw):
+        seen.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="@1\n")
+
+    monkeypatch.setattr(windows.subprocess, "run", fake_run)
+    windows._open_window("qe", ["claude"], tmp_path, target="qe", detached=True)
+    (cmd,) = seen
+    assert cmd[cmd.index("-t") + 1] == "qe:"
+
+
+def test_concurrent_star_toggles_lose_nothing(tmp_path):
+    """Two unlocked read-edit-replace passes sharing one `.tmp` name acknowledged a
+    star and then lost it (#417)."""
+    dirs = [tmp_path / f"d{i}" for i in range(6)]
+    for d in dirs:
+        d.mkdir()
+    # The seed is the project root when none is named; d0 is starred again below.
+    cfg = Config(project_root=dirs[0], favorites_store=str(tmp_path / "fav.json"))
+    barrier = threading.Barrier(len(dirs))
+
+    def go(d):
+        barrier.wait()
+        server.set_favorite(cfg, str(d), True)
+
+    threads = [threading.Thread(target=go, args=(d,)) for d in dirs]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sorted(server.effective_favorites(cfg)) == sorted(os.path.realpath(d) for d in dirs)
+    assert not list(tmp_path.glob(".fav.json.*.tmp"))

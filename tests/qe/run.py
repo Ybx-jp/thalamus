@@ -42,6 +42,8 @@ CASE_MODULES = (
     "qe.cases.install_driver_gates",
     "qe.cases.hook_arming",
     "qe.cases.guard_failopen",
+    "qe.cases.role_guard_path_normalization",
+    "qe.cases.role_guard_capability_names",
     "qe.cases.ingest_gate",
     "qe.cases.floor_coverage",
     "qe.cases.ingest_redirect",
