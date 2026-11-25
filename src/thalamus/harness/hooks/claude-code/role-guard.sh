@@ -36,7 +36,9 @@
 # route around it:
 #
 #   - Bash writes files without touching an editing tool, and a repository that does
-#     not put implementation under `src/` escapes qe's `*/src/*` deny.
+#     not put implementation under `src/` escapes qe's `*/src/*` deny. A Bash call
+#     reaches the guard only as a tool name, for a manifest that denies `Bash`
+#     outright; the paths its command writes are never read.
 #   - `Read` on a SKILL.md gets the procedure into context with no `Skill` call. No
 #     tool-name matcher can see that.
 #   - A denied `Artifact` can become a hand-written page: qe's write boundary denies
@@ -65,7 +67,7 @@
 # false positive teaches route-around, and route-around costs more than a gap.
 #
 # Install (user or project settings.json):
-#   {"hooks": {"PreToolUse": [{"matcher": "Edit|Write|NotebookEdit|Skill|Artifact|mcp__penpot__.*|mcp__claude-artifacts__.*",
+#   {"hooks": {"PreToolUse": [{"matcher": "Edit|Write|NotebookEdit|Skill|Artifact|Bash|mcp__penpot__.*|mcp__claude-artifacts__.*",
 #     "hooks": [{"type": "command",
 #     "command": ".../hooks/claude-code/role-guard.sh"}]}]}}
 
@@ -98,6 +100,13 @@ case "$tool_name" in
   Artifact)
     # Listing is read-only: a scope that may not publish may still see what exists.
     [ "$(printf '%s' "$input" | jq -r '.tool_input.action // empty')" != "list" ] || exit 0
+    kind=tool
+    target="$tool_name" ;;
+  Bash)
+    # The tool name only. A manifest copy that denies `Bash` takes the shell away
+    # from a job context; what a permitted command writes is not read here (the
+    # named miss above). A scope with no Bash deny passes, and `main` exits before
+    # any manifest loads.
     kind=tool
     target="$tool_name" ;;
   mcp__penpot__*|mcp__claude-artifacts__*)

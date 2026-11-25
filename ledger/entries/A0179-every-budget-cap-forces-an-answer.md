@@ -68,6 +68,13 @@ none
 - 2026-11-24T21:21:34-08:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:0cab3296db882b6e9cd1198531e4070f7343e18bc99f262cfc406a76b7dc1e97
   note: `role-guard.sh`'s PreToolUse matcher gained `mcp__claude-artifacts__.*`; every other row of the table is unchanged, so the assertion is unaffected
+- 2026-11-24T22:02:43-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:0cab3296db882b6e9cd1198531e4070f7343e18bc99f262cfc406a76b7dc1e97
+  artifact: sha256:7d488f5e8bc9ff56563eaa24ea1bfbfc0cd23a7e321667d3dfd8894e059ccf0f
+  note: propagated from a moved ground
+- 2026-11-24T22:02:43-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:7d488f5e8bc9ff56563eaa24ea1bfbfc0cd23a7e321667d3dfd8894e059ccf0f
+  note: `role-guard.sh`'s PreToolUse matcher gained `Bash`; every other row of the table is unchanged, so the assertion is unaffected
 
 ## References
 
