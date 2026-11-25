@@ -3875,7 +3875,7 @@
      },
      "observation": {
       "type": "string",
-      "description": "What the job observed. The body under a title; with no title, the headline. Printed as text."
+      "description": "What the job observed, as prose: never empty and never a stored JSON document. The body under a title; with no title, the headline. A finding with neither a title nor a prose observation is not sent at all. Printed as text."
      },
      "source": {
       "anyOf": [
@@ -5546,7 +5546,7 @@
           },
           "observation": {
            "type": "string",
-           "description": "What the job observed. The body under a title; with no title, the headline. Printed as text."
+           "description": "What the job observed, as prose: never empty and never a stored JSON document. The body under a title; with no title, the headline. A finding with neither a title nor a prose observation is not sent at all. Printed as text."
           },
           "source": {
            "anyOf": [
