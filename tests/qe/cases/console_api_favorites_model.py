@@ -311,6 +311,7 @@ def run() -> Finding | None:
 CASE = Case(
     name="favorites-store-matches-its-set-model-under-generated-operations",
     issue=419,
+    fixed=True,
     tier=Tier.FAST,
     substrate=(Substrate.NEEDS_TMUX,),
     classes=(FailureClass.INVARIANT_FALSIFIED, FailureClass.BOUNDARY_LEAK,

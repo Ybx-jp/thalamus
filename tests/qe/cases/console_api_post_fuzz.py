@@ -289,6 +289,7 @@ def run() -> Finding | None:
 CASE = Case(
     name="a-generated-post-body-never-crashes-a-console-route",
     issue=419,
+    fixed=True,
     tier=Tier.FAST,
     substrate=(Substrate.NEEDS_TMUX,),
     classes=(FailureClass.FAILED_OPEN, FailureClass.COLLAPSED_SENTINEL),

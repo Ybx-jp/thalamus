@@ -2,22 +2,23 @@
 
 `EXPERT_CAPABILITY_DEFAULT` denies every pinned expert except `designer` the design
 skills and artifact publishing: `deny_skills` `artifact-*`, `frontend-design*`,
-`dataviz`, `author-repo-diagram`; `deny_tools` `Artifact`, `mcp__penpot__*`. Both are
+`dataviz`, `author-repo-diagram`; `deny_tools` `Artifact`, `mcp__penpot__*`,
+`mcp__claude-artifacts__*` (its reads carved back out). Both are
 `fnmatch` over the name in the payload, and the tool half is reached only through
 `role-guard.sh`'s matcher in `harness/install.HOOK_WIRING`
-(`Edit|Write|NotebookEdit|Skill|Artifact|mcp__penpot__.*`). Two names reach the same
-capability and miss both:
+(`Edit|Write|NotebookEdit|Skill|Artifact|mcp__penpot__.*|mcp__claude-artifacts__.*`). Two
+names reach the same capability without being the name a pattern was first written for:
 
 - **A plugin-namespaced skill.** A skill a plugin ships is invoked as `<plugin>:<skill>`,
   so `anthropic-skills:artifact-emulator` is the skill `artifact-*` denies, and
-  `fnmatch` anchors at the start of the string. `frontend-design*` happens to survive
-  this, because that plugin and its skill share a name; `artifact-*` does not.
+  `fnmatch` anchors at the start of the string. `frontend-design*` survives this only
+  because that plugin and its skill share a name.
 - **Artifact publishing through an MCP server.** A session armed with the
   claude-artifacts connector publishes a page with `mcp__claude-artifacts__publish_version`
-  (also `publish_files`, `edit_version`). That name matches neither the hook matcher —
-  so Claude Code never runs role-guard for it — nor `deny_tools`, so the guard would
-  permit it if it did run. A qe-pinned session holding exactly these tools is what
-  this case was written from.
+  (also `publish_files`, `edit_version`). A qe-pinned session holds exactly these tools.
+
+Against the default before #425 every name above was permitted, and the MCP tools were
+not routed to role-guard at all.
 
 The property: each capability the default denies is denied under each name listed
 here, at both layers — the matcher routes the call to role-guard, and role-guard
@@ -26,7 +27,7 @@ blocks it.
 **Matcher semantics.** Claude Code reads a matcher as a regex (measured 2026-08-17,
 `install._build_matcher_block`). Whether it anchors is not measured here, so a name
 counts as routed if the matcher matches it either way; that is the reading under which
-a miss is least likely to be reported, and these names miss under both.
+a miss is least likely to be reported.
 
 **Controls.** Under scope `qe`, with the repository's config root and a temporary HOME:
 the bare skill `artifact-emulator` and the tool `Artifact` are blocked, and the skill
@@ -117,4 +118,5 @@ CASE = Case(
     summary="a denied skill or tool stays denied under its plugin-namespaced or MCP-server name",
     run=run,
     issue=425,
+    fixed=True,
 )

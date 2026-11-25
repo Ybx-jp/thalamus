@@ -166,6 +166,7 @@ def run() -> Finding | None:
 CASE = Case(
     name="a-control-byte-in-send-text-is-data-not-a-signal-to-the-pane",
     issue=420,
+    fixed=True,
     tier=Tier.FAST,
     substrate=(Substrate.NEEDS_TMUX,),
     classes=(FailureClass.UNENFORCED_SIGNAL, FailureClass.COLLAPSED_SENTINEL),

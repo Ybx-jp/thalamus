@@ -1,22 +1,20 @@
 """A path boundary must bind the file a write reaches, not the string that names it.
 
-`role-guard.sh` decides both path rules on the string in the payload's `file_path`:
-`contract/ownership.denies` (which binds `main` too) and `WriteBoundary.denies` both
-normalise with `PurePosixPath(...).as_posix()`, which folds `//` and `.` and nothing
-else, then `fnmatch` the result. Two spellings of one file therefore get two verdicts:
+`role-guard.sh` decides both path rules from the payload's `file_path`:
+`contract/ownership.denies` (which binds `main` too) and `WriteBoundary.denies`. Two
+spellings reach a file without naming it the way a glob does:
 
 - **`..` through a sibling directory.** `<repo>/tests/<sibling>/../qe/cases/f.py` is the
   file `<repo>/tests/qe/cases/f.py` once the kernel resolves it, and the string carries
-  no `/tests/qe/` for the ownership row `*/tests/qe/*` to match. Scope `main` writes
-  the oracle.
+  no `/tests/qe/` for the ownership row `*/tests/qe/*` to match.
 - **A symlink.** `.claude/skills/<name>` is a symlink into
   `src/thalamus/harness/skills/<name>` for every skill the package ships, and CLAUDE.md
-  states that editing through it works. The string carries no `/src/`, so qe's
-  `*/src/*` deny does not match: scope `qe` writes `src/`.
+  states that editing through it works. The string carries no `/src/` for qe's
+  `*/src/*` deny to match.
 
 Both are reachable with the editing tools alone, which is what separates them from the
-Bash route the guard's header already names. The property: a write the guard blocks
-under its canonical path is blocked under every spelling that reaches the same file.
+Bash route the guard's header names. The property: a write the guard blocks under its
+canonical path is blocked under every spelling that reaches the same file.
 
 **Controls.** Each boundary blocks its canonical path (`main` → `tests/qe/cases/…`,
 `qe` → `src/thalamus/…`) and permits a path it does not own (`main` → `tests/…`,
@@ -25,10 +23,9 @@ a block or a pass means the rule and not the box. The `..` row's sibling and the
 symlink row's link are found on disk, not named, and the case asserts the spelling
 resolves to the file the control blocked before it counts a pass as a leak.
 
-**Shown capable of going red.** It is red today, on the two rows above. Resolving the
-target (`os.path.realpath`) before matching, in both `denies` functions, turns it
-green; matching the realpath only, and not also the string as given, is what a fix has
-to avoid, since a deny glob written against the link path would then stop matching.
+**Shown capable of going red.** Against a guard that matched `PurePosixPath(...)`
+of the string alone (#424) both rows leak: `main` writes the oracle and `qe` writes
+`src/`. Matching the resolved path as well as the string turns it green.
 """
 
 from __future__ import annotations
@@ -115,4 +112,5 @@ CASE = Case(
     summary="a path boundary blocks every spelling of a file it blocks: `..` and symlinks included",
     run=run,
     issue=424,
+    fixed=True,
 )
