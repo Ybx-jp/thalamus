@@ -54,25 +54,28 @@ def argv(*args: str) -> list[str]:
     return ["tmux", "-L", socket_name(), *args]
 
 
-# C0 control characters, less the text's own whitespace: tab, newline, carriage return.
-_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+# The characters a default tty line discipline turns into a signal or end of input —
+# VINTR `^C`, VEOF `^D`, VSUSP `^Z` and VQUIT `^\` — and NUL, which no argv can carry.
+_SIGNALLING = re.compile(r"[\x00\x03\x04\x1a\x1c]")
 
 
 def typeable(text: str) -> str:
-    """`text` without the control characters a pane would read as keys or signals.
+    """`text` without the characters that would signal the pane's process.
 
-    `send-keys -l` delivers a control byte literally, and the pane's tty line discipline
-    reads `\\x03` as SIGINT, `\\x1c` as SIGQUIT and `\\x04` at an empty line as end of
-    input; a TUI in raw mode reads every one of them as a key (`\\x1b` alone cancels a
-    turn). Text is data, so they are dropped; a key is requested by name on `/api/key`.
+    `send-keys -l` delivers a control byte literally, and the pane's tty then reads
+    `\\x03` as SIGINT, `\\x1c` as SIGQUIT, `\\x1a` as SIGTSTP and `\\x04` at an
+    empty line as end of input, so text carrying one could end the session it was
+    typed into. Text is data, so those are dropped; a key is requested by name on
+    `/api/key`. Every other control character, an escape sequence included, is
+    typed as it stands.
     """
-    return _CONTROL.sub("", text)
+    return _SIGNALLING.sub("", text)
 
 
 def literal_text_args(text: str) -> tuple[str, str, str]:
     """The argv tail that makes `send-keys` type `text` as data.
 
-    Control characters are dropped first (`typeable`). tmux then parses the text
+    Signalling characters are dropped first (`typeable`). tmux then parses the text
     element as it parses any other argument, in two places `-l` does not reach. Option
     parsing stops only at `--`, so text starting with `-` is read as flags (`-t 0`
     retargets the send to another pane). And a token that ends in `;` has that `;`

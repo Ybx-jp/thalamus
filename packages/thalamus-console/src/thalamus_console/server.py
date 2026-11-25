@@ -2751,9 +2751,10 @@ class Handler(BaseHTTPRequestHandler):
             if not _encodable(text):
                 return self._send(400, {"error": "text holds a character that cannot "
                                                  "be encoded (a lone surrogate)"})
-            # The composer's text is data: `literal_text_args` drops the control
-            # characters a pane would read as keys or signals, and the reply counts
-            # them so a client can say so. Keys, Ctrl-C included, are `/api/key`'s.
+            # The composer's text is data: `literal_text_args` drops the characters
+            # the pane's tty would turn into a signal, and the reply counts them when
+            # there are any, so a client can say so. Keys, Ctrl-C included, are
+            # `/api/key`'s.
             dropped = len(text) - len(typeable(text))
             if typeable(text):
                 tmux("send-keys", "-t", target, *literal_text_args(text))
@@ -2762,7 +2763,8 @@ class Handler(BaseHTTPRequestHandler):
                 if text and win and win.get("harness") == "codex":
                     time.sleep(CODEX_COMPOSER_SETTLE_S)
                 tmux("send-keys", "-t", target, "Enter")
-            return self._send(200, {"ok": True, "dropped_controls": dropped})
+            return self._send(200, {"ok": True, **({"dropped_controls": dropped}
+                                                   if dropped else {})})
 
         if path == "/api/key":
             name = data.get("key", "")

@@ -2828,16 +2828,20 @@ def test_a_wrong_typed_key_or_an_infinite_count_is_not_a_500(tmp_path):
         assert conn.getresponse().status == 200
 
 
-def test_send_drops_control_characters_and_says_how_many(tmp_path):
+def test_send_drops_signalling_characters_and_says_how_many(tmp_path):
     """`send-keys -l` delivers a control byte literally, and the pane's tty reads
-    `\\x03` as SIGINT. Text is data; keys are `/api/key`'s (#420)."""
+    `\\x03` as SIGINT. Text is data; keys are `/api/key`'s (#420). An escape
+    sequence is data too, and arrives as it stands (#152)."""
     cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
     with _serving(cfg, windows=WINDOW_FIELDS) as post:
-        status, body = post("/api/send", {"index": 0, "text": "a\x03b\x1b[A\tc\n",
+        status, body = post("/api/send", {"index": 0,
+                                          "text": "a\x03b\x1c\x1a\x04\x1b[A\tc\n",
                                           "submit": False})
         sends = [c for c in post.fake.calls if c[0] == "send-keys"]
-    assert status == 200 and body["dropped_controls"] == 2
-    assert sends[0][-1] == "ab[A\tc\n"
+        clean_status, clean = post("/api/send", {"index": 0, "text": "x", "submit": False})
+    assert status == 200 and body["dropped_controls"] == 4
+    assert sends[0][-1] == "ab\x1b[A\tc\n"
+    assert clean_status == 200 and clean == {"ok": True}
 
 
 def test_send_of_only_control_characters_types_nothing(tmp_path):
