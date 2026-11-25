@@ -51,6 +51,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from thalamus.harness import store_io
 from thalamus.harness.launcher import LAUNCH_SHAPES, Capability
 
 LAUNCH_DIR = Path.home() / ".thalamus" / "launch"
@@ -235,8 +236,6 @@ def select(
         raise PolicyRefused(f"`{value}` is not a posture `{harness}` offers.")
 
     moment = _now(now)
-    current = effective(harness, store=store, now=moment).get(key, capability.default)
-    how = direction(capability, current, value)
 
     # Above the harness's default, not merely above where it stands now: stepping down
     # from `force` to `auto-review` is a narrowing, but leaving it permanent would park
@@ -265,33 +264,37 @@ def select(
             )
         expires_at = None
 
-    raw = _read(store)
-    harnesses = raw.get("harnesses")
-    raw["harnesses"] = harnesses if isinstance(harnesses, dict) else {}
-    entries = raw["harnesses"].get(harness)
-    raw["harnesses"][harness] = entries if isinstance(entries, dict) else {}
-    raw["version"] = STORE_VERSION
-    raw["harnesses"][harness][key] = {
-        "value": value,
-        "expires_at": expires_at.isoformat() if expires_at else None,
-    }
-
+    # Read, edit and replace under one lock: the console serves each POST on its own
+    # thread, and two unlocked writers each rewrite the store from what they read,
+    # losing one selection or leaving a file neither of them wrote.
     path = store or STORE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    with store_io.locked(path):
+        current = effective(harness, store=store, now=moment).get(key, capability.default)
+        how = direction(capability, current, value)
+        raw = _read(store)
+        harnesses = raw.get("harnesses")
+        raw["harnesses"] = harnesses if isinstance(harnesses, dict) else {}
+        entries = raw["harnesses"].get(harness)
+        raw["harnesses"][harness] = entries if isinstance(entries, dict) else {}
+        raw["version"] = STORE_VERSION
+        raw["harnesses"][harness][key] = {
+            "value": value,
+            "expires_at": expires_at.isoformat() if expires_at else None,
+        }
+        store_io.replace_json(path, raw)
 
-    row = {
-        "ts": moment.isoformat(),
-        "harness": harness,
-        "capability": key,
-        "from": current,
-        "to": value,
-        "direction": how,
-        "ttl_hours": ttl_hours,
-        "expires_at": expires_at.isoformat() if expires_at else None,
-        "actor": actor,
-    }
-    _append(ledger or LEDGER, row)
+        row = {
+            "ts": moment.isoformat(),
+            "harness": harness,
+            "capability": key,
+            "from": current,
+            "to": value,
+            "direction": how,
+            "ttl_hours": ttl_hours,
+            "expires_at": expires_at.isoformat() if expires_at else None,
+            "actor": actor,
+        }
+        _append(ledger or LEDGER, row)
     return row
 
 

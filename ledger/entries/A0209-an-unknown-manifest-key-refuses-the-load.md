@@ -77,6 +77,21 @@ none
 - 2026-11-23T20:56:00-08:00 · corroborated · grade: argued · author: main
   evidence: code: src/thalamus/contract/manifest.py § "load_manifest" =sha256:4085508c61e2be255a086a93f47e86abb7d41d6e731b267c22be25a32709b2f5
   note: The function now records the config root on the loaded manifest. The assertion is unaffected.
+- 2026-11-24T21:21:13-08:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "WriteBoundary" =sha256:b82f6077939586cab6ba7c16b16fda29a37cdb5f0d7f0f710e92c7ec7a562728
+  artifact: sha256:ab9abc46ee3ae1c2d589ed83b9d32c592c9869853caad6f20d7aa9acac2b1d5b
+  note: propagated from a moved ground
+
+- 2026-11-24T21:21:13-08:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "CapabilityBoundary" =sha256:71d23739bb329a5e26b87e97209f6b94a754070020547c72f81191e1beea44e9
+  artifact: sha256:9f9476c55d6fb6c9866beed5e0b8836b050d90e06a36ae322c0695709ae5e5e1
+  note: propagated from a moved ground
+- 2026-11-24T21:21:34-08:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "WriteBoundary" =sha256:ab9abc46ee3ae1c2d589ed83b9d32c592c9869853caad6f20d7aa9acac2b1d5b
+  note: denies now matches the resolved file as well as the path as given; model_config still forbids undeclared keys, so the assertion is unaffected
+- 2026-11-24T21:21:34-08:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "CapabilityBoundary" =sha256:9f9476c55d6fb6c9866beed5e0b8836b050d90e06a36ae322c0695709ae5e5e1
+  note: denies_skill also matches the name after a plugin prefix; model_config still forbids undeclared keys, so the assertion is unaffected
 
 ## References
 

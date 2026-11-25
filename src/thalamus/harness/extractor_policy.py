@@ -72,6 +72,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from thalamus.harness import store_io
 from thalamus.harness.agents import AGENT_CLIS, HARNESSES, cli_for
 
 POLICY_DIR = Path.home() / ".thalamus" / "extractor"
@@ -395,7 +396,6 @@ def select(
     """
     spec = pass_for(pass_)
     moment = now or datetime.now(timezone.utc)
-    before = effective(pass_, store=store)
 
     if harness == INHERIT:
         if model:
@@ -429,32 +429,35 @@ def select(
                 f"if you need one this panel does not carry."
             )
 
-    raw = _read(store)
-    raw["version"] = STORE_VERSION
-    passes = raw.get("passes")
-    if not isinstance(passes, dict):
-        passes = {}
-    passes[spec.key] = {"harness": harness, "model": model}
-    raw["passes"] = passes
-
+    # Read, edit and replace under one lock: the console serves each POST on its own
+    # thread, and two unlocked writers each rewrite the store from what they read,
+    # losing one selection or leaving a file neither of them wrote.
     path = store or STORE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    with store_io.locked(path):
+        before = effective(pass_, store=store)
+        raw = _read(store)
+        raw["version"] = STORE_VERSION
+        passes = raw.get("passes")
+        if not isinstance(passes, dict):
+            passes = {}
+        passes[spec.key] = {"harness": harness, "model": model}
+        raw["passes"] = passes
+        store_io.replace_json(path, raw)
 
-    row = {
-        "ts": moment.isoformat(),
-        # Named on every row rather than implied by the file it lands in: one ledger
-        # holds both passes, and a row that did not say which one it changed would make
-        # the record unreadable exactly when it is being read — after the fact, to find
-        # out what extracted a given week's claims.
-        "pass": spec.key,
-        "from_harness": before.get("harness", INHERIT),
-        "from_model": before.get("model", ""),
-        "to_harness": harness,
-        "to_model": model,
-        "actor": actor,
-    }
-    _append(ledger or LEDGER, row)
+        row = {
+            "ts": moment.isoformat(),
+            # Named on every row rather than implied by the file it lands in: one
+            # ledger holds both passes, and a row that did not say which one it changed
+            # would make the record unreadable exactly when it is being read — after the
+            # fact, to find out what extracted a given week's claims.
+            "pass": spec.key,
+            "from_harness": before.get("harness", INHERIT),
+            "from_model": before.get("model", ""),
+            "to_harness": harness,
+            "to_model": model,
+            "actor": actor,
+        }
+        _append(ledger or LEDGER, row)
     return row
 
 

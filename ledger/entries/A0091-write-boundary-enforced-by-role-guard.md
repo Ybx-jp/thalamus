@@ -42,6 +42,13 @@ none
 - 2026-09-29T00:31:35-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/contract/manifest.py § "WriteBoundary" =sha256:b82f6077939586cab6ba7c16b16fda29a37cdb5f0d7f0f710e92c7ec7a562728
   note: WriteBoundary gained model_config forbidding undeclared fields; the deny and allow globs and their enforcement by role-guard are unchanged, so the assertion is unaffected
+- 2026-11-24T21:21:13-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "WriteBoundary" =sha256:b82f6077939586cab6ba7c16b16fda29a37cdb5f0d7f0f710e92c7ec7a562728
+  artifact: sha256:ab9abc46ee3ae1c2d589ed83b9d32c592c9869853caad6f20d7aa9acac2b1d5b
+  note: propagated from a moved ground
+- 2026-11-24T21:21:34-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "WriteBoundary" =sha256:ab9abc46ee3ae1c2d589ed83b9d32c592c9869853caad6f20d7aa9acac2b1d5b
+  note: denies now matches each glob against the path as given and against the file it resolves to; the field and its role-guard enforcement are otherwise unchanged, so the assertion is unaffected
 
 ## References
 

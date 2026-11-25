@@ -49,6 +49,13 @@ none
 - 2026-10-16T17:55:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/contract/manifest.py § "CapabilityBoundary" =sha256:71d23739bb329a5e26b87e97209f6b94a754070020547c72f81191e1beea44e9
   note: Only wording in the section changed: #342 retires "roster" where it meant the set of experts or the console's tmux windows. The assertion is unaffected.
+- 2026-11-24T21:21:13-08:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "CapabilityBoundary" =sha256:71d23739bb329a5e26b87e97209f6b94a754070020547c72f81191e1beea44e9
+  artifact: sha256:9f9476c55d6fb6c9866beed5e0b8836b050d90e06a36ae322c0695709ae5e5e1
+  note: propagated from a moved ground
+- 2026-11-24T21:21:34-08:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "CapabilityBoundary" =sha256:9f9476c55d6fb6c9866beed5e0b8836b050d90e06a36ae322c0695709ae5e5e1
+  note: denies_skill also matches the skill name after a plugin's `<plugin>:` prefix; the field still limits which skills and tools a scope may reach, so the assertion is unaffected
 
 ## References
 

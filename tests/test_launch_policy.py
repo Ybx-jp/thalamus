@@ -215,3 +215,27 @@ class TestWhatThePanelIsToldToShow:
         assert "bypassPermissions" not in values
         cap = LAUNCH_SHAPES["claude"].capabilities[0]
         assert cap.rank(cap.default) == len(cap.options) - 1
+
+
+def test_concurrent_selections_lose_nothing_and_leave_a_readable_store(store, ledger):
+    """The console serves each POST on its own thread. An unlocked read-edit-write
+    left `Extra data` in the store or dropped an acknowledged selection (#417)."""
+    import threading
+
+    values = {"claude": "acceptEdits", "cursor": "manual", "codex": "workspace-write"}
+    for _ in range(5):
+        store.unlink(missing_ok=True)
+        barrier = threading.Barrier(len(values))
+
+        def go(harness):
+            barrier.wait()
+            pick(store, ledger, harness, values[harness])
+
+        threads = [threading.Thread(target=go, args=(h,)) for h in values]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        on_file = json.loads(store.read_text())["harnesses"]
+        assert {h: on_file[h][PERMISSION_POSTURE]["value"] for h in values} == values
+    assert not list(store.parent.glob(f".{store.name}.*.tmp"))

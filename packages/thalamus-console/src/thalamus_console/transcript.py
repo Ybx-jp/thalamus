@@ -184,12 +184,18 @@ class LedgerIndex:
         predate the pane id in the ledger, it stops serving them the moment they
         are recycled, and showing the wrong session's transcript is worse than
         showing none.
+
+        Only rows with no pane id are candidates. A row that names a pane is not a
+        legacy row: it belongs to that pane, which `by_pane` resolves, and handing
+        it to a window with no row of its own would show a live neighbour's session
+        under the wrong window.
         """
         if not started_at:
             return None
         hits = [
             row for row in self._rows
-            if row.get("scope") == scope
+            if not row.get("tmux_pane")
+            and row.get("scope") == scope
             and row.get("cwd") == cwd
             and abs(_row_epoch(row) - started_at) <= LEGACY_SKEW_SECONDS
         ]

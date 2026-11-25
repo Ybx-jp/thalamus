@@ -23,7 +23,6 @@ import pytest
 from thalamus.contract.ownership import (
     OWNERSHIP_FILE,
     denies,
-    owner_of,
     rows,
 )
 
@@ -111,7 +110,8 @@ def write_payload(file_path):
 
 class TestTheTable:
     def test_an_unowned_path_is_owned_by_nobody(self):
-        assert owner_of(f"{REPO}/src/thalamus/cli.py") is None
+        for scope in ("main", "qe"):
+            assert denies(scope, f"{REPO}/src/thalamus/cli.py") is None, scope
 
     def test_the_owner_is_not_blocked_from_its_own_path(self):
         assert denies("qe", OWNED) is None
@@ -129,6 +129,18 @@ class TestTheTable:
 
     def test_an_unowned_path_blocks_nobody(self):
         assert denies("main", f"{REPO}/src/thalamus/cli.py") is None
+
+    def test_a_dotdot_spelling_of_an_owned_file_is_still_owned(self):
+        """`tests/fixtures/../qe/...` names the oracle without containing `/tests/qe/`
+        (#424). The row binds the file, not the string."""
+        spelled = f"{REPO}/tests/fixtures/../qe/expectations.json"
+        assert denies("main", spelled) is not None
+        assert denies("qe", spelled) is None
+
+    def test_a_symlink_into_an_owned_tree_is_still_owned(self, tmp_path):
+        link = tmp_path / "link"
+        link.symlink_to(REPO / "tests" / "qe")
+        assert denies("main", str(link / "expectations.json")) is not None
 
     def test_a_row_carries_the_reason_shown_to_the_blocked_session(self):
         assert rows(), "this checkout's table is empty — the loop below would pass vacuously"

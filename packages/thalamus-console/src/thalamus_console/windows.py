@@ -88,7 +88,11 @@ def _open_window(scope: str, argv: list[str], project_root: Path, target: str | 
     # is alive — which is the wrong question the moment two things create windows.
     room_flags = [f for k, v in _room_env(room, harness) for f in ("-e", f"{k}={v}")]
     cmd = tmux.argv("new-window", *(["-d"] if detached else []),
-                    *(["-t", target] if target else []),
+                    # `<session>:`, never the bare name: new-window's target is a
+                    # window, and tmux resolves a bare name to a window called that
+                    # before the session, so a window named like the session would
+                    # take every later spawn's index.
+                    *(["-t", f"{target}:"] if target else []),
                     "-P", "-F", "#{window_id}", "-n", scope,
                     "-c", str(project_root), "-e", f"THALAMUS_SCOPE={scope}", *room_flags,
                     "--", *_with_room(argv, room, harness))
