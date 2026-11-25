@@ -12,7 +12,8 @@ description excludes Bash. Two layers stand between the field and the call:
 
 The property: under a manifest denying Bash, Bash is routed and refused, and under the
 same manifest without that deny it is permitted (the guard must not start refusing
-Bash for every scope).
+Bash for every scope). Before #428 both layers missed: the matcher did not name Bash and
+the dispatch had no branch for it.
 
 **The copy has to restate the default.** A declared `capability_boundary` replaces
 `EXPERT_CAPABILITY_DEFAULT` rather than adding to it, which is how `designer` opts out
@@ -116,4 +117,5 @@ CASE = Case(
     summary="deny_tools naming Bash routes Bash to role-guard and refuses it; without the deny Bash passes",
     run=run,
     issue=428,
+    fixed=True,
 )

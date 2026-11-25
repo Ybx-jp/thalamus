@@ -88,13 +88,6 @@
       "witness_contains": "THALAMUS_PROJECT='acme' in a checkout named 'client-site': hook names project='acme', extract records project='client-site'",
       "triaged_at_rev": "8e43554",
       "note": "Issue #360. The SessionStart hooks resolve project=\"${THALAMUS_PROJECT:-$repo_name}\" and tell the agent to recall by it, while transcripts.parse / to_session_graph record Session.project as basename(repo_root) and read no override; recall filters on that recorded value, so an override that is not a substring of the checkout name returns nothing. The pin is the hook naming the override and the write path naming the checkout; the control (override unset, both name the checkout) is asserted in the case. A fix on either side makes the two equal and this entry goes stale."
-    },
-    {
-      "case": "a-capability-boundary-that-denies-bash-stops-bash",
-      "failure_class": "unenforced-signal",
-      "witness_contains": "matcher does not route Bash; role-guard under deny_tools [..., Bash] -> exit 0",
-      "triaged_at_rev": "32b9adc",
-      "note": "Issue #428. HOOK_WIRING's role-guard matcher omits Bash and role-guard.sh's tool dispatch falls through to exit 0 for it. Adding Bash to the matcher and a `Bash)` kind=tool branch (verified in a patched copy) makes this entry go stale; fixing one layer alone changes the witness."
     }
   ]
 }
