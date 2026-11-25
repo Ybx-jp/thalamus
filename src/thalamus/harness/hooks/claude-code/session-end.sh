@@ -163,8 +163,10 @@ fi
 # priced Trace nodes (they can only land post-distill — sync.py) and sweeps any
 # backlog other distilled sessions left pending. Sync runs even if extract
 # declines (non-conversation session): the sweep is still worth it. Trace
-# identity is content-addressed, so concurrent session-ends converge instead of
-# duplicating. The Pulse dashboard's pending stamp reads this loop's result.
+# identity is content-addressed, so a re-sync re-asserts rather than duplicates; a
+# burst of session-ends queues on the lock sync takes beside the tap, because
+# concurrent upserts of one vertex crash TinkerGraph. The Pulse dashboard's pending
+# stamp reads this loop's result.
 # This install's CLI (`thalamus_cli_argv`), not one resolved from the session's cwd:
 # a session pinned into another repo (`thalamus spawn --dir`) has a cwd with no
 # thalamus in it, and a cwd-anchored invocation would silently never distill.

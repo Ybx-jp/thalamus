@@ -1576,6 +1576,51 @@ def test_sync_reads_the_consultation_close_and_not_only_retrievals(tmp_path, mon
     assert {"memory_recall", "memory_query"} <= seen["tools"]
 
 
+def test_a_writing_sync_waits_for_one_already_running(tmp_path, monkeypatch, capsys):
+    """
+    Scenario: one writing sync holds the tap's lock; a second writing sync starts
+
+    Every session-end syncs the whole tap, so a burst of session-ends re-asserts the
+    same Trace vertices at once, and TinkerGraph answered one of those concurrent
+    `mergeV`s with a NullPointerException (2026-11-24). Verifications:
+    - the second sync does not begin writing until the first releases the lock
+    - it says it is waiting, so its session-end log does not go quiet like a hang
+    - it then runs rather than skipping: the holder may have loaded the tap before the
+      second session's traces were in it
+    """
+    import threading
+
+    from thalamus.eval import sync as sync_mod
+
+    started = threading.Event()
+    monkeypatch.setattr(sync_mod, "_sync", lambda *a: started.set() or sync_mod.SyncOutcome())
+
+    with sync_mod._sync_lock(tmp_path):
+        second = threading.Thread(target=sync_mod.sync, args=(None,),
+                                  kwargs={"traces_base": tmp_path, "write": True})
+        second.start()
+        assert not started.wait(0.5)
+        assert "waiting for another eval sync" in capsys.readouterr().err
+    second.join(5)
+    assert started.is_set()
+    # The lock file sits beside the tap and is not read back as part of it.
+    assert [p.name for p in tmp_path.glob("*.jsonl")] == []
+
+
+def test_a_dry_run_sync_takes_no_lock(tmp_path, monkeypatch):
+    """
+    Scenario: a writing sync holds the tap's lock; a dry run starts
+
+    A dry run writes nothing to the graph, so it has nothing to collide on and does
+    not queue behind a sync that does.
+    """
+    from thalamus.eval import sync as sync_mod
+
+    monkeypatch.setattr(sync_mod, "_sync", lambda *a: sync_mod.SyncOutcome())
+    with sync_mod._sync_lock(tmp_path):
+        sync_mod.sync(None, traces_base=tmp_path, write=False)
+
+
 def test_a_consultation_close_stamps_its_answering_context_and_mints_no_trace(monkeypatch):
     """
     Scenario: a `consult_answer` event whose ticket names a real Exchange

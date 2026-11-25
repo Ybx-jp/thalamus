@@ -371,6 +371,12 @@ thalamus eval recipes              # smoke-run every stored gremlin recipe, read
 thalamus eval profile              # gremlin query cost: wall time per traversal shape (thalamus-measure)
 ```
 
+`eval sync --write` holds `sync.lock` in the tap directory for its whole run. Every
+session-end chains one, so after a burst of session-ends the later syncs wait their
+turn, printing `waiting for another eval sync to finish` to their log, rather than
+writing the same Trace vertices at once, which TinkerGraph does not survive. A dry run
+takes no lock.<!-- (A0268, cites-as-live) -->
+
 `eval profile` reads the span tap: every traversal issued through `connect()` and
 every `memory_query` is timed at its own seam and aggregated by traversal shape into
 `~/.thalamus/profiles/`, flushed once per process. The report ranks shapes by total
