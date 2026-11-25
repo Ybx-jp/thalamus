@@ -165,6 +165,20 @@
       "witness_contains": "'\\x03' -> window-gone",
       "triaged_at_rev": "f5a2101",
       "note": "Issue #420. `send-keys -l` delivers C0 bytes literally and the pane's tty turns \\x03 into SIGINT. A fix that refuses or strips control characters in `text` keeps the window alive and this entry goes stale."
+    },
+    {
+      "case": "role-guard-binds-the-file-not-the-spelling",
+      "failure_class": "boundary-leak",
+      "witness_contains": "ownership */tests/qe/* via ..: main <repo>/tests/fixtures/../qe/cases/qe-probe.py -> exit 0; qe write_boundary */src/* via symlink: qe <repo>/.claude/skills/add-an-expert/SKILL.md -> exit 0",
+      "triaged_at_rev": "51cfbab",
+      "note": "Issue #424. ownership.denies and WriteBoundary.denies fnmatch the path string after PurePosixPath, which keeps `..` and does not follow symlinks. Matching the realpath as well (verified in a patched copy) makes both rows block and this entry goes stale; a fix to one row alone changes the witness."
+    },
+    {
+      "case": "role-guard-binds-the-capability-not-the-name",
+      "failure_class": "boundary-leak",
+      "witness_contains": "Skill anthropic-skills:artifact-emulator -> exit 0; mcp__claude-artifacts__publish_version: matcher does not route it, guard exit 0; mcp__claude-artifacts__publish_files: matcher does not route it, guard exit 0; mcp__claude-artifacts__edit_version: matcher does not route it, guard exit 0",
+      "triaged_at_rev": "51cfbab",
+      "note": "Issue #425. deny_skills fnmatch anchors at the plugin prefix, and neither the role-guard matcher nor deny_tools names the claude-artifacts MCP tools. A fix covering both (verified in a patched copy) makes this entry go stale; a partial fix changes the witness."
     }
   ]
 }
