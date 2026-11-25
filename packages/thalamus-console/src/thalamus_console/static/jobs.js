@@ -211,19 +211,24 @@ function runPicker(d, r) {
     const target = runs[k];
     if (target) location.hash = "#/job/" + encodeURIComponent(d.id) + "?run=" + encodeURIComponent(target.id);
   };
-  // Runs are newest first, so "◂" (older) is the next index.
+  // Runs are newest first, so "◂" (older) is the next index. Left: when it ran and the
+  // version it ran on, the version cut to seven characters and an ellipsis (N5: they never
+  // overlap, whatever its length). Right: what the run produced, the source's words.
   return h("div.j-runpick",
     h("button.j-arrow", { type: "button", "aria-label": "Older run", disabled: i >= runs.length - 1,
                           onclick: () => go(i + 1) }, "◂"),
     h("a.grow.j-runpick-label.mono", { href: "#/run/" + encodeURIComponent(d.run.id) },
-      "run  " + d.run.label + "  on " + (d.run.version || "")),
-    statusWord(d.run.status),
+      h("span.j-runpick-when", d.run.label + " · "),
+      h("span.j-runpick-ver", { title: d.run.version || "" }, d.run.version || "")),
+    statusWord(d.run.outcome, "j-runpick-out"),
     h("button.j-arrow", { type: "button", "aria-label": "Newer run", disabled: i <= 0,
                           onclick: () => go(i - 1) }, "▸"));
 }
 
 function stageItem(s) {
-  const dotTone = s.reached && s.status ? toneClass(s.status.tone) : "";
+  // The dot repeats the stage's tone; the card prints a status word only when the stage
+  // is not the normal case (running, failed, found nothing), and its out line says what.
+  const dotTone = s.reached && (s.tone || s.status) ? toneClass(s.tone || s.status.tone) : "";
   const card = h("div.j-stage" + (s.changed ? ".changed" : "") + (s.reached ? "" : ".unreached"),
     h("div.j-stage-top", h("span.j-stage-name", s.name), statusWord(s.status)),
     (s.lines || []).map((l) => h("div.j-stage-line", l)),
@@ -235,16 +240,12 @@ function stageItem(s) {
     { "aria-hidden": "true" }), card);
 }
 
-// Tool calls against the cap, in segments. The segment widths are the counts; their
-// names are printed in the line above the bar by the source ("12 search · 33 fetch"),
-// so the two greys never have to be told apart by colour.
+// Tool calls used of the cap: one fill (N5). The search and fetch split stays in the
+// line above the bar, in the source's words ("45 of 60 calls · 12 search · 33 fetch").
 function progressBar(p) {
   const cap = Math.max(p.cap || 0, p.used || 0, 1);
-  const bar = h("div.j-bar", { role: "img", "aria-label": `${p.used} of ${p.cap}` });
-  (p.segments || [{ n: p.used }]).forEach((seg, k) => {
-    bar.appendChild(h("span.j-bar-seg.s" + (k % 2), { style: { width: (100 * seg.n / cap) + "%" } }));
-  });
-  return bar;
+  return h("div.j-bar", { role: "img", "aria-label": `${p.used} of ${p.cap} calls` },
+    h("span.j-bar-fill", { style: { width: (100 * (p.used || 0) / cap) + "%" } }));
 }
 
 function jobActions(d) {
@@ -467,7 +468,9 @@ function runView(d) {
   out.push(h("div.j-tiles", (d.tiles || []).map((t) => h("div.s-card.j-tile",
     h("div.j-tile-label", t.label), h("div.j-tile-value.mono", t.value), h("div.j-tile-sub.small.muted", t.sub)))));
   const f = d.findings || {};
-  out.push(h("div.j-sect", h("span.s-label", f.heading || "findings")));
+  out.push(h("div.j-sect.j-find-head", h("span.s-label", f.heading || "findings"),
+    (f.items || []).some((x) => !x.rejected)
+      ? h("span.j-find-cap", "Rate each one: your ratings tune what this job reports.") : null));
   for (const item of f.items || []) out.push(findingRow(item));
   if (f.more) out.push(h("a.s-link.j-more-link", { href: "#/run/" + encodeURIComponent(d.id) + "?findings=all" },
     `${f.more} more kept findings ›`));
@@ -476,32 +479,16 @@ function runView(d) {
   return h("div.j-run", out);
 }
 
-const LABELS = [["useful", "useful"], ["not_useful", "not useful"], ["wrong", "wrong"]];
-
+// A kept finding is surface.js's findingCard. Its "evidence ›" opens the run's raw
+// stream: J5 is already the run, and the stream is where the quotes it cites were read.
 function findingRow(item) {
   if (item.rejected) {
     return h("div.j-finding.rejected",
-      h("div.j-finding-title", item.title),
+      h("div.j-finding-title", item.title || item.observation),
       h("div.tone-danger.small", item.rejected.word),
       item.rejected.line ? h("div.muted.small", item.rejected.line) : null);
   }
-  const buttons = h("div.j-labels", { role: "group", "aria-label": "Label this finding" });
-  const paintLabels = (current) => {
-    buttons.replaceChildren(...LABELS.map(([value, word]) => {
-      const on = current === value;
-      return h("button.j-label" + (on ? ".on" : ""), { type: "button", "aria-pressed": on ? "true" : "false",
-        onclick: async () => {
-          try {
-            await apiPost("findings/" + encodeURIComponent(item.id) + "/label", { label: value });
-            item.label = value;
-            paintLabels(value);
-          } catch (e) { toast(e.message); }
-        } }, word);
-    }));
-  };
-  paintLabels(item.label);
-  return h("div.j-finding", h("div.j-finding-title", item.title),
-    h("div.j-finding-foot", h("span.muted.small.grow", item.kind || ""), buttons));
+  return h("div.j-finding", findingCard(item, (run) => "#/run/" + encodeURIComponent(run) + "?view=events"));
 }
 
 // The raw stream: what the run's model session emitted, one line per event, as text.
@@ -563,7 +550,7 @@ async function renderCommit(r, seq) {
     d.change ? h("a.s-link.j-more-link", { href: "#/change/" + encodeURIComponent(d.change) }, "replay gate receipt ›") : null,
     (d.runs || []).length ? h("div.j-sect", h("span.s-label", "runs on this commit")) : null,
     (d.runs || []).map((x) => h("a.j-commit", { href: "#/run/" + encodeURIComponent(x.id) },
-      h("span.grow", x.label), statusWord(x.status))),
+      h("span.grow", x.label), statusWord(x.outcome))),
     (d.files || []).map(diffCard)));
 }
 

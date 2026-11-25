@@ -552,7 +552,7 @@ never cached — a stale pane would be a lie.
 With `--jobs-source` set, the header carries a **jobs** link. It opens pages for
 whatever program runs your scheduled jobs: the jobs and their last state, one job's
 stages for a chosen run, its history by commit, a tuned change's replay-gate receipt
-with the diff, a run's telemetry and findings (each with useful / not useful / wrong),
+with the diff, a run's telemetry and findings (each rated Useful, Not worth it or Incorrect),
 and the repository's commits. On a window 1024 px wide or more the list is a canvas
 instead: the jobs as a graph from sources to the phone, a version lane, and an inspector.
 
@@ -569,8 +569,11 @@ the pages print the word. The paths and shapes a source answers with are in
 ### The board
 
 The **board** link opens a page of widgets over the same source: a number with a
-comparison, a series, a table, the newest raw events, findings to label, a switch or
-a run button, a note, or an app. **edit** adds, edits and removes widgets. On a
+comparison, a series, a table, the newest raw events, findings to rate, a switch or
+a run button, a note, or an app. Each widget ends with where its numbers come from, in
+words, linking the job that writes them; in edit mode that line names the table and
+columns instead.<!-- (A0269, cites-as-live) -->
+**edit** adds, edits and removes widgets. On a
 desktop-width window, edit mode is a four-column grid: drag a widget by its handle,
 and resize it from its corner. **Done** saves the layout to the source. If someone
 else saved first, the board reloads and says so.

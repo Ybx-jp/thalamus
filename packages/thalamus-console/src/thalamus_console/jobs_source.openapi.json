@@ -47,8 +47,8 @@
              "name": "weekly-digest",
              "line": "weekly Mon 20:00 · 3 stages · on 43ade4c · ran 10 h ago",
              "status": {
-              "word": "notable",
-              "tone": "ok"
+              "word": "ran 00:51",
+              "tone": "muted"
              },
              "kind": "model",
              "runnable": true
@@ -154,9 +154,9 @@
            "label": "Nov 23 00:51",
            "version": "b39469d",
            "code_version": "b39469d",
-           "status": {
-            "word": "notable",
-            "tone": "ok"
+           "outcome": {
+            "word": "5 kept · $1.04",
+            "tone": "muted"
            }
           }
          ],
@@ -165,9 +165,9 @@
           "label": "Nov 23 00:51",
           "version": "b39469d",
           "code_version": "b39469d",
-          "status": {
-           "word": "notable",
-           "tone": "ok"
+          "outcome": {
+           "word": "5 kept · $1.04",
+           "tone": "muted"
           }
          },
          "drift": {
@@ -179,6 +179,7 @@
           {
            "name": "trigger",
            "status": null,
+           "tone": null,
            "reached": false,
            "lines": [
             "timer · Mon 20:00, or Run now"
@@ -190,10 +191,8 @@
           },
           {
            "name": "draft",
-           "status": {
-            "word": "notable",
-            "tone": "ok"
-           },
+           "status": null,
+           "tone": "ok",
            "reached": true,
            "lines": [
             "WebSearch · 3 m 5 s · $0.46"
@@ -366,18 +365,18 @@
               "tone": "danger"
              },
              {
-              "word": "notable",
+              "word": "kept",
               "tone": "ok"
              }
             ],
             [
              {
-              "word": "notable",
+              "word": "kept",
               "tone": "ok"
              },
              {
-              "word": "silent",
-              "tone": "faint"
+              "word": "found nothing",
+              "tone": "muted"
              }
             ]
            ],
@@ -387,7 +386,7 @@
            "type": "run",
            "id": "a1b2c3d4",
            "title": "Nov 23 00:51",
-           "line": "notable · 5 kept · $1.04",
+           "line": "5 kept · $1.04",
            "version": "b39469d",
            "code_version": "b39469d",
            "cells": [
@@ -653,9 +652,10 @@
           {
            "id": "a1b2c3d4",
            "label": "Nov 23 00:51",
-           "status": {
-            "word": "notable",
-            "tone": "ok"
+           "job": "weekly-digest:draft",
+           "outcome": {
+            "word": "5 kept · $1.04",
+            "tone": "muted"
            }
           }
          ],
@@ -742,10 +742,7 @@
          "replay_of": null,
          "version": "b39469d",
          "code_version": "b39469d",
-         "status": {
-          "word": "notable",
-          "tone": "ok"
-         },
+         "status": null,
          "line": "on b39469d · 3 stage configs stored · replayable",
          "tiles": [
           {
@@ -760,15 +757,27 @@
           "items": [
            {
             "id": "f1",
+            "meta": "market vocabulary · supported",
             "title": "A finding",
-            "kind": "vocabulary",
+            "observation": "Seen in three postings this week; the collector reads none of them.",
+            "source": {
+             "text": "evidence",
+             "url": null,
+             "run": "a1b2c3d4"
+            },
             "label": "useful",
             "rejected": null
            },
            {
             "id": "f2",
+            "meta": "belief to update · supported",
             "title": "A rejected finding",
-            "kind": "belief update",
+            "observation": "Seen in three postings this week; the collector reads none of them.",
+            "source": {
+             "text": "evidence",
+             "url": null,
+             "run": "a1b2c3d4"
+            },
             "label": null,
             "rejected": {
              "word": "rejected · numbers not in the input",
@@ -984,8 +993,8 @@
            "line": "Mon 20:00 · 3 stages",
            "scope": "news",
            "status": {
-            "word": "notable",
-            "tone": "ok"
+            "word": "5 findings kept",
+            "tone": "muted"
            },
            "planned": false,
            "job": "weekly-digest",
@@ -1333,7 +1342,11 @@
          "value": "7 of 16",
          "compare": "previous 6 weeks: 10 of 64",
          "period": "W47",
-         "foot": "games_weekly"
+         "foot": "games_weekly",
+         "source": {
+          "text": "from chess.com games",
+          "job": "chess-sync"
+         }
         }
        }
       }
@@ -2335,7 +2348,7 @@
      "muted",
      "accent"
     ],
-    "description": "The colour a word is printed in. It only ever repeats the word beside it. ok: a run that found something (notable). faint: a run that stayed silent. danger: a failure. pending: running, or changed and not yet re-run. muted: a neutral fact with no status, such as when a collector last moved. accent: the console's own emphasis, for a tagged commit or the next run. A new tone is a design decision: it is added here only after the designer assigns it a meaning. A page shown a tone it does not know prints the word muted."
+    "description": "The colour a word is printed in. It only ever repeats the word beside it. ok: a run or stage that produced output (a stage's dot, a history cell); the words say what it produced. faint: a run that skipped. danger: a failure. pending: running, or changed and not yet re-run. muted: a neutral fact with no status, such as when a run last ran, what it produced, or that it found nothing. accent: the console's own emphasis, for a tagged commit or the next run. A new tone is a design decision: it is added here only after the designer assigns it a meaning. A page shown a tone it does not know prints the word muted."
    },
    "Status": {
     "type": "object",
@@ -2357,40 +2370,8 @@
     "description": "A status: the word the source chose, and its tone."
    },
    "RunStatus": {
-    "description": "A run's status. The word set is closed, and each word has one tone (x-tones). A run made of stages is failed if any stage failed, else running if any stage runs, else the status of its last stage that ran. skipped is faint, like silent: nothing ran.",
+    "description": "A run's or stage's status, sent only when it is not the normal case: a run that produced output has none (the field is null) and says what it produced instead (RunRef.outcome, a stage's out). The stored words notable and silent are never sent. The word set is closed, and each word has one tone (x-tones). A run made of stages is failed if any stage failed, else running if any stage runs, else the status of its last stage that ran.",
     "oneOf": [
-     {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-       "word": {
-        "const": "notable"
-       },
-       "tone": {
-        "const": "ok"
-       }
-      },
-      "required": [
-       "word",
-       "tone"
-      ]
-     },
-     {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-       "word": {
-        "const": "silent"
-       },
-       "tone": {
-        "const": "faint"
-       }
-      },
-      "required": [
-       "word",
-       "tone"
-      ]
-     },
      {
       "type": "object",
       "additionalProperties": false,
@@ -2428,6 +2409,22 @@
       "additionalProperties": false,
       "properties": {
        "word": {
+        "const": "found nothing"
+       },
+       "tone": {
+        "const": "muted"
+       }
+      },
+      "required": [
+       "word",
+       "tone"
+      ]
+     },
+     {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "word": {
         "const": "skipped"
        },
        "tone": {
@@ -2441,10 +2438,9 @@
      }
     ],
     "x-tones": {
-     "notable": "ok",
-     "silent": "faint",
      "failed": "danger",
      "running": "pending",
+     "found nothing": "muted",
      "skipped": "faint"
     }
    },
@@ -2555,15 +2551,16 @@
       "maxLength": 80,
       "description": "Optional. The code the run executed, as the source names it; opaque to the page."
      },
-     "status": {
-      "$ref": "#/components/schemas/RunStatus"
+     "outcome": {
+      "$ref": "#/components/schemas/Status",
+      "description": "The run's right-hand word: running or failed in their tones, else what it produced and what it cost (\"5 kept · $1.04\", \"1 notification pending · $0.02\", \"found nothing · $0.04\"), muted."
      }
     },
     "required": [
      "id",
      "label",
      "version",
-     "status"
+     "outcome"
     ]
    },
    "Change": {
@@ -2713,8 +2710,8 @@
           "name": "weekly-digest",
           "line": "weekly Mon 20:00 · 3 stages · on 43ade4c · ran 10 h ago",
           "status": {
-           "word": "notable",
-           "tone": "ok"
+           "word": "ran 00:51",
+           "tone": "muted"
           },
           "kind": "model",
           "runnable": true
@@ -2807,7 +2804,8 @@
        {
         "type": "null"
        }
-      ]
+      ],
+      "description": "Only when the stage is not the normal case (running, failed, found nothing); a stage that produced output has none, and its out line says what."
      },
      "reached": {
       "type": "boolean",
@@ -2851,11 +2849,23 @@
         "type": "null"
        }
       ]
+     },
+     "tone": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Tone",
+        "description": "The tone of the stage's dot, for a stage the run reached; null for trigger and deliver."
+       },
+       {
+        "type": "null"
+       }
+      ]
      }
     },
     "required": [
      "name",
      "status",
+     "tone",
      "reached",
      "lines",
      "mono",
@@ -3075,9 +3085,9 @@
         "label": "Nov 23 00:51",
         "version": "b39469d",
         "code_version": "b39469d",
-        "status": {
-         "word": "notable",
-         "tone": "ok"
+        "outcome": {
+         "word": "5 kept · $1.04",
+         "tone": "muted"
         }
        }
       ],
@@ -3086,9 +3096,9 @@
        "label": "Nov 23 00:51",
        "version": "b39469d",
        "code_version": "b39469d",
-       "status": {
-        "word": "notable",
-        "tone": "ok"
+       "outcome": {
+        "word": "5 kept · $1.04",
+        "tone": "muted"
        }
       },
       "drift": {
@@ -3100,6 +3110,7 @@
        {
         "name": "trigger",
         "status": null,
+        "tone": null,
         "reached": false,
         "lines": [
          "timer · Mon 20:00, or Run now"
@@ -3111,10 +3122,8 @@
        },
        {
         "name": "draft",
-        "status": {
-         "word": "notable",
-         "tone": "ok"
-        },
+        "status": null,
+        "tone": "ok",
         "reached": true,
         "lines": [
          "WebSearch · 3 m 5 s · $0.46"
@@ -3501,18 +3510,18 @@
            "tone": "danger"
           },
           {
-           "word": "notable",
+           "word": "kept",
            "tone": "ok"
           }
          ],
          [
           {
-           "word": "notable",
+           "word": "kept",
            "tone": "ok"
           },
           {
-           "word": "silent",
-           "tone": "faint"
+           "word": "found nothing",
+           "tone": "muted"
           }
          ]
         ],
@@ -3522,7 +3531,7 @@
         "type": "run",
         "id": "a1b2c3d4",
         "title": "Nov 23 00:51",
-        "line": "notable · 5 kept · $1.04",
+        "line": "5 kept · $1.04",
         "version": "b39469d",
         "code_version": "b39469d",
         "cells": [
@@ -3849,13 +3858,34 @@
      "id": {
       "type": "string"
      },
-     "title": {
+     "meta": {
       "type": "string",
-      "description": "Display text the source composed for this place. Printed as text."
+      "description": "\"<job> · <kind> · <verdict>\" in the job's declared words; J5 leaves the job out. Printed as text."
      },
-     "kind": {
+     "title": {
+      "anyOf": [
+       {
+        "type": "string",
+        "description": "The one-line title the job wrote, or null when it writes none."
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "observation": {
       "type": "string",
-      "description": "Display text the source composed for this place. Printed as text."
+      "description": "What the job observed. The body under a title; with no title, the headline. Printed as text."
+     },
+     "source": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FindingSource"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "label": {
       "anyOf": [
@@ -3902,8 +3932,10 @@
     },
     "required": [
      "id",
+     "meta",
      "title",
-     "kind",
+     "observation",
+     "source",
      "label",
      "rejected"
     ]
@@ -3946,7 +3978,14 @@
       "description": "Optional. The code the run executed, as the source names it; opaque to the page."
      },
      "status": {
-      "$ref": "#/components/schemas/RunStatus"
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/RunStatus"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "line": {
       "type": "string",
@@ -4033,10 +4072,7 @@
       "replay_of": null,
       "version": "b39469d",
       "code_version": "b39469d",
-      "status": {
-       "word": "notable",
-       "tone": "ok"
-      },
+      "status": null,
       "line": "on b39469d · 3 stage configs stored · replayable",
       "tiles": [
        {
@@ -4051,15 +4087,27 @@
        "items": [
         {
          "id": "f1",
+         "meta": "market vocabulary · supported",
          "title": "A finding",
-         "kind": "vocabulary",
+         "observation": "Seen in three postings this week; the collector reads none of them.",
+         "source": {
+          "text": "evidence",
+          "url": null,
+          "run": "a1b2c3d4"
+         },
          "label": "useful",
          "rejected": null
         },
         {
          "id": "f2",
+         "meta": "belief to update · supported",
          "title": "A rejected finding",
-         "kind": "belief update",
+         "observation": "Seen in three postings this week; the collector reads none of them.",
+         "source": {
+          "text": "evidence",
+          "url": null,
+          "run": "a1b2c3d4"
+         },
          "label": null,
          "rejected": {
           "word": "rejected · numbers not in the input",
@@ -4315,14 +4363,20 @@
          "type": "string",
          "description": "Display text the source composed for this place. Printed as text."
         },
-        "status": {
-         "$ref": "#/components/schemas/RunStatus"
+        "job": {
+         "type": "string",
+         "description": "The job name the run carried."
+        },
+        "outcome": {
+         "$ref": "#/components/schemas/Status",
+         "description": "As RunRef.outcome, for this one run."
         }
        },
        "required": [
         "id",
         "label",
-        "status"
+        "job",
+        "outcome"
        ]
       }
      },
@@ -4356,9 +4410,10 @@
        {
         "id": "a1b2c3d4",
         "label": "Nov 23 00:51",
-        "status": {
-         "word": "notable",
-         "tone": "ok"
+        "job": "weekly-digest:draft",
+        "outcome": {
+         "word": "5 kept · $1.04",
+         "tone": "muted"
         }
        }
       ],
@@ -4661,8 +4716,8 @@
         "line": "Mon 20:00 · 3 stages",
         "scope": "news",
         "status": {
-         "word": "notable",
-         "tone": "ok"
+         "word": "5 findings kept",
+         "tone": "muted"
         },
         "planned": false,
         "job": "weekly-digest",
@@ -5232,13 +5287,24 @@
        "foot": {
         "type": "string",
         "description": "Display text the source composed for this place. Printed as text."
+       },
+       "source": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/EvalSource"
+         },
+         {
+          "type": "null"
+         }
+        ]
        }
       },
       "required": [
        "value",
        "compare",
        "period",
-       "foot"
+       "foot",
+       "source"
       ],
       "description": "number"
      },
@@ -5281,11 +5347,22 @@
        "foot": {
         "type": "string",
         "description": "Display text the source composed for this place. Printed as text."
+       },
+       "source": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/EvalSource"
+         },
+         {
+          "type": "null"
+         }
+        ]
        }
       },
       "required": [
        "bars",
-       "foot"
+       "foot",
+       "source"
       ],
       "description": "series, bars"
      },
@@ -5328,11 +5405,22 @@
        "foot": {
         "type": "string",
         "description": "Display text the source composed for this place. Printed as text."
+       },
+       "source": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/EvalSource"
+         },
+         {
+          "type": "null"
+         }
+        ]
        }
       },
       "required": [
        "line",
-       "foot"
+       "foot",
+       "source"
       ],
       "description": "series, line"
      },
@@ -5358,12 +5446,23 @@
        "foot": {
         "type": "string",
         "description": "Display text the source composed for this place. Printed as text."
+       },
+       "source": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/EvalSource"
+         },
+         {
+          "type": "null"
+         }
+        ]
        }
       },
       "required": [
        "columns",
        "rows",
-       "foot"
+       "foot",
+       "source"
       ],
       "description": "table"
      },
@@ -5398,11 +5497,22 @@
        "foot": {
         "type": "string",
         "description": "Display text the source composed for this place. Printed as text."
+       },
+       "source": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/EvalSource"
+         },
+         {
+          "type": "null"
+         }
+        ]
        }
       },
       "required": [
        "rows",
-       "foot"
+       "foot",
+       "source"
       ],
       "description": "tail: kinds only, never an event's data"
      },
@@ -5419,13 +5529,34 @@
           "id": {
            "type": "string"
           },
-          "title": {
+          "meta": {
            "type": "string",
-           "description": "Display text the source composed for this place. Printed as text."
+           "description": "\"<job> · <kind> · <verdict>\" in the job's declared words; J5 leaves the job out. Printed as text."
           },
-          "kind": {
+          "title": {
+           "anyOf": [
+            {
+             "type": "string",
+             "description": "The one-line title the job wrote, or null when it writes none."
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "observation": {
            "type": "string",
-           "description": "Display text the source composed for this place. Printed as text."
+           "description": "What the job observed. The body under a title; with no title, the headline. Printed as text."
+          },
+          "source": {
+           "anyOf": [
+            {
+             "$ref": "#/components/schemas/FindingSource"
+            },
+            {
+             "type": "null"
+            }
+           ]
           },
           "label": {
            "anyOf": [
@@ -5440,8 +5571,10 @@
          },
          "required": [
           "id",
+          "meta",
           "title",
-          "kind",
+          "observation",
+          "source",
           "label"
          ]
         }
@@ -5449,13 +5582,36 @@
        "foot": {
         "type": "string",
         "description": "Display text the source composed for this place. Printed as text."
+       },
+       "source": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/EvalSource"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "more": {
+        "anyOf": [
+         {
+          "type": "string",
+          "description": "\"3 more to rate\": the unrated findings not shown."
+         },
+         {
+          "type": "null"
+         }
+        ]
        }
       },
       "required": [
        "items",
-       "foot"
+       "foot",
+       "source",
+       "more"
       ],
-      "description": "inbox: kept findings with no label yet"
+      "description": "inbox: kept findings with no rating yet, worded as Finding is"
      },
      {
       "type": "object",
@@ -5502,11 +5658,22 @@
        "foot": {
         "type": "string",
         "description": "Display text the source composed for this place. Printed as text."
+       },
+       "source": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/EvalSource"
+         },
+         {
+          "type": "null"
+         }
+        ]
        }
       },
       "required": [
        "items",
-       "foot"
+       "foot",
+       "source"
       ],
       "description": "control"
      },
@@ -5549,7 +5716,11 @@
       "value": "7 of 16",
       "compare": "previous 6 weeks: 10 of 64",
       "period": "W47",
-      "foot": "games_weekly"
+      "foot": "games_weekly",
+      "source": {
+       "text": "from chess.com games",
+       "job": "chess-sync"
+      }
      }
     ]
    },
@@ -5632,6 +5803,16 @@
      "foot": {
       "type": "string",
       "description": "Display text the source composed for this place. Printed as text."
+     },
+     "source": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/EvalSource"
+       },
+       {
+        "type": "null"
+       }
+      ]
      }
     },
     "required": [
@@ -6083,6 +6264,67 @@
     },
     "required": [
      "ok"
+    ]
+   },
+   "FindingSource": {
+    "type": "object",
+    "additionalProperties": false,
+    "description": "Where a finding came from, as a short link: text (\"pull #359\", \"issue #382\", \"evidence\") and either the page it opens (url) or the run whose evidence it cites (run).",
+    "properties": {
+     "text": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "run": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "text",
+     "url",
+     "run"
+    ]
+   },
+   "EvalSource": {
+    "type": "object",
+    "additionalProperties": false,
+    "description": "A widget's view-mode footer: where its numbers come from, in words (\"from chess.com games\"), and the job its link opens, or null. The edit-mode footer is `foot`, which keeps the table and column names.",
+    "properties": {
+     "text": {
+      "type": "string",
+      "description": "Display text the source composed for this place. Printed as text."
+     },
+     "job": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "text",
+     "job"
     ]
    }
   },

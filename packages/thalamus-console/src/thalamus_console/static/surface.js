@@ -142,3 +142,51 @@ function switchEl(checked, label, onchange) {
 function errorBox(e) {
   return h("div.s-err", { role: "alert" }, e && e.message ? e.message : String(e));
 }
+
+// The three ratings a finding takes (N5): the value the source stores, and the button's
+// word. "Not worth it" is true but not worth telling him; "Incorrect" is wrong on the facts.
+const RATINGS = [["useful", "Useful"], ["not_useful", "Not worth it"], ["wrong", "Incorrect"]];
+
+// A finding row, one renderer for B1's inbox, D2 and J5 (N5 "Finding row"). Every word is
+// the source's: `meta` ("Career discovery · blind spot · still open"), the `title` the
+// job wrote, the `observation`, the `source` link's text. With a title the observation
+// is the body, clamped to two lines; with none it is the headline, clamped to three.
+// `runHref(id)` is where an "evidence" link goes: the source names the run whose evidence
+// the finding cites, and each page knows its own route to it. An external source opens
+// in a new tab. `onRated(value)` runs after a rating is stored.
+function findingCard(item, runHref, onRated) {
+  const buttons = h("div.f-rate", { role: "group", "aria-label": "Rate this finding" });
+  const paintRatings = (current) => {
+    buttons.replaceChildren(...RATINGS.map(([value, word]) => {
+      const on = current === value;
+      return h("button.f-rate-btn" + (on ? ".on" : ""), { type: "button", "aria-pressed": on ? "true" : "false",
+        onclick: async () => {
+          if (item.label === value) return;
+          const all = Array.from(buttons.children);
+          all.forEach((b) => { b.disabled = true; });
+          try {
+            await apiPost("findings/" + encodeURIComponent(item.id) + "/label", { label: value });
+            item.label = value;
+            paintRatings(value);
+            if (onRated) onRated(value);
+          } catch (err) {
+            all.forEach((b) => { b.disabled = false; });
+            toast(err.message);
+          }
+        } }, word);
+    }));
+  };
+  paintRatings(item.label);
+  const src = item.source;
+  let link = h("span.f-src");
+  if (src && src.url) {
+    link = h("a.f-src", { href: src.url, target: "_blank", rel: "noopener noreferrer" }, src.text + " ›");
+  } else if (src && src.run) {
+    link = h("a.f-src", { href: runHref(src.run) }, src.text + " ›");
+  }
+  return h("div.f-item",
+    item.meta ? h("div.f-meta", item.meta) : null,
+    item.title ? h("div.f-title", item.title) : h("div.f-headline", item.observation),
+    item.title && item.observation ? h("div.f-body", item.observation) : null,
+    h("div.f-foot", link, buttons));
+}

@@ -89,7 +89,11 @@ suite("board — eval result to render model");
 {
   const n = F.evalModel("number", { value: "7 of 16", compare: "previous 6 weeks: 10 of 64", period: "W47", foot: "chess_weekly" });
   check("a number prints the source's value verbatim", n.value === "7 of 16" && n.compare === "previous 6 weeks: 10 of 64");
-  check("the footer names the source", n.foot === "chess_weekly");
+  check("the edit-mode footer names the table", n.foot === "chess_weekly");
+  check("a result with no source line has none", n.source === null);
+  const src = F.evalModel("number", { value: "7", foot: "chess_weekly", source: { text: "from chess.com games", job: "chess-sync" } });
+  check("the view-mode source keeps its words and its job", src.source.text === "from chess.com games" && src.source.job === "chess-sync");
+  check("a source with no job links nowhere", F.evalModel("number", { source: { text: "from job runs", job: null } }).source.job === null);
   check("the title is the widget's, then the period", F.cardTitle("Blitz lost on time", n.period, "Number")
     === "Blitz lost on time · W47");
   check("no period, no suffix", F.cardTitle("Steps today", null, "Number") === "Steps today");
@@ -110,8 +114,18 @@ suite("board — eval result to render model");
   const t = F.evalModel("tail", { rows: [{ time: "10:55", source: "usage", kind: "app_resumed", app: "com.example" }] });
   check("the tail keeps time, source and kind and drops everything else",
     JSON.stringify(t.rows[0]) === '{"time":"10:55","source":"usage","kind":"app_resumed"}');
-  const i = F.evalModel("inbox", { items: [{ id: "f1", title: "t", kind: "vocabulary", label: "useful" }, { id: "f2", title: "u", kind: "blind spot" }] });
-  check("inbox items keep their label or null", i.items[0].label === "useful" && i.items[1].label === null);
+  const i = F.evalModel("inbox", { more: "3 more to rate", items: [
+    { id: "f1", meta: "Career discovery · blind spot · still open", title: "t", observation: "o", label: "useful",
+      source: { text: "evidence", url: null, run: "r1" } },
+    { id: "f2", meta: "Resume library check · entry out of date", title: null, observation: "only an observation",
+      source: { text: "pull #359", url: "https://example.com/o/r/pull/359", run: null } }, null] });
+  check("inbox items keep their rating or null", i.items[0].label === "useful" && i.items[1].label === null);
+  check("an inbox item keeps meta, title, observation and source verbatim", i.items[0].meta === "Career discovery · blind spot · still open"
+    && i.items[0].title === "t" && i.items[0].source.run === "r1" && i.items[1].source.url.endsWith("/pull/359"));
+  check("an untitled finding keeps a null title, so its observation is the headline", i.items[1].title === null
+    && i.items[1].observation === "only an observation");
+  check("a malformed item is dropped", i.items.length === 2);
+  check("the inbox keeps how many are left to rate", i.more === "3 more to rate");
   const c = F.evalModel("control", { items: [{ type: "mute", scope: "career", label: "career notifications", line: "muted until Dec 7", on: false },
     { type: "run", job: "chess-weekly-review", label: "Run chess review now" },
     { type: "auto_apply", job: "career-discover:plan", label: "auto-apply career-discover:plan", on: true }, { type: "shell", cmd: "rm" }] });
@@ -120,8 +134,10 @@ suite("board — eval result to render model");
   check("a note is its text alone", F.evalModel("note", { text: "q", line: "ignored" }).text === "q"
     && !("line" in F.evalModel("note", { text: "q", line: "ignored" })));
   check("a table keeps columns and rows", F.evalModel("table", { columns: ["job"], rows: [["a", 1]] }).rows[0].join() === "a,1");
-  check("an app tile's footer comes from its tile", F.evalModel("app", { app: "chess-positions",
-    tile: { foot: "app · chess positions" } }).foot === "app · chess positions");
+  const app = F.evalModel("app", { app: "chess-positions",
+    tile: { foot: "app · chess positions", source: { text: "from Sunday's chess review", job: "chess-coach" } } });
+  check("an app tile's footers come from its tile", app.foot === "app · chess positions"
+    && app.source.text === "from Sunday's chess review" && app.source.job === "chess-coach");
   check("an unknown kind renders as unknown, not as a crash", F.evalModel("gauge", {}).unknown === true);
   check("a missing result is survivable", F.evalModel("series", null).bars.length === 0);
 }

@@ -31,6 +31,15 @@ reply.<!-- (A0266, cites-as-live) -->
   and the page prints the word in the tone's colour without deciding anything about it.
   A page shown a tone it does not know prints the word in the muted colour, so a newer
   source still says what it means.<!-- (A0267, cites-as-live) -->
+- **A run that did what it should carries no status word.** A run or a stage has a
+  status only while it is running, or when it failed, found nothing or was skipped; a
+  run that produced output sends what it produced instead ("5 kept · $1.04"), and the
+  stored words `notable` and `silent` never reach a page. A finding arrives in its job's
+  own words: a meta line ("Career discovery · blind spot · still open"), the title the
+  job wrote or none, the observation, and its source as a short link. A board widget's
+  result carries two footers: `source`, where its numbers come from in words and the job
+  its link opens, and `foot`, the table and column names the board shows only while it
+  is being edited.<!-- (A0269, cites-as-live) -->
 - **Strings are text, never markup.** The pages build every element from data as text
   nodes; no source string is parsed as HTML.<!-- (A0267, cites-as-live) -->
 - **A tone is a design decision.** The spec's tone list is closed and each run word has

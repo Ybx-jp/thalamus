@@ -57,7 +57,7 @@ const constOf = (name, src) => {
   return new Function(`return ${m[1]};`)();
 };
 
-const surfaceFns = ["h", "appendKids", "toneClass", "statusWord", "hashHue", "scopeHue", "switchEl", "toast"];
+const surfaceFns = ["h", "appendKids", "toneClass", "statusWord", "hashHue", "scopeHue", "switchEl", "toast", "findingCard"];
 const jobsFns = ["listView", "bannerShown", "sameCommit", "jobRow", "link", "jobView", "runPicker", "stageItem", "progressBar", "jobActions",
   "armTwice", "historyView", "historyItem", "changeView", "gateCard", "diffCard", "changeFoot", "runView",
   "findingRow", "repoView", "columnWidths", "graphLayout", "routeEdge", "graphView", "graphNode", "laneView", "selectEl",
@@ -68,7 +68,7 @@ const F = evaluate(
   {
     document, Node, window: {}, location: { hash: "" },
     TONES: constOf("TONES", surface), PALETTE: constOf("PALETTE", surface), MAIN_HUE: constOf("MAIN_HUE", surface),
-    LABELS: constOf("LABELS", jobs), CANVAS: constOf("CANVAS", jobs), canvasState: constOf("canvasState", jobs),
+    RATINGS: constOf("RATINGS", surface), CANVAS: constOf("CANVAS", jobs), canvasState: constOf("canvasState", jobs),
     LANE: constOf("LANE", jobs),
     api: async () => ({}), apiPost: async () => ({}), route: () => {}, replayOnHead: () => {},
     setTimeout: () => 0, clearTimeout: () => {},
@@ -81,7 +81,7 @@ function words(obj, out = []) {
   else if (obj && typeof obj === "object") {
     if (typeof obj.word === "string" && typeof obj.tone === "string") out.push(obj.word);
     for (const [k, v] of Object.entries(obj)) {
-      if (["line", "title", "subject", "summary", "heading"].includes(k) && typeof v === "string") out.push(v);
+      if (["line", "title", "subject", "summary", "heading", "meta", "observation"].includes(k) && typeof v === "string") out.push(v);
       words(v, out);
     }
   }
@@ -103,8 +103,10 @@ const job = example("Job");
 renders("Job (J2)", F.jobView(job, { job: job.id, params: {} }), job, [job.pinned.title, job.pinned.line]);
 renders("History (J3)", F.historyView(example("History"), { job: "weekly-digest", params: {} }, true), example("History"));
 renders("ChangeReceipt (J4)", F.changeView(example("ChangeReceipt")), example("ChangeReceipt"));
-// A run's title is the page header (setChrome), not part of the view.
-renders("Run (J5)", F.runView(example("Run")), example("Run"), [example("Run").title]);
+// A run's title is the page header (setChrome), not part of the view; a rejected
+// finding is drawn as its headline and why it was rejected (J5), without the meta line.
+const rejectedMeta = example("Run").findings.items.filter((x) => x.rejected).map((x) => x.meta);
+renders("Run (J5)", F.runView(example("Run")), example("Run"), [example("Run").title, ...rejectedMeta]);
 renders("Repo (J6)", F.repoView(example("Repo"), true), example("Repo"));
 const graph = example("Graph");
 const g = F.graphView(graph);

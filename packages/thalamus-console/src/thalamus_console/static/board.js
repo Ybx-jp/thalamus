@@ -41,7 +41,7 @@ const KINDS = [
   { kind: "series", label: "Series", phone: "a line or bars over time", desk: "a line or bars over time" },
   { kind: "table", label: "Table", phone: "rows from a table or a query", desk: "rows from a table or a query" },
   { kind: "tail", label: "Live tail", phone: "the newest raw events", desk: "the newest raw events as they land" },
-  { kind: "inbox", label: "Inbox", phone: "job output you can label", desk: "job output you can label" },
+  { kind: "inbox", label: "Inbox", phone: "findings to rate", desk: "findings to rate useful or not" },
   { kind: "control", label: "Control", phone: "a switch or a run button", desk: "a switch or a run button for a job" },
   { kind: "note", label: "Note", phone: "a question or a pin", desk: "a question or a pin, in words" },
   { kind: "app", label: "App", phone: "a small page, sandboxed", desk: "a small page you or a job built, sandboxed" },
@@ -77,6 +77,11 @@ const COUNTS = [4, 6, 8, 12, 18, 26, 52];
 const COMPARES = [null, 1, 2, 3, 4, 6, 8, 12, 26, 52];
 // Tail and inbox read fixed tables; their "Only rows where" offers that table's filters.
 const FIXED_SOURCE = { tail: "events", inbox: "findings" };
+// A new widget's title where the designer named one (N5: the inbox is "Rate what jobs
+// found"); every other kind starts untitled and prints its kind until he names it.
+const DEFAULT_TITLE = { inbox: "Rate what jobs found" };
+// How many findings an inbox shows once "N more to rate ›" is tapped: the source's cap.
+const INBOX_OPEN_LIMIT = 20;
 
 // ---------------------------------------------------------------- layout (pure)
 
@@ -245,9 +250,15 @@ function evalModel(kind, r) {
   const res = r && typeof r === "object" ? r : {};
   const tile = res.tile && typeof res.tile === "object" ? res.tile : {};
   const foot = res.foot != null ? res.foot : tile.foot;
+  // Two footers (N5): `source` is the view-mode line, where the numbers come from in
+  // words and the job its link opens; `foot` keeps the table and column names, and is
+  // shown only while the board is being edited.
+  const src = res.source != null ? res.source : tile.source;
   const base = {
     kind,
     foot: foot != null ? String(foot) : null,
+    source: src && typeof src === "object" && src.text
+      ? { text: String(src.text), job: src.job ? String(src.job) : null } : null,
   };
   const arr = (v) => (Array.isArray(v) ? v : []);
   const str = (v) => (v == null ? "" : String(v));
@@ -273,8 +284,14 @@ function evalModel(kind, r) {
       });
     case "inbox":
       return Object.assign(base, {
-        items: arr(res.items).map((x) => ({ id: str(x && x.id), title: str(x && x.title), kind: str(x && x.kind),
-                                           label: x && x.label ? str(x.label) : null })),
+        items: arr(res.items).filter((x) => x && typeof x === "object").map((x) => ({
+          id: str(x.id), meta: str(x.meta), title: x.title ? str(x.title) : null, observation: str(x.observation),
+          source: x.source && typeof x.source === "object" && x.source.text
+            ? { text: str(x.source.text), url: x.source.url ? str(x.source.url) : null,
+                run: x.source.run ? str(x.source.run) : null } : null,
+          label: x.label ? str(x.label) : null,
+        })),
+        more: res.more ? str(res.more) : null,
       });
     case "control":
       return Object.assign(base, {
@@ -366,6 +383,7 @@ const S = {
   draft: null,          // a copy while editing; null otherwise
   range: "8w",
   scope: "all",
+  opened: new Set(),    // inbox widget ids whose "N more to rate ›" was tapped (view only, not saved)
   scopes: null,         // scope names, from the jobs list (lazy)
   jobs: null,           // runnable jobs, from the jobs list (lazy)
   sources: null,        // GET board/sources (lazy)
@@ -423,7 +441,10 @@ async function evalWidget(w) {
   S.gen.set(w.id, g);
   let model;
   try {
-    const r = await apiPost("board/eval", { widget: w, range: S.range, scope: S.scope });
+    // An opened inbox asks for more rows; the saved widget keeps its own limit.
+    const asked = S.opened.has(w.id)
+      ? Object.assign({}, w, { binding: Object.assign({}, w.binding, { limit: INBOX_OPEN_LIMIT }) }) : w;
+    const r = await apiPost("board/eval", { widget: asked, range: S.range, scope: S.scope });
     model = evalModel(w.kind, r);
   } catch (e) {
     model = { kind: w.kind, error: e.message || String(e) };
@@ -562,6 +583,7 @@ function layoutGrid(grid) {
     card.style.setProperty("--pw", spans[w.id]);
     card.style.order = order.indexOf(w.id);
     card.classList.toggle("sel", editing() && S.selected === w.id);
+    if (card._slots) paintFoot(card._slots, w, S.results.get(w.id));
     card.querySelectorAll(".b-tools").forEach((t) => t.remove());
     if (editing() && S.selected === w.id) card.appendChild(toolsFor(w));
   }
@@ -606,7 +628,7 @@ function cardSlots(card, id) {
   const slots = {
     title, handle,
     body: h("div.b-card-b"),
-    foot: h("div.b-foot.mono"),
+    foot: h("div.b-foot"),
     resize: h("span.b-resize", { "aria-hidden": "true", title: "drag the corner to resize" }),
   };
   card.replaceChildren(h("div.b-card-h", title, handle), slots.body, slots.foot, slots.resize);
@@ -624,9 +646,33 @@ function fillCard(card, w, model) {
   const frame = s.body.querySelector(":scope > iframe.b-app-frame");
   const keep = w.kind === "app" && frame && model && !model.error && frame.dataset.app === model.app;
   if (!keep) s.body.replaceChildren(...[].concat(cardBody(w, model)).filter((x) => x != null));
+  paintFoot(s, w, model);
+}
+
+// The footer alone, repainted whenever edit mode turns on or off: the body is left as it
+// is (an app frame must not reload), only the line under it changes.
+function paintFoot(s, w, model) {
   s.foot.replaceChildren();
-  if (model && model.foot) s.foot.append(model.foot);
-  s.foot.hidden = !(model && model.foot);
+  const foot = cardFoot(w, model);
+  if (foot) s.foot.append(foot);
+  s.foot.hidden = !foot;
+}
+
+// A card's last line. Editing: the table and column names, in mono (D2). Viewing: where
+// the numbers come from, in words, linking the job that writes them (C1 "from chess.com
+// games ›"); an inbox instead offers the findings it is not showing (B1 "3 more to rate ›").
+function cardFoot(w, m) {
+  if (!m || m.error) return null;
+  if (editing()) return m.foot ? h("span.b-foot-names.mono", m.foot) : null;
+  if (w.kind === "inbox") {
+    if (!m.more) return null;
+    return h("button.s-link.b-more", { type: "button", onclick: () => { S.opened.add(w.id); evalWidget(w); } },
+      m.more + " ›");
+  }
+  if (!m.source) return null;
+  return m.source.job
+    ? h("a.b-src", { href: "jobs.html#/job/" + encodeURIComponent(m.source.job) }, m.source.text + " ›")
+    : h("span.b-src", m.source.text);
 }
 
 function cardBody(w, m) {
@@ -713,30 +759,14 @@ function tailBody(m) {
     h("span", r.time), h("span", r.source), h("span", r.kind))));
 }
 
-const LABELS = [["useful", "useful"], ["not_useful", "not useful"], ["wrong", "wrong"]];
-
+// B1's "Rate what jobs found": a caption, then each finding as surface.js's findingCard.
+// "evidence ›" opens the run on the jobs page, where the finding sits among what its run
+// read and spent.
 function inboxBody(w, m) {
-  if (!m.items.length) return h("div.muted.b-none", "nothing to label");
-  return h("div.b-inbox", m.items.map((it) => {
-    const btns = LABELS.map(([value, text]) => h("button.b-lab" + (it.label === value ? ".on" : ""),
-      { type: "button", "aria-pressed": it.label === value ? "true" : "false" }, text));
-    btns.forEach((b, i) => b.addEventListener("click", async () => {
-      const value = LABELS[i][0];
-      if (it.label === value) return;
-      btns.forEach((x) => { x.disabled = true; });
-      try {
-        await apiPost("findings/" + encodeURIComponent(it.id) + "/label", { label: value });
-        it.label = value;
-        btns.forEach((x, k) => {
-          x.classList.toggle("on", k === i);
-          x.setAttribute("aria-pressed", k === i ? "true" : "false");
-        });
-      } catch (e) { toast(e.message); }
-      finally { btns.forEach((x) => { x.disabled = false; }); }
-    }));
-    return h("div.b-item", h("div.b-item-t", it.title),
-      h("div.b-item-r", h("span.b-item-k", it.kind), h("div.b-labs", btns)));
-  }));
+  const cap = h("div.b-inbox-cap", "Your ratings tune what each job reports.");
+  if (!m.items.length) return [cap, h("div.muted.b-none", "nothing left to rate")];
+  return [cap, h("div.b-inbox", m.items.map((it) =>
+    findingCard(it, (run) => "jobs.html#/run/" + encodeURIComponent(run))))];
 }
 
 function controlBody(w, m) {
@@ -1171,7 +1201,7 @@ async function openEditor(kind, existing, slot) {
   const sources = meta.sources || [];
   const draft = existing
     ? JSON.parse(JSON.stringify(existing))
-    : { kind, title: "", binding: {} };
+    : { kind, title: DEFAULT_TITLE[kind] || "", binding: {} };
   draft.binding = draft.binding || {};
   if (!existing && KIND_FIELDS[kind].includes("source") && sources[0]) draft.binding.source = sources[0].name;
 
