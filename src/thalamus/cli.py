@@ -2375,8 +2375,9 @@ def _report_expert_boundaries():
         print(f"    skills     denied [{origin}]: {', '.join(skills) if skills else '(nothing)'}")
 
     print("\nBoundaries are enforced by the role-guard PreToolUse hook, which binds "
-          "the file-editing tools, `Skill`, `Artifact`, `mcp__penpot__*` and "
-          "`mcp__claude-artifacts__*`. Bash "
+          "the file-editing tools, `Skill`, `Artifact`, `mcp__penpot__*`, "
+          "`mcp__claude-artifacts__*`, and `Bash` by name when a manifest denies it. "
+          "What a Bash command writes "
           "and `Read` on a SKILL.md are named misses (role-guard.sh). Which of these "
           "binds on which harness is a separate question with a separate record: "
           "`thalamus contract check --capabilities`.")

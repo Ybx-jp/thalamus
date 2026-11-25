@@ -473,6 +473,29 @@ class TestRoleGuardHook:
         assert blocked.returncode == 2
         assert "mcp__penpot__*" in blocked.stderr
 
+    def test_a_manifest_that_denies_bash_stops_bash(self, tmp_path):
+        """A job context without a shell is a manifest copy denying `Bash`. The guard
+        used to fall through to `exit 0` before reading the manifest (#428)."""
+        manifest = (
+            "scope: noshell\nname: No shell\n"
+            "capability_boundary:\n"
+            "  deny_tools: [\"Bash\"]\n"
+            "  reason: this job runs no shell commands\n"
+        )
+        config = _experts_config(tmp_path, {"noshell": manifest, "plain": "scope: plain\nname: Plain\n"})
+        bash = {"tool_name": "Bash", "tool_input": {"command": "ls"}, "session_id": "test",
+                "cwd": str(REPO)}
+
+        blocked = run_guard(bash, tmp_path,
+                            {"THALAMUS_CONFIG_DIR": config, "CLAUDE_CODE_AGENT": "thalamus-noshell"})
+        assert blocked.returncode == 2, blocked.stderr
+        assert "Bash" in blocked.stderr
+
+        for agent in ("thalamus-plain", ""):
+            passed = run_guard(bash, tmp_path, {"THALAMUS_CONFIG_DIR": config,
+                                                "CLAUDE_CODE_AGENT": agent})
+            assert passed.returncode == 0, (agent, passed.stderr)
+
     def test_a_reason_larger_than_the_pipe_buffer_still_blocks(self, tmp_path):
         """Scenario: the manifest's `reason` is longer than a pipe will hold at once
 
@@ -577,8 +600,8 @@ def test_the_guard_is_wired_into_the_installer():
                 if (event, script) == ("PreToolUse", "role-guard.sh")]
     assert len(matchers) == 1, "the role guard should be wired exactly once"
     wired = set(matchers[0].split("|"))
-    for tool in ("Edit", "Write", "NotebookEdit", "Skill", "Artifact", "mcp__penpot__.*",
-                 "mcp__claude-artifacts__.*"):
+    for tool in ("Edit", "Write", "NotebookEdit", "Skill", "Artifact", "Bash",
+                 "mcp__penpot__.*", "mcp__claude-artifacts__.*"):
         assert tool in wired, f"{tool} is bounded by the guard but never routed to it"
 
 
