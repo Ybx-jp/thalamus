@@ -167,8 +167,10 @@ def test_no_path_parameter_admits_more_than_the_forwarder_forwards():
 def test_the_tone_vocabulary_is_closed_and_runs_map_one_to_one():
     tones = SCHEMAS["Tone"]["enum"]
     assert tones == ["ok", "faint", "danger", "pending", "muted", "accent"]
-    assert SCHEMAS["RunStatus"]["x-tones"] == {"notable": "ok", "silent": "faint", "failed": "danger",
-                                              "running": "pending", "skipped": "faint"}
+    # A run's status reaches the page only when it is not the normal case (N5); the stored
+    # words notable and silent never do.
+    assert SCHEMAS["RunStatus"]["x-tones"] == {"failed": "danger", "running": "pending", "found nothing": "muted",
+                                              "skipped": "faint"}
 
 
 # The page calls each jobs-source path through api("<literal>" + ...) or apiPost(...).

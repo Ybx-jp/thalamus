@@ -21,12 +21,19 @@ body.board { --bar: #565e69; /* --muted at .55 over --panel, flattened */ }
 }
 .b-chip::after { content: "▾"; position: absolute; right: .7rem; font-size: .7rem; color: var(--ink); pointer-events: none; }
 .b-chip-k { color: var(--ink); }
+/* The select inside a pill draws nothing of its own, focused or not: no border, ground,
+   outline or ring (N5; the phone painted a white inner box inside the pill's ring). The
+   pill draws the one focus ring. The native option picker that opens is the platform's. */
 .b-chip-sel {
-  appearance: none; background: transparent; border: 0; color: var(--ink);
-  font: inherit; padding: 0; margin: 0; min-height: 30px; cursor: pointer;
+  appearance: none; -webkit-appearance: none; background: transparent; border: 0; border-radius: 0;
+  color: var(--ink); color-scheme: dark; font: inherit; padding: 0; margin: 0; min-height: 30px;
+  cursor: pointer; outline: none; box-shadow: none; -webkit-tap-highlight-color: transparent;
+}
+.b-chip-sel:focus, .b-chip-sel:focus-visible, .b-chip-sel:active {
+  outline: none; box-shadow: none; background: transparent; border: 0;
 }
 .b-chip-sel option { background: var(--panel); color: var(--ink); }
-.b-chip:focus-within { border-color: var(--accent); }
+.b-chip:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 
 /* ---- the grid ---------------------------------------------------------- */
 
@@ -60,8 +67,14 @@ body.board { --bar: #565e69; /* --muted at .55 over --panel, flattened */ }
   touch-action: none;
 }
 .b-card-b { flex: 1 1 auto; min-height: 0; margin-top: .5rem; display: flex; flex-direction: column; }
-.b-foot { margin-top: .7rem; font-size: .66rem; color: var(--faint); letter-spacing: .01em;
+.b-foot { margin-top: .7rem; font-size: .75rem; color: var(--muted);
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Edit mode's footer: table and column names (D2). */
+.b-foot-names { font-size: .66rem; color: var(--faint); letter-spacing: .01em; }
+/* View mode's footer: where the numbers come from, in words, a link to the job (C1). */
+.b-src { color: var(--muted); text-decoration: none; display: inline-flex; align-items: center; min-height: 32px; margin: -.4rem 0; }
+a.b-src:hover { color: var(--ink); }
+.b-more { font-size: .85rem; }
 .b-foot[hidden] { display: none; }
 .b-resize { display: none; }
 .b-wait { font-size: .9rem; }
@@ -110,20 +123,9 @@ body.board { --bar: #565e69; /* --muted at .55 over --panel, flattened */ }
 .b-tail-r { display: grid; grid-template-columns: auto auto 1fr; gap: .8rem; color: var(--muted); }
 .b-tail-r.newest { color: var(--ink); }
 
-.b-inbox { display: flex; flex-direction: column; gap: .9rem; }
-.b-item-t { font-size: .88rem; line-height: 1.35; color: var(--ink); }
-.b-item-r { display: flex; align-items: center; gap: .5rem; margin-top: .45rem; }
-.b-item-k { flex: 1; min-width: 0; font-size: .74rem; color: var(--faint); }
-.b-labs { display: flex; gap: .5rem; flex: none; }
-.b-lab {
-  appearance: none; min-height: 32px; padding: 0 .9rem; border-radius: 8px;
-  border: 1px solid var(--hair); background: transparent; color: var(--muted);
-  font: 400 .78rem var(--ui); cursor: pointer;
-}
-/* Pressed is a filled ground with dark ink and a heavier weight — a change of fill and
-   of weight, not of hue alone — and aria-pressed says it to a screen reader. */
-.b-lab.on { background: var(--accent); border-color: var(--accent); color: #12101f; font-weight: 600; }
-.b-lab:disabled { cursor: default; }
+.b-inbox-cap { font-size: .8rem; color: var(--muted); margin: -.2rem 0 .8rem; }
+.b-inbox { display: flex; flex-direction: column; }
+.b-inbox > .f-item + .f-item { border-top: 1px solid var(--hair); margin-top: .9rem; padding-top: .9rem; }
 
 .b-ctl { display: flex; flex-direction: column; gap: .9rem; }
 .b-ctl-row { display: flex; align-items: center; gap: .8rem; }

@@ -63,6 +63,27 @@ body.surface {
 .tone-muted { color: var(--muted); }
 .tone-accent { color: var(--accent); }
 
+/* A finding row (surface.js findingCard; N5's B1, J5 and D2). With a title the
+   observation is the body, two lines; with none it is the headline, three. */
+.f-item { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
+.f-meta { font-size: .75rem; color: var(--muted); }
+.f-title { font: 600 .95rem/1.35 var(--ui); color: var(--ink); }
+.f-headline, .f-body { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.f-headline { font-size: .95rem; line-height: 1.4; color: var(--ink); -webkit-line-clamp: 3; line-clamp: 3; }
+.f-body { font-size: .82rem; line-height: 1.4; color: var(--muted); -webkit-line-clamp: 2; line-clamp: 2; }
+.f-foot { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .6rem; margin-top: .35rem; }
+.f-src { flex: 1 0 auto; color: var(--accent); font: 600 .82rem var(--ui); min-height: 36px;
+         display: inline-flex; align-items: center; text-decoration: none; }
+.f-rate { display: flex; gap: .4rem; flex: none; margin-left: auto; }
+/* Pressed is a filled ground with dark ink and a heavier weight — a change of fill and
+   of weight, not of hue alone — and aria-pressed says it to a screen reader. */
+.f-rate-btn {
+  appearance: none; min-height: 36px; padding: 0 .7rem; border-radius: 8px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--hair); background: transparent; color: var(--ink); font: 400 .8rem var(--ui);
+}
+.f-rate-btn.on { background: var(--accent); border-color: var(--accent); color: #12101f; font-weight: 600; }
+.f-rate-btn:disabled { cursor: default; }
+
 .mono { font-family: var(--mono); }
 .muted { color: var(--muted); }
 .small { font-size: .78rem; }
