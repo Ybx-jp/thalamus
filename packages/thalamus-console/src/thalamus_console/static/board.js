@@ -307,7 +307,12 @@ function evalModel(kind, r) {
       // A note is pinned text and nothing else (designer ruling, 2026-11-24).
       return Object.assign(base, { text: str(res.text) });
     case "app":
-      return Object.assign(base, { app: str(res.app) });
+      // `suffix` is what the app's tile puts after the widget's title, the way a
+      // Number's period is ("Security findings held back · 2"); the app composes it.
+      return Object.assign(base, {
+        app: str(res.app),
+        suffix: tile.suffix != null && tile.suffix !== "" ? str(tile.suffix) : null,
+      });
     default:
       return Object.assign(base, { unknown: true });
   }
@@ -350,11 +355,25 @@ function writeGate(lastMs, nowMs, row, cap, minMs) {
   return { ok: true, bytes };
 }
 
+/** An https URL, or null: the only kind of link an app may ask the host to open. */
+function httpsUrl(v) {
+  if (typeof v !== "string" || v.length > 2048) return null;
+  let u;
+  try { u = new URL(v); } catch (_) { return null; }
+  return u.protocol === "https:" ? u.href : null;
+}
+
 /**
  * What a message from an app frame asks for, or null to drop it. The frame is found by
  * `source` — the window that posted — and by nothing in the body: an app cannot name
  * another widget, because it is never asked who it is. A tile may open itself; only
  * the full-screen frame may close.
+ *
+ * A tile opening itself may name a `view` (the full page's hash, so it opens on one
+ * item) and ask for a `sheet`: the full page laid over the board behind a scrim, for
+ * a page that draws a bottom sheet rather than a screen of its own. Either frame may
+ * ask the board to go to a job run (`app/run`, the jobs page's run view) or to open an
+ * https link in a new tab (`app/link`); the frame itself can navigate nowhere.
  */
 function routeAppMessage(registry, source, data) {
   const entry = registry.get(source);
@@ -364,12 +383,26 @@ function routeAppMessage(registry, source, data) {
   switch (data.thalamus) {
     case "app/ready": return { entry, act: "data" };
     case "app/write": return { entry, act: "write", id, row: data.row };
-    case "app/open": return entry.mode === "tile" ? { entry, act: "open" } : null;
+    case "app/open": {
+      if (entry.mode !== "tile") return null;
+      // A view token is the full page's hash; a run id is what the jobs source's
+      // `runs/<id>` route takes. Both are matched whole, so neither can carry a path.
+      const view = typeof data.view === "string" && /^[A-Za-z0-9._-]{1,64}$/.test(data.view) ? data.view : null;
+      return { entry, act: "open", view, sheet: data.sheet === true };
+    }
+    case "app/run":
+      return typeof data.run === "string" && /^[0-9a-f]{4,32}$/.test(data.run) ? { entry, act: "run", run: data.run } : null;
+    case "app/link": {
+      const url = httpsUrl(data.url);
+      return url ? { entry, act: "link", url } : null;
+    }
     case "app/close": return entry.mode === "full" ? { entry, act: "close" } : null;
     case "app/resize": {
       const px = Number(data.height);
       if (entry.mode !== "tile" || !Number.isFinite(px)) return null;
-      return { entry, act: "resize", height: Math.min(640, Math.max(120, Math.round(px))) };
+      // The floor only keeps a tile from vanishing; an app's empty state may be shorter
+      // than a full one (Q3's "Nothing held back" is two lines).
+      return { entry, act: "resize", height: Math.min(640, Math.max(40, Math.round(px))) };
     }
     default: return null;
   }
@@ -640,7 +673,7 @@ function cardSlots(card, id) {
 function fillCard(card, w, model) {
   const s = cardSlots(card, card.dataset.id);
   card.dataset.kind = w.kind;
-  const titleText = cardTitle(w.title, model && model.period, kindInfo(w.kind).label);
+  const titleText = cardTitle(w.title, model && (model.period || model.suffix), kindInfo(w.kind).label);
   s.title.textContent = titleText;
   s.handle.setAttribute("aria-label", "Move " + titleText);
   const frame = s.body.querySelector(":scope > iframe.b-app-frame");
@@ -813,8 +846,9 @@ function noteBody(m) {
 // inside. `allow-scripts` and nothing else: no allow-same-origin (the frame would
 // share this page's origin and could call the console's API directly), no
 // allow-popups, no allow-top-navigation, no allow-forms.
-function appFrame(app, mode) {
-  const src = "api/jobs/apps/" + encodeURIComponent(app) + "/files/index.html" + (mode === "tile" ? "#tile" : "");
+function appFrame(app, mode, view) {
+  const hash = mode === "tile" ? "#tile" : view ? "#" + view : "";
+  const src = "api/jobs/apps/" + encodeURIComponent(app) + "/files/index.html" + hash;
   const f = h("iframe.b-app-frame", { sandbox: "allow-scripts", referrerpolicy: "no-referrer", src,
                                        title: app + (mode === "tile" ? " tile" : ""), "data-app": app });
   return f;
@@ -837,10 +871,10 @@ function pruneApps() {
 }
 
 let overlay = null;
-function openApp(entry) {
+function openApp(entry, view, sheet) {
   if (overlay) return;
-  const f = appFrame(entry.app, "full");
-  overlay = h("div.b-app-full", { role: "dialog", "aria-label": entry.app }, f);
+  const f = appFrame(entry.app, "full", view);
+  overlay = h(sheet ? "div.b-app-full.b-app-sheet" : "div.b-app-full", { role: "dialog", "aria-label": entry.app }, f);
   document.body.appendChild(overlay);
   document.body.classList.add("b-app-open");
   registerFrame(f, entry.widgetId, entry.app, "full");
@@ -866,13 +900,26 @@ async function sendData(win, app) {
   catch (e) { post(win, { thalamus: "app/data", data: null, error: e.message }); }
 }
 
+// A write changes what every frame of that app shows, not only the one that wrote: the
+// tile under a sheet drops a released row, and the card's title suffix is re-read.
+function refreshApp(app, writer, data) {
+  for (const [win, e] of apps) {
+    if (e.app === app && win !== writer && e.frame.isConnected && data !== undefined) {
+      post(win, { thalamus: "app/data", data });
+    }
+  }
+  for (const w of live()) if (w.kind === "app" && w.binding && w.binding.app === app) evalWidget(w);
+}
+
 window.addEventListener("message", async (ev) => {
   const r = routeAppMessage(apps, ev.source, ev.data);
   if (!r) return;
   const win = ev.source;
   const app = r.entry.app;
   if (r.act === "data") return sendData(win, app);
-  if (r.act === "open") return openApp(r.entry);
+  if (r.act === "open") return openApp(r.entry, r.view, r.sheet);
+  if (r.act === "run") { location.href = "jobs.html#/run/" + encodeURIComponent(r.run); return; }
+  if (r.act === "link") { window.open(r.url, "_blank", "noopener,noreferrer"); return; }
   if (r.act === "close") return closeApp(false);
   if (r.act === "resize") { r.entry.frame.style.height = r.height + "px"; return; }
   if (r.act === "write") {
@@ -887,6 +934,7 @@ window.addEventListener("message", async (ev) => {
       const msg = { thalamus: "app/written", id: r.id, ok: true };
       if (res.data !== undefined) msg.data = res.data;
       post(win, msg);
+      refreshApp(app, win, res.data);
     } catch (e) {
       post(win, { thalamus: "app/written", id: r.id, ok: false, error: e.message });
     }

@@ -19,7 +19,7 @@ const html = fs.readFileSync(path.join(STATIC, "board.html"), "utf8");
 
 const NAMES = ["overlaps", "clampBox", "placeWidget", "firstFreeSlot", "normalizeLayout", "phoneOrder", "phoneFlow",
   "cellAt", "barsModel", "lineModel", "evalModel", "cardTitle", "windowLabel", "compareLabel", "writeGate",
-  "routeAppMessage"];
+  "httpsUrl", "routeAppMessage"];
 const F = evaluate(NAMES.map((n) => extractFunction(n, src)).join("\n"), NAMES);
 
 const box = (id, x, y, w, h) => ({ id, x, y, w, h });
@@ -138,6 +138,11 @@ suite("board — eval result to render model");
     tile: { foot: "app · chess positions", source: { text: "from Sunday's chess review", job: "chess-coach" } } });
   check("an app tile's footers come from its tile", app.foot === "app · chess positions"
     && app.source.text === "from Sunday's chess review" && app.source.job === "chess-coach");
+  check("an app tile without a suffix titles as the widget alone", app.suffix === null
+    && F.cardTitle("Chess positions", app.period || app.suffix) === "Chess positions");
+  const held = F.evalModel("app", { app: "qe-held-back", tile: { suffix: 2 } });
+  check("an app tile's suffix follows the widget's title", held.suffix === "2"
+    && F.cardTitle("Security findings held back", held.period || held.suffix) === "Security findings held back · 2");
   check("an unknown kind renders as unknown, not as a crash", F.evalModel("gauge", {}).unknown === true);
   check("a missing result is survivable", F.evalModel("series", null).bars.length === 0);
 }
@@ -169,9 +174,29 @@ suite("board — app messages are routed by source only");
   check("a tile may not close", F.routeAppMessage(reg, tileWin, { thalamus: "app/close" }) === null);
   check("the full-screen frame may close", F.routeAppMessage(reg, fullWin, { thalamus: "app/close" }).act === "close");
   check("the full-screen frame may not open another", F.routeAppMessage(reg, fullWin, { thalamus: "app/open" }) === null);
-  check("a resize is clamped", F.routeAppMessage(reg, tileWin, { thalamus: "app/resize", height: 99999 }).height === 640);
+  check("a resize is clamped", F.routeAppMessage(reg, tileWin, { thalamus: "app/resize", height: 99999 }).height === 640
+    && F.routeAppMessage(reg, tileWin, { thalamus: "app/resize", height: 0 }).height === 40
+    && F.routeAppMessage(reg, tileWin, { thalamus: "app/resize", height: 72 }).height === 72);
   check("a write echoes the app's own id", F.routeAppMessage(reg, tileWin, { thalamus: "app/write", id: "c1", row: { n: 1 } }).id === "c1");
   check("an oversized id is not echoed", F.routeAppMessage(reg, tileWin, { thalamus: "app/write", id: "x".repeat(65), row: {} }).id === null);
+  const opened = F.routeAppMessage(reg, tileWin, { thalamus: "app/open", view: "b6eaff59c7a5", sheet: true });
+  check("a tile may open on one view, as a sheet", opened.act === "open" && opened.view === "b6eaff59c7a5" && opened.sheet === true);
+  const plain = F.routeAppMessage(reg, tileWin, { thalamus: "app/open" });
+  check("an open naming nothing is a full screen on the page's own first view", plain.view === null && plain.sheet === false);
+  check("a view that could carry a path or a query is dropped, not the open",
+    F.routeAppMessage(reg, tileWin, { thalamus: "app/open", view: "../x?y" }).view === null
+    && F.routeAppMessage(reg, tileWin, { thalamus: "app/open", view: "x".repeat(65) }).view === null);
+  check("only a literal true asks for a sheet", F.routeAppMessage(reg, tileWin, { thalamus: "app/open", sheet: "yes" }).sheet === false);
+  const run = F.routeAppMessage(reg, tileWin, { thalamus: "app/run", run: "673b58ea0f6f4e43935b6b5f25c4ca9b" });
+  check("either frame may ask for a run's page", run.act === "run" && run.run === "673b58ea0f6f4e43935b6b5f25c4ca9b"
+    && F.routeAppMessage(reg, fullWin, { thalamus: "app/run", run: "673b58ea" }).act === "run");
+  check("a run that is not a run id is dropped", F.routeAppMessage(reg, tileWin, { thalamus: "app/run", run: "../job/x" }) === null
+    && F.routeAppMessage(reg, tileWin, { thalamus: "app/run", run: "ABC123" }) === null
+    && F.routeAppMessage(reg, tileWin, { thalamus: "app/run" }) === null);
+  const link = F.routeAppMessage(reg, fullWin, { thalamus: "app/link", url: "https://github.com/Ybx-jp/claims-ledger/issues/92" });
+  check("an https link is opened", link.act === "link" && link.url === "https://github.com/Ybx-jp/claims-ledger/issues/92");
+  check("a link that is not https is dropped", ["http://example.com/", "javascript:alert(1)", "data:text/html,x",
+    "jobs.html#/run/1", "", null, 7].every((u) => F.routeAppMessage(reg, fullWin, { thalamus: "app/link", url: u }) === null));
   check("a non-protocol message is dropped", F.routeAppMessage(reg, tileWin, "hello") === null
     && F.routeAppMessage(reg, tileWin, { thalamus: "app/eval" }) === null);
 }
