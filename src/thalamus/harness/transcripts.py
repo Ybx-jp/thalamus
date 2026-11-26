@@ -331,6 +331,33 @@ def is_compaction_summary(record: dict) -> bool:
     return bool(record.get("isCompactSummary"))
 
 
+def peer_origin(record: dict) -> dict | None:
+    """The sender of a message another session delivered through SendMessage, or None.
+
+    Claude Code writes such a message as a user record marked `isMeta`, with an
+    `origin` of kind `peer` naming the sender's session name and its verified pid and
+    process start; an operator's typed prompt carries origin kind `human` and no
+    `isMeta` (measured on 2.1.332). Every reader skips `isMeta` records as harness
+    plumbing, so without this a session whose work was all requested by another
+    session reads as having no user turn at all, and is never distilled.
+    (A0270, cites-as-live)
+    """
+    origin = record.get("origin")
+    if record.get("type") == "user" and isinstance(origin, dict) \
+            and origin.get("kind") == "peer":
+        return origin
+    return None
+
+
+def peer_body(record: dict, origin: dict) -> str:
+    """What the peer wrote, without the harness's delivery wrapper."""
+    body = origin.get("body")
+    if isinstance(body, str) and body.strip():
+        return body.strip()
+    content = (record.get("message") or {}).get("content")
+    return content.strip() if isinstance(content, str) else ""
+
+
 def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
     """Read a transcript and recover every fact that needs no inference.
 
@@ -377,6 +404,13 @@ def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
             facts.ended_at = max(facts.ended_at or timestamp, timestamp)
 
         if record_type not in ("user", "assistant"):
+            continue
+        # A peer's message is a request this session acted on, so it is a user turn —
+        # but not a prompt the operator typed, so a session of peer messages and no
+        # tool use stays as insubstantial as a bare `/clear`.
+        if not record.get("isSidechain") and peer_origin(record) is not None:
+            facts.message_count += 1
+            facts.user_turns += 1
             continue
         if record.get("isSidechain") or record.get("isMeta") or is_compaction_summary(record):
             continue  # subagent sidechains are their own episodes, not this one

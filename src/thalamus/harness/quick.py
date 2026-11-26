@@ -199,6 +199,28 @@ def live_sessions(config_dir_override: Path | None = None) -> list[LiveSession]:
     return found
 
 
+def peer_scope(origin: dict, *, config_dir_override: Path | None = None,
+               pins_file: Path | None = None) -> str:
+    """The scope of the session that sent a SendMessage, or "" when it cannot be told.
+
+    The message's `origin` names the sender by pid and process start, both verified by
+    the harness, and the live descriptor for that process names its current session —
+    whose pin-ledger row holds the scope. Only the *current* session is reachable, but a
+    pin belongs to the process rather than the session, so a sender that has `/clear`ed
+    since still answers with the scope it wrote under. A sender that has exited has no
+    descriptor, and the answer is "" rather than a guess: the pid alone would match
+    whatever reused it. (A0271, cites-as-live)
+    """
+    pid = origin.get("verifiedPeerPid")
+    proc_start = str(origin.get("verifiedPeerProcStart") or "")
+    if not isinstance(pid, int) or not proc_start:
+        return ""
+    for live in live_sessions(config_dir_override):
+        if live.pid == pid and live.proc_start == proc_start:
+            return pin.ledger_scope(live.session_id, pins_file) or live.scope
+    return ""
+
+
 def resolve_target(scope: str, config_dir_override: Path | None = None) -> LiveSession:
     """The one live session pinned to `scope`, or a refusal naming what it found.
 

@@ -426,6 +426,71 @@ def test_slash_command_sessions_count_as_conversations(tmp_path):
     assert facts.has_substance is True
 
 
+def _peer_message(body, *, ts="2026-11-25T08:27:43Z"):
+    """A SendMessage delivery as Claude Code 2.1.332 records it (A0270)."""
+    return {
+        "type": "user",
+        "isMeta": True,
+        "timestamp": ts,
+        "origin": {"kind": "peer", "name": "thalamus-1d", "verifiedPeerPid": 4242,
+                   "verifiedPeerProcStart": "36196957", "body": body},
+        "message": {"role": "user", "content": "Another Claude session sent a message:\n"
+                    f"<cross-session-message from-name=\"thalamus-1d\">\n{body}"},
+    }
+
+
+def test_a_session_driven_by_peer_messages_distills_on_its_work(tmp_path):
+    """
+    Scenario: A frontend session whose every request arrived from the designer
+    session through SendMessage, and which acted on them with tools
+
+    Verifications:
+    - each peer message counts as a user turn but not as a typed prompt
+    - the session has substance on its tool calls
+
+    Measured origin: 228080c2 (270 tool calls, PR #432) was withheld as "slash
+    commands only", because a peer message is an `isMeta` record and every reader
+    skipped it.
+    """
+    project = tmp_path / "projects" / "proj"
+    _write_transcript(
+        project,
+        "peered",
+        [
+            _peer_message("Build request from designer: implement the copy revision."),
+            {
+                "type": "assistant",
+                "timestamp": "2026-11-25T08:28:00Z",
+                "message": {"role": "assistant", "content": [
+                    {"type": "tool_use", "name": "Read", "input": {"file_path": "jobs.js"}},
+                ]},
+            },
+        ],
+    )
+
+    facts = transcripts.parse(project / "peered.jsonl")
+
+    assert facts.user_turns == 1
+    assert facts.prompt_turns == 0
+    assert facts.has_substance is True
+
+
+def test_peer_messages_with_no_work_stay_insubstantial(tmp_path):
+    """
+    Scenario: A session that received a peer message and never acted on it
+
+    Verifications:
+    - the gate holds as it does for a bare `/clear`: a turn, no prompt, no tool use
+    """
+    project = tmp_path / "projects" / "proj"
+    _write_transcript(project, "ignored", [_peer_message("are you there?")])
+
+    facts = transcripts.parse(project / "ignored.jsonl")
+
+    assert facts.user_turns == 1
+    assert facts.has_substance is False
+
+
 def test_bootstrap_retains_evidence_and_is_idempotent(tmp_path):
     """
     Scenario: Bootstrap the same project twice

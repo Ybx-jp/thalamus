@@ -236,25 +236,37 @@ def ledger_facts(session_id: str, pins_file: Path | None = None) -> dict[str, st
     applies. Last row wins among the rest: a recycled window appends a fresher row.
     """
     facts: dict[str, str] = {}
-    path = pins_file or PINS_FILE
-    try:
-        lines = path.read_text().splitlines()
-    except OSError:
-        return facts
-    for line in lines:
-        try:
-            row = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(row, dict) or "event" in row:
-            continue
-        if row.get("session_id") != session_id:
-            continue
+    for row in _launch_rows(session_id, pins_file):
         for key in ("room", "forked_from", "session_type", "entrypoint"):
             value = row.get(key) or ""
             if value:
                 facts[key] = value
     return facts
+
+
+def ledger_scope(session_id: str, pins_file: Path | None = None) -> str:
+    """The scope the pin ledger last recorded a launch of this session under, or ""."""
+    scope = ""
+    for row in _launch_rows(session_id, pins_file):
+        scope = row.get("scope") or scope
+    return scope
+
+
+def _launch_rows(session_id: str, pins_file: Path | None = None):
+    """This session's launch rows in ledger order, lifecycle rows skipped."""
+    path = pins_file or PINS_FILE
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and "event" not in row \
+                and row.get("session_id") == session_id:
+            yield row
 
 
 def resolve_forked_from(env: os._Environ | dict[str, str] | None = None) -> str:

@@ -377,6 +377,33 @@ def test_scope_comes_from_the_launch_agent(tmp_path):
     assert scopes == {"pinned": "homelab", "plain": ""}
 
 
+def test_a_peer_messages_scope_is_its_live_senders_pin(tmp_path):
+    """
+    Scenario: A SendMessage origin names a live sender by pid and process start
+
+    Verifications:
+    - the scope is the sender's pin-ledger row, not its launch agent
+    - with no ledger row, the launch agent answers
+    - a process start that does not match is not that sender, and the answer is empty
+    """
+    pid = os.getpid()
+    proc_start = quick._proc_start(pid)
+    write_descriptor(tmp_path, pid=pid, session_id="sender", agent="thalamus-frontend")
+    pins = tmp_path / "pins.jsonl"
+    pins.write_text(
+        json.dumps({"session_id": "sender", "scope": "designer"}) + "\n"
+        + json.dumps({"event": "engaged", "session_id": "sender", "scope": "x"}) + "\n"
+    )
+    origin = {"kind": "peer", "verifiedPeerPid": pid, "verifiedPeerProcStart": proc_start}
+
+    assert quick.peer_scope(origin, config_dir_override=tmp_path,
+                            pins_file=pins) == "designer"
+    assert quick.peer_scope(origin, config_dir_override=tmp_path,
+                            pins_file=tmp_path / "none.jsonl") == "frontend"
+    stale = dict(origin, verifiedPeerProcStart="1")
+    assert quick.peer_scope(stale, config_dir_override=tmp_path, pins_file=pins) == ""
+
+
 # --------------------------------------------------------------------------------------
 # The launch line — obligations `--resume` does not carry
 # --------------------------------------------------------------------------------------
