@@ -88,6 +88,13 @@
       "witness_contains": "THALAMUS_PROJECT='acme' in a checkout named 'client-site': hook names project='acme', extract records project='client-site'",
       "triaged_at_rev": "8e43554",
       "note": "Issue #360. The SessionStart hooks resolve project=\"${THALAMUS_PROJECT:-$repo_name}\" and tell the agent to recall by it, while transcripts.parse / to_session_graph record Session.project as basename(repo_root) and read no override; recall filters on that recorded value, so an override that is not a substring of the checkout name returns nothing. The pin is the hook naming the override and the write path naming the checkout; the control (override unset, both name the checkout) is asserted in the case. A fix on either side makes the two equal and this entry goes stale."
+    },
+    {
+      "case": "bootstrap-listing-crashes-on-none",
+      "failure_class": "doc-code-drift",
+      "witness_contains": "listing exit=1 TypeError: 'NoneType' object is not iterable",
+      "triaged_at_rev": "cf24a1d",
+      "note": "Issue #439. _cmd_bootstrap checks for the None that _claude_bootstrap_groups returns after listing only on the cursor/codex branch (7c685da swapped the branches and left both checks under else:), so `thalamus bootstrap` with no project dir prints the listing and then dies iterating None. The pin is the exit code and the TypeError line; a fix that returns on None for every harness makes the listing exit 0 and this entry goes stale."
     }
   ]
 }
