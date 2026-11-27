@@ -88,6 +88,13 @@
       "witness_contains": "THALAMUS_PROJECT='acme' in a checkout named 'client-site': hook names project='acme', extract records project='client-site'",
       "triaged_at_rev": "8e43554",
       "note": "Issue #360. The SessionStart hooks resolve project=\"${THALAMUS_PROJECT:-$repo_name}\" and tell the agent to recall by it, while transcripts.parse / to_session_graph record Session.project as basename(repo_root) and read no override; recall filters on that recorded value, so an override that is not a substring of the checkout name returns nothing. The pin is the hook naming the override and the write path naming the checkout; the control (override unset, both name the checkout) is asserted in the case. A fix on either side makes the two equal and this entry goes stale."
+    },
+    {
+      "case": "uninstall-removes-the-subagent-model-install-set",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "settings.json env after install+uninstall carries {'CLAUDE_CODE_SUBAGENT_MODEL': 'sonnet'}",
+      "triaged_at_rev": "6d28cae",
+      "note": "Issue #441. install() sets env.CLAUDE_CODE_SUBAGENT_MODEL in ~/.claude/settings.json and uninstall() strips only the hooks, so the key survives the round trip. Stripping the key when it names VANILLA_SUBAGENT_MODEL makes this entry stale."
     }
   ]
 }
