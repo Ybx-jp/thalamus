@@ -70,6 +70,7 @@ CASE_MODULES = (
     "qe.cases.install_consent",
     "qe.cases.install_consent_scoping",
     "qe.cases.uninstall_roundtrip",
+    "qe.cases.uninstall_subagent_model_residue",
     "qe.cases.suite_containment",
     "qe.cases.published_config",
     "qe.cases.published_host_addresses",
