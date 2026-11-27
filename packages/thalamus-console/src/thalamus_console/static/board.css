@@ -138,6 +138,12 @@ a.b-src:hover { color: var(--ink); }
 .b-app-frame { display: block; width: 100%; height: 260px; border: 0; background: var(--panel); }
 .b-app-full { position: fixed; inset: 0; z-index: 60; background: var(--bg); }
 .b-app-full .b-app-frame { width: 100%; height: 100%; }
+/* A sheet: the app's page over the board behind a scrim (Q2). The scrim is a background,
+   not opacity: the board under it is inert while the sheet is up, and nothing on the
+   sheet composites with it, because the page paints the sheet itself on its own ground.
+   The frame stays transparent so the scrim shows above the sheet. */
+.b-app-full.b-app-sheet { background: rgba(5, 7, 10, .65); }
+.b-app-sheet .b-app-frame { background: transparent; }
 body.b-app-open { overflow: hidden; }
 
 /* ---- edit mode --------------------------------------------------------- */

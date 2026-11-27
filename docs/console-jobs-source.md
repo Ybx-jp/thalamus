@@ -66,7 +66,19 @@ The page gets data and writes rows only through the board, by `postMessage`:
 | board | `{"thalamus": "app/data", "data": …, "error"?}` | the answer of `GET apps/<app>/data` |
 | app | `{"thalamus": "app/write", "id", "row": {…}}` | store this row |
 | board | `{"thalamus": "app/written", "id", "ok", "error"?, "data"?}` | the answer of `POST apps/<app>/write`, whose body is the row itself |
-| app | `{"thalamus": "app/open"}` / `{"thalamus": "app/close"}` | open the app full screen / close it |
+| app | `{"thalamus": "app/open", "view"?, "sheet"?}` / `{"thalamus": "app/close"}` | open the app full screen / close it |
+| app | `{"thalamus": "app/run", "run"}` | go to that job run's page |
+| app | `{"thalamus": "app/link", "url"}` | open an https link in a new tab |
+
+Only a tile opens. `view` becomes the full page's hash, so the page can open on one
+item; it is a token of letters, digits, `.`, `_` and `-`, at most 64 characters, and
+any other value is dropped. `"sheet": true` lays the full page over the board behind a
+scrim and leaves its frame transparent, for a page that draws a bottom sheet. `run` is
+a run id as `runs/<id>` takes it, and `url` must be https; either frame may send them,
+and anything else is dropped, because the frame itself can navigate nowhere.<!-- (A0272, cites-as-live) --> A tile
+may put `suffix` in its tile result, which the board prints after the widget's title.
+After a write succeeds, the board sends its `data` to the app's other frames as
+`app/data` and re-evaluates every widget bound to that app.
 
 The board accepts a message only when `event.source` is one of its own app frames, and
 it routes the message by that frame, never by an id in the body. A write is capped at
